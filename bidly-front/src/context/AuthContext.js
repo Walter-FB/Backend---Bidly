@@ -57,11 +57,15 @@ export function AuthProvider({ children }) {
     setUser(null);
   }, []);
 
+  const loginAsGuest = useCallback(() => {
+    setUser({ isGuest: true, nombre: 'Invitado', clienteId: null });
+  }, []);
+
   // isAdmin: no existe en el modelo actual; reservado para extensiones futuras.
   const isAdmin = false;
 
   return (
-    <AuthContext.Provider value={{ user, setUser, booting, login, register, logout, isAdmin }}>
+    <AuthContext.Provider value={{ user, setUser, booting, login, register, logout, loginAsGuest, isAdmin }}>
       {children}
     </AuthContext.Provider>
   );

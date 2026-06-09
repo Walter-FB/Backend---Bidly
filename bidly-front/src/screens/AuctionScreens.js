@@ -31,6 +31,26 @@ function formatTimer(fechaStr, horaStr) {
   }
 }
 
+function calcSecondsLeft(fechaStr, horaStr) {
+  if (!fechaStr) return null;
+  try {
+    const dt = new Date(`${fechaStr}T${horaStr || '00:00'}`);
+    return Math.max(0, Math.floor((dt - new Date()) / 1000));
+  } catch {
+    return null;
+  }
+}
+
+function formatCountdown(seconds) {
+  if (seconds == null) return '—';
+  if (seconds <= 0) return 'Finalizada';
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
 // ─── PRODUCTO SCREEN ──────────────────────────────────────────────────────────
 export function ProductoScreen({ navigation, route }) {
   const subastaId = route.params?.subastaId || route.params?.subasta?.id;
@@ -162,6 +182,8 @@ export function ProductoScreen({ navigation, route }) {
               titulo,
               moneda: subasta.moneda,
               comision: primerItem.comision,
+              fecha: subasta.fecha,
+              hora: subasta.hora,
             })}
           />
         </BottomBar>
@@ -172,7 +194,7 @@ export function ProductoScreen({ navigation, route }) {
 
 // ─── SUBASTA EN VIVO ──────────────────────────────────────────────────────────
 export function SubastaEnVivoScreen({ navigation, route }) {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const {
     subastaId,
     itemId,
@@ -180,6 +202,8 @@ export function SubastaEnVivoScreen({ navigation, route }) {
     titulo = 'Subasta en vivo',
     moneda = 'pesos',
     comision = 0,
+    fecha,
+    hora,
   } = route.params || {};
 
   const [pujas, setPujas] = useState([]);
@@ -187,13 +211,25 @@ export function SubastaEnVivoScreen({ navigation, route }) {
   const [loadingPujas, setLoadingPujas] = useState(true);
   const [pujando, setPujando] = useState(false);
   const [pollingError, setPollingError] = useState(false);
+  const [timeLeft, setTimeLeft] = useState(() => calcSecondsLeft(fecha, hora));
   const mounted = useRef(true);
 
   useEffect(() => {
     return () => { mounted.current = false; };
   }, []);
 
-  // Inscribir al usuario como asistente de esta subasta (find or create).
+  // Countdown ticker — actualiza cada segundo.
+  useEffect(() => {
+    if (!fecha) return;
+    const tick = setInterval(() => {
+      const s = calcSecondsLeft(fecha, hora);
+      setTimeLeft(s);
+      if (s <= 0) clearInterval(tick);
+    }, 1000);
+    return () => clearInterval(tick);
+  }, [fecha, hora]);
+
+  // Inscribir al usuario como asistente (solo si tiene cuenta).
   useEffect(() => {
     if (!user?.clienteId || !subastaId) return;
     Asistentes.inscribir(user.clienteId, subastaId)
@@ -230,6 +266,18 @@ export function SubastaEnVivoScreen({ navigation, route }) {
     : Number(precioBase);
 
   const onPujar = async () => {
+    // Invitado: mostrar aviso y redirigir al login.
+    if (user?.isGuest) {
+      Alert.alert(
+        'Necesitás una cuenta',
+        'Para pujar en subastas tenés que iniciar sesión o crear una cuenta.',
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          { text: 'Iniciar sesión', onPress: logout },
+        ],
+      );
+      return;
+    }
     if (!asistenteId) {
       return Alert.alert('Espera', 'Estamos registrando tu acceso a la subasta. Intentá en un momento.');
     }
@@ -247,8 +295,10 @@ export function SubastaEnVivoScreen({ navigation, route }) {
     }
   };
 
-  const esLidero = pujas.length > 0 &&
+  const esLidero = !user?.isGuest && pujas.length > 0 &&
     pujas[0].asistente?.identificador === asistenteId;
+
+  const countdownColor = timeLeft != null && timeLeft < 300 ? colors.red ?? '#ff4d4d' : colors.gold;
 
   return (
     <Screen>
@@ -265,6 +315,12 @@ export function SubastaEnVivoScreen({ navigation, route }) {
             <Text style={{ color: colors.muted, fontSize: 12, marginBottom: 4 }}>Precio base</Text>
             <Text style={{ color: colors.gold, fontSize: 24, fontWeight: '800' }}>
               {formatImporte(precioBase, moneda)}
+            </Text>
+          </View>
+          <View style={{ alignItems: 'center' }}>
+            <Text style={{ color: colors.muted, fontSize: 12 }}>Cierra en</Text>
+            <Text style={{ color: countdownColor, fontSize: 22, fontWeight: '800', fontVariant: ['tabular-nums'] }}>
+              {formatCountdown(timeLeft)}
             </Text>
           </View>
           <View style={{ alignItems: 'flex-end' }}>
@@ -297,6 +353,14 @@ export function SubastaEnVivoScreen({ navigation, route }) {
           </Card>
         )}
 
+        {user?.isGuest && (
+          <Card el style={{ marginTop: 10, backgroundColor: 'rgba(255,193,7,0.08)', borderColor: colors.gold, borderWidth: 1 }}>
+            <Text style={{ color: colors.gold, fontWeight: '700', textAlign: 'center', fontSize: 13 }}>
+              Estás viendo como invitado. Creá una cuenta para pujar.
+            </Text>
+          </Card>
+        )}
+
         <SectionLabel>Historial de pujas</SectionLabel>
         {pollingError && (
           <Text style={{ color: colors.muted, fontSize: 12, textAlign: 'center', marginBottom: 6 }}>
@@ -308,7 +372,7 @@ export function SubastaEnVivoScreen({ navigation, route }) {
           <Text style={{ color: colors.muted, textAlign: 'center', marginTop: 10 }}>Sin pujas aún. ¡Sé el primero!</Text>
         )}
         {pujas.map((p, i) => {
-          const esYo = p.asistente?.identificador === asistenteId;
+          const esYo = !user?.isGuest && p.asistente?.identificador === asistenteId;
           const label = esYo ? '(vos)' : `Postor #${p.asistente?.numeroPostor || p.asistente?.identificador || '?'}`;
           const tiempo = p.fechaHora
             ? new Date(p.fechaHora).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })
@@ -327,16 +391,16 @@ export function SubastaEnVivoScreen({ navigation, route }) {
 
       <BottomBar>
         {esLidero ? (
-          <Btn
-            title="Ya sos el mayor postor"
-            kind="ghost"
-            disabled
-          />
+          <Btn title="Ya sos el mayor postor" kind="ghost" disabled />
         ) : (
           <Btn
-            title={pujando ? 'Pujando…' : `Pujar ${formatImporte(proximaPuja, moneda)}`}
+            title={
+              user?.isGuest
+                ? 'Pujar (requiere cuenta)'
+                : pujando ? 'Pujando…' : `Pujar ${formatImporte(proximaPuja, moneda)}`
+            }
             onPress={onPujar}
-            disabled={pujando || !asistenteId}
+            disabled={pujando || (!user?.isGuest && !asistenteId)}
           />
         )}
       </BottomBar>

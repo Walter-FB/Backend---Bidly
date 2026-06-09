@@ -17,7 +17,7 @@ export function SplashScreen() {
 }
 
 export function LoginScreen({ navigation }) {
-  const { login } = useAuth();
+  const { login, loginAsGuest } = useAuth();
   const [email, setEmail] = useState('');
   const [pass, setPass] = useState('');
   const [loading, setLoading] = useState(false);
@@ -75,6 +75,17 @@ export function LoginScreen({ navigation }) {
               <Text style={{ color: colors.blue, fontWeight: '800', fontSize: 14 }}>Crear cuenta</Text>
             </TouchableOpacity>
           </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 28 }}>
+            <View style={{ flex: 1, height: 1, backgroundColor: colors.border }} />
+            <Text style={{ color: colors.muted, fontSize: 12, marginHorizontal: 12 }}>o</Text>
+            <View style={{ flex: 1, height: 1, backgroundColor: colors.border }} />
+          </View>
+          <TouchableOpacity
+            style={{ marginTop: 18, paddingVertical: 14, borderRadius: 12, borderWidth: 1.5, borderColor: colors.border, alignItems: 'center' }}
+            onPress={loginAsGuest}
+          >
+            <Text style={{ color: colors.muted, fontWeight: '700', fontSize: 15 }}>Entrar como invitado</Text>
+          </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
     </Screen>
