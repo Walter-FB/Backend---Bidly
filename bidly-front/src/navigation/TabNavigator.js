@@ -2,6 +2,7 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/theme';
 import { useAuth } from '../context/AuthContext';
@@ -35,7 +36,8 @@ function GuestBlockScreen() {
 }
 
 // Center floating "+" — bloqueado para invitados.
-function PublishButton({ navigation }) {
+function PublishButton() {
+  const navigation = useNavigation();
   const { user, logout } = useAuth();
 
   const handlePress = () => {
@@ -109,14 +111,7 @@ export default function TabNavigator() {
       <Tab.Screen
         name="Publish"
         component={HomeScreen}
-        options={{ tabBarButton: (props) => <PublishButton {...props} /> }}
-        listeners={({ navigation }) => ({
-          tabPress: (e) => {
-            e.preventDefault();
-            if (user?.isGuest) return;
-            navigation.navigate('Publicar');
-          },
-        })}
+        options={{ tabBarButton: () => <PublishButton /> }}
       />
       <Tab.Screen
         name="Subastas"
