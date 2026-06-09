@@ -73,7 +73,7 @@ export function PerfilScreen({ navigation }) {
   const catColor = CATEGORIAS_COLOR[categoria] || colors.muted;
 
   const rows = [
-    ['Datos personales', 'Registro1'],
+    ['Datos personales', 'DatosPersonales'],
     ['Medios de pago', 'MedioPago'],
     ['Mis compras', 'MisCompras'],
     ['Historial', 'Historial'],
@@ -423,6 +423,60 @@ export function DatosGanadorScreen({ navigation, route }) {
   );
 }
 
+// ─── DATOS PERSONALES ────────────────────────────────────────────────────────
+export function DatosPersonalesScreen({ navigation }) {
+  const { user } = useAuth();
+  const [persona, setPersona] = useState(null);
+  const [cliente, setCliente] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!user?.clienteId) { setLoading(false); return; }
+    Promise.all([
+      Personas.obtener(user.clienteId),
+      Clientes.obtener(user.clienteId),
+    ])
+      .then(([p, c]) => { setPersona(p); setCliente(c); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [user]);
+
+  const filas = [
+    { label: 'Nombre completo', valor: persona?.nombre || user?.nombre || '—', icon: 'person-outline' },
+    { label: 'Email', valor: cliente?.email || user?.email || '—', icon: 'mail-outline' },
+    { label: 'Domicilio', valor: persona?.direccion || '—', icon: 'location-outline' },
+    { label: 'Documento (DNI)', valor: persona?.documento || '—', icon: 'card-outline' },
+    { label: 'Categoría', valor: CATEGORIAS_LABEL[cliente?.categoria || user?.categoria] || '—', icon: 'star-outline' },
+    { label: 'Estado de cuenta', valor: cliente?.admitido === 'si' ? 'Admitido ✓' : 'Pendiente de admisión', icon: 'shield-checkmark-outline' },
+  ];
+
+  return (
+    <Screen scroll contentStyle={{ paddingHorizontal: 22, paddingBottom: 40 }}>
+      <Header />
+      <Title>Datos{'\n'}personales</Title>
+      {loading ? (
+        <ActivityIndicator color={colors.blue} size="large" style={{ marginTop: 40 }} />
+      ) : (
+        <View style={{ gap: 10, marginTop: 8 }}>
+          {filas.map(({ label, valor, icon }) => (
+            <Card key={label} el style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+              <View style={s.dpIcon}>
+                <Ionicons name={icon} size={20} color={colors.blue} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: colors.muted, fontSize: 11, fontWeight: '800', letterSpacing: 0.5, marginBottom: 3 }}>
+                  {label.toUpperCase()}
+                </Text>
+                <Text style={{ color: '#fff', fontSize: 15, fontWeight: '600' }}>{valor}</Text>
+              </View>
+            </Card>
+          ))}
+        </View>
+      )}
+    </Screen>
+  );
+}
+
 const s = StyleSheet.create({
   bigAvatar: { width: 84, height: 84, borderRadius: 42, backgroundColor: colors.cardEl, alignItems: 'center', justifyContent: 'center' },
   catBadge: { marginTop: 10, borderRadius: 6, paddingVertical: 5, paddingHorizontal: 12 },
@@ -433,4 +487,5 @@ const s = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', borderRadius: 12 },
   photoEmpty: { borderWidth: 1.5, borderStyle: 'dashed', borderColor: colors.border, backgroundColor: colors.card, borderRadius: 12 },
   winnerAvatar: { width: 46, height: 46, borderRadius: 23, backgroundColor: colors.cardEl, alignItems: 'center', justifyContent: 'center' },
+  dpIcon: { width: 40, height: 40, borderRadius: 10, backgroundColor: 'rgba(59,130,246,0.12)', alignItems: 'center', justifyContent: 'center' },
 });

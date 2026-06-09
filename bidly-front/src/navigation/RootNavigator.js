@@ -8,7 +8,7 @@ import { SplashScreen, LoginScreen, Registro1Screen, Registro2Screen } from '../
 import { FiltrosScreen, NotificacionesScreen, FavoritosScreen } from '../screens/HomeScreens';
 import { ProductoScreen, SubastaEnVivoScreen, GanasteScreen, SubastaFinalizadaScreen } from '../screens/AuctionScreens';
 import { MedioPagoScreen, SeguroScreen, ConfirmarPagoScreen, PagoConfirmadoScreen, MultaScreen, ReembolsoScreen } from '../screens/PaymentScreens';
-import { MisComprasScreen, PublicarScreen, DatosGanadorScreen } from '../screens/AccountScreens';
+import { MisComprasScreen, PublicarScreen, DatosGanadorScreen, DatosPersonalesScreen } from '../screens/AccountScreens';
 import { DashboardAdminScreen } from '../screens/AdminScreens';
 
 const Stack = createNativeStackNavigator();
@@ -49,6 +49,7 @@ export default function RootNavigator() {
           <Stack.Screen name="MisCompras" component={MisComprasScreen} />
           <Stack.Screen name="Publicar" component={PublicarScreen} />
           <Stack.Screen name="DatosGanador" component={DatosGanadorScreen} />
+          <Stack.Screen name="DatosPersonales" component={DatosPersonalesScreen} />
           {/* admin (role-gated) */}
           {isAdmin && <Stack.Screen name="DashboardAdmin" component={DashboardAdminScreen} />}
         </Stack.Group>
