@@ -1,39 +1,51 @@
 package com.bidly.bidly_backend.service;
 
-import jakarta.mail.internet.MimeMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.mail.javamail.JavaMailSender;
-import org.springframework.mail.javamail.MimeMessageHelper;
+import org.springframework.http.*;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestTemplate;
+
+import java.util.List;
+import java.util.Map;
 
 @Service
 public class EmailService {
 
     private static final Logger log = LoggerFactory.getLogger(EmailService.class);
+    private static final String BREVO_URL = "https://api.brevo.com/v3/smtp/email";
 
-    @Autowired(required = false)
-    private JavaMailSender mailSender;
+    private final RestTemplate restTemplate = new RestTemplate();
+
+    @Value("${brevo.api.key:}")
+    private String apiKey;
 
     @Value("${bidly.mail.from:noreply@bidly.com}")
     private String fromEmail;
 
     public void sendVerificationCode(String toEmail, String code) {
-        if (mailSender == null) {
-            log.warn("JavaMailSender no configurado — verificar BREVO_SMTP_LOGIN y BREVO_SMTP_KEY en Railway.");
+        if (apiKey == null || apiKey.isBlank()) {
+            log.warn("BREVO_API_KEY no configurada en Railway.");
             throw new RuntimeException("Servicio de email no configurado. Contactá al administrador.");
         }
+
+        Map<String, Object> body = Map.of(
+            "sender",      Map.of("name", "BIDLY", "email", fromEmail),
+            "to",          List.of(Map.of("email", toEmail)),
+            "subject",     "Tu código de verificación BIDLY — " + code,
+            "htmlContent", buildHtml(code)
+        );
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("api-key", apiKey);
+        headers.setContentType(MediaType.APPLICATION_JSON);
+
         try {
-            MimeMessage msg = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(msg, true, "UTF-8");
-            helper.setFrom(fromEmail);
-            helper.setTo(toEmail);
-            helper.setSubject("Tu código de verificación BIDLY — " + code);
-            helper.setText(buildHtml(code), true);
-            mailSender.send(msg);
-            log.info("Código de verificación enviado a {}", toEmail);
+            ResponseEntity<String> response = restTemplate.postForEntity(
+                BREVO_URL, new HttpEntity<>(body, headers), String.class
+            );
+            log.info("Email enviado a {} — status {}", toEmail, response.getStatusCode());
         } catch (Exception e) {
             log.error("Error enviando email a {}: {}", toEmail, e.getMessage());
             throw new RuntimeException("No se pudo enviar el email de verificación. Revisá tu dirección de correo.");
