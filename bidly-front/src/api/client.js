@@ -6,7 +6,7 @@ import Constants from 'expo-constants';
 // Android emulator reaches host machine via 10.0.2.2; iOS simulator via localhost.
 // Override here or via app.json -> expo.extra.apiBaseUrl.
 export const BASE_URL =
-  (Constants?.expoConfig?.extra?.apiBaseUrl) || 'http://10.0.2.2:8083/api';
+  (Constants?.expoConfig?.extra?.apiBaseUrl) || 'http://backend-bidly.up.railway.app/api';
 
 const TOKEN_KEY = '@bidly_token';
 
