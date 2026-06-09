@@ -197,7 +197,7 @@ export function HistorialScreen({ navigation }) {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg, paddingTop: insets.top }}>
-      <Header hideBack right={<Display style={{ color: colors.blueLogo, fontSize: 19 }}>BIDLY</Display>} />
+      <Header right={<Display style={{ color: colors.blueLogo, fontSize: 19 }}>BIDLY</Display>} />
       <ScrollView contentContainerStyle={{ paddingHorizontal: 22, paddingBottom: 28 }} showsVerticalScrollIndicator={false}>
         <Title>Historial{'\n'}subastas</Title>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginVertical: 12 }}>
