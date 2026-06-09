@@ -13,6 +13,10 @@ export const Auth = {
     api.post('/auth/register', payload, { auth: false }),
   me: () => api.get('/auth/me'),
   logout: () => setToken(null),
+  sendVerification: (email) =>
+    api.post('/auth/send-verification', { email }, { auth: false }),
+  verifyCode: (email, code) =>
+    api.post('/auth/verify-code', { email, code }, { auth: false }),
 };
 
 // ─── SUBASTAS ────────────────────────────────────────────────────────────────

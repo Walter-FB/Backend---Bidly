@@ -4,7 +4,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useAuth } from '../context/AuthContext';
 import TabNavigator from './TabNavigator';
 
-import { SplashScreen, LoginScreen, Registro1Screen, Registro2Screen } from '../screens/AuthScreens';
+import { SplashScreen, LoginScreen, RegistroScreen, VerificarEmailScreen, CrearPasswordScreen } from '../screens/AuthScreens';
 import { FiltrosScreen, NotificacionesScreen, FavoritosScreen } from '../screens/HomeScreens';
 import { ProductoScreen, SubastaEnVivoScreen, GanasteScreen, SubastaFinalizadaScreen } from '../screens/AuctionScreens';
 import { MedioPagoScreen, SeguroScreen, ConfirmarPagoScreen, PagoConfirmadoScreen, MultaScreen, ReembolsoScreen } from '../screens/PaymentScreens';
@@ -23,8 +23,9 @@ export default function RootNavigator() {
       ) : !user ? (
         <Stack.Group>
           <Stack.Screen name="Login" component={LoginScreen} />
-          <Stack.Screen name="Registro1" component={Registro1Screen} />
-          <Stack.Screen name="Registro2" component={Registro2Screen} />
+          <Stack.Screen name="Registro" component={RegistroScreen} />
+          <Stack.Screen name="VerificarEmail" component={VerificarEmailScreen} />
+          <Stack.Screen name="CrearPassword" component={CrearPasswordScreen} />
         </Stack.Group>
       ) : (
         <Stack.Group>
