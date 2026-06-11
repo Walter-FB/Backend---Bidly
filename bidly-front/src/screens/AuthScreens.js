@@ -58,7 +58,7 @@ export function LoginScreen({ navigation }) {
           <Title style={{ fontSize: 30 }}>Iniciar sesión</Title>
           <Sub>Ingresá con tu cuenta BIDLY</Sub>
           <View style={{ gap: 12, marginTop: 8 }}>
-            <Field placeholder="Email" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" />
+            <Field placeholder="Email" value={email} onChangeText={(v) => setEmail(v.toLowerCase())} keyboardType="email-address" autoCapitalize="none" />
             <Field placeholder="Contraseña" value={pass} onChangeText={setPass} secureTextEntry />
           </View>
           <TouchableOpacity
@@ -131,13 +131,7 @@ export function RegistroScreen({ navigation }) {
         <Field placeholder="Domicilio legal" value={f.dom} onChangeText={set('dom')} />
         <Field placeholder="N° de documento (DNI)" value={f.doc} onChangeText={set('doc')} keyboardType="numeric" />
         <View style={st.divider} />
-        <Field
-          placeholder="Email"
-          value={f.email}
-          onChangeText={set('email')}
-          keyboardType="email-address"
-          autoCapitalize="none"
-        />
+        <Field placeholder="Email" value={f.email} onChangeText={(v) => set('email')(v.toLowerCase())} keyboardType="email-address" autoCapitalize="none" />
       </View>
       <Btn
         title={loading ? 'Enviando código…' : 'Continuar'}
