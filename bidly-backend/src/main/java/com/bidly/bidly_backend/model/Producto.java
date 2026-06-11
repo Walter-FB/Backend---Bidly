@@ -3,6 +3,7 @@ package com.bidly.bidly_backend.model;
 import jakarta.persistence.*;
 import lombok.*;
 import java.time.LocalDate;
+import java.util.List;
 
 @Entity
 @Table(name = "productos")
@@ -26,4 +27,7 @@ public class Producto {
     private Long revisor;
     private Long duenio;
     private String seguro;
+
+    @OneToMany(mappedBy = "producto", fetch = FetchType.LAZY)
+    private List<Foto> fotos;
 }
