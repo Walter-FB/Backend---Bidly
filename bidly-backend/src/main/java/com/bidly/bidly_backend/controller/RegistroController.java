@@ -1,7 +1,9 @@
 package com.bidly.bidly_backend.controller;
 
+import com.bidly.bidly_backend.model.Reembolso;
 import com.bidly.bidly_backend.model.RegistroDeSubasta;
 import com.bidly.bidly_backend.repository.ClienteRepository;
+import com.bidly.bidly_backend.repository.ReembolsoRepository;
 import com.bidly.bidly_backend.repository.RegistroDeSubastaRepository;
 import com.bidly.bidly_backend.repository.SubastaRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -17,6 +19,9 @@ public class RegistroController {
 
     @Autowired
     private RegistroDeSubastaRepository registroRepository;
+
+    @Autowired
+    private ReembolsoRepository reembolsoRepository;
 
     @Autowired
     private ClienteRepository clienteRepository;
@@ -62,8 +67,12 @@ public class RegistroController {
         }
         return registroRepository.findById(id)
                 .map(r -> {
+                    Reembolso reem = reembolsoRepository.findById(id).orElse(new Reembolso());
+                    reem.setRegistro(id);
+                    reem.setReembolsada(valor);
+                    reembolsoRepository.save(reem);
                     r.setReembolsada(valor);
-                    return ResponseEntity.ok((Object) registroRepository.save(r));
+                    return ResponseEntity.ok((Object) r);
                 })
                 .orElse(ResponseEntity.notFound().build());
     }

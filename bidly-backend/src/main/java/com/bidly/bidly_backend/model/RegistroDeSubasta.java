@@ -29,5 +29,6 @@ public class RegistroDeSubasta {
 
     private BigDecimal importe;
     private BigDecimal comision;
+    @Transient
     private String reembolsada;
 }

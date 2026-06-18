@@ -2,7 +2,9 @@ package com.bidly.bidly_backend.controller;
 
 import com.bidly.bidly_backend.model.ItemCatalogo;
 import com.bidly.bidly_backend.model.Subasta;
+import com.bidly.bidly_backend.model.SubastaMoneda;
 import com.bidly.bidly_backend.repository.ItemCatalogoRepository;
+import com.bidly.bidly_backend.repository.SubastaMonedaRepository;
 import com.bidly.bidly_backend.repository.SubastaRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -19,6 +21,9 @@ public class SubastaController {
     private SubastaRepository subastaRepository;
 
     @Autowired
+    private SubastaMonedaRepository subastaMonedaRepository;
+
+    @Autowired
     private ItemCatalogoRepository itemCatalogoRepository;
 
     @GetMapping
@@ -26,19 +31,36 @@ public class SubastaController {
             @RequestParam(required = false) String estado,
             @RequestParam(required = false) String categoria,
             @RequestParam(required = false) String moneda) {
-        return subastaRepository.findByFiltros(estado, categoria, moneda);
+        List<Subasta> lista = subastaRepository.findByFiltros(estado, categoria, moneda);
+        lista.forEach(s ->
+            subastaMonedaRepository.findById(s.getIdentificador())
+                .ifPresent(m -> s.setMoneda(m.getMoneda()))
+        );
+        return lista;
     }
 
     @GetMapping("/{id}")
     public ResponseEntity<Subasta> detalle(@PathVariable Long id) {
         return subastaRepository.findById(id)
-            .map(ResponseEntity::ok)
+            .map(s -> {
+                subastaMonedaRepository.findById(id)
+                    .ifPresent(m -> s.setMoneda(m.getMoneda()));
+                return ResponseEntity.ok(s);
+            })
             .orElse(ResponseEntity.notFound().build());
     }
 
     @PostMapping
     public ResponseEntity<Subasta> crear(@RequestBody Subasta subasta) {
-        return ResponseEntity.status(201).body(subastaRepository.save(subasta));
+        Subasta guardada = subastaRepository.save(subasta);
+        if (subasta.getMoneda() != null && !subasta.getMoneda().isBlank()) {
+            SubastaMoneda sm = new SubastaMoneda();
+            sm.setSubasta(guardada.getIdentificador());
+            sm.setMoneda(subasta.getMoneda());
+            subastaMonedaRepository.save(sm);
+            guardada.setMoneda(subasta.getMoneda());
+        }
+        return ResponseEntity.status(201).body(guardada);
     }
 
     @GetMapping("/{id}/catalogo")

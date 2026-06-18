@@ -23,5 +23,6 @@ public class Subasta {
     private Long subastador;
     private String ubicacion;
     private String categoria;
+    @Transient
     private String moneda;
 }

@@ -1,6 +1,7 @@
 package com.bidly.bidly_backend.repository;
 
 import com.bidly.bidly_backend.model.Subasta;
+import com.bidly.bidly_backend.model.SubastaMoneda;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -14,7 +15,8 @@ public interface SubastaRepository extends JpaRepository<Subasta, Long> {
     @Query("SELECT s FROM Subasta s WHERE " +
            "(:estado IS NULL OR s.estado = :estado) AND " +
            "(:categoria IS NULL OR s.categoria = :categoria) AND " +
-           "(:moneda IS NULL OR s.moneda = :moneda)")
+           "(:moneda IS NULL OR s.identificador IN " +
+           "   (SELECT m.subasta FROM SubastaMoneda m WHERE m.moneda = :moneda))")
     List<Subasta> findByFiltros(@Param("estado") String estado,
                                 @Param("categoria") String categoria,
                                 @Param("moneda") String moneda);

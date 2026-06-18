@@ -19,8 +19,8 @@ public class Cliente {
     private String admitido;
     private String categoria;
     private Long verificador;
+    @Transient
     private String email;
-
-    @Column(name = "passwordhash")
+    @Transient
     private String passwordHash;
 }

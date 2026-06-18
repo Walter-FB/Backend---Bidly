@@ -27,6 +27,6 @@ public class Puja {
 
     private BigDecimal importe;
     private String ganador;
-    @Column(name = "fechahora")
+    @Transient
     private LocalDateTime fechaHora;
 }

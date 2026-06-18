@@ -1,8 +1,10 @@
 package com.bidly.bidly_backend.controller;
 
 import com.bidly.bidly_backend.model.Cliente;
+import com.bidly.bidly_backend.model.Credencial;
 import com.bidly.bidly_backend.model.Persona;
 import com.bidly.bidly_backend.repository.ClienteRepository;
+import com.bidly.bidly_backend.repository.CredencialRepository;
 import com.bidly.bidly_backend.repository.PersonaRepository;
 import com.bidly.bidly_backend.service.EmailService;
 import org.slf4j.Logger;
@@ -25,6 +27,7 @@ public class AuthController {
     private static final Logger log = LoggerFactory.getLogger(AuthController.class);
 
     @Autowired private ClienteRepository clienteRepository;
+    @Autowired private CredencialRepository credencialRepository;
     @Autowired private PersonaRepository personaRepository;
     @Autowired private EmailService emailService;
 
@@ -48,7 +51,7 @@ public class AuthController {
         if (email == null || !email.contains("@")) {
             return ResponseEntity.badRequest().body(Map.of("error", "Email inválido."));
         }
-        if (clienteRepository.findByEmail(email).isPresent()) {
+        if (credencialRepository.findByEmail(email).isPresent()) {
             return ResponseEntity.status(409).body(Map.of("error", "El email ya está registrado."));
         }
         String code = String.format("%06d", new Random().nextInt(1_000_000));
@@ -97,9 +100,11 @@ public class AuthController {
             return ResponseEntity.badRequest().body(Map.of("error", "Email y contraseña son obligatorios"));
         }
         try {
-            return clienteRepository.findByEmail(email)
-                .filter(c -> password.equals(c.getPasswordHash()))
+            return credencialRepository.findByEmail(email)
+                .filter(cred -> password.equals(cred.getPasswordHash()))
+                .flatMap(cred -> clienteRepository.findById(cred.getCliente()))
                 .map(c -> {
+                    c.setEmail(email);
                     String token = UUID.randomUUID().toString();
                     tokenStore.put(token, c.getIdentificador());
                     log.info("LOGIN OK - email={} clienteId={}", email, c.getIdentificador());
@@ -167,7 +172,7 @@ public class AuthController {
             return ResponseEntity.badRequest().body(Map.of("error", "Email y contraseña son obligatorios"));
         }
         try {
-            if (clienteRepository.findByEmail(email).isPresent()) {
+            if (credencialRepository.findByEmail(email).isPresent()) {
                 log.warn("REGISTRO - email ya registrado: {}", email);
                 return ResponseEntity.status(409).body(Map.of("error", "El email ya está registrado"));
             }
@@ -191,6 +196,11 @@ public class AuthController {
             catch (NumberFormatException ignored) {}
             cliente.setNumeroPais(numeroPais);
             cliente = clienteRepository.save(cliente);
+            Credencial cred = new Credencial();
+            cred.setCliente(cliente.getIdentificador());
+            cred.setEmail(email);
+            cred.setPasswordHash(password);
+            credencialRepository.save(cred);
             log.info("REGISTRO OK - email={} clienteId={}", email, cliente.getIdentificador());
 
             String token = UUID.randomUUID().toString();
@@ -205,10 +215,13 @@ public class AuthController {
     private Map<String, Object> buildUserResponse(String token, Cliente c) {
         String nombre = personaRepository.findById(c.getIdentificador())
             .map(Persona::getNombre).orElse("");
+        String email = (c.getEmail() != null) ? c.getEmail()
+            : credencialRepository.findById(c.getIdentificador())
+                  .map(Credencial::getEmail).orElse("");
         Map<String, Object> resp = new HashMap<>();
         resp.put("token", token);
         resp.put("clienteId", c.getIdentificador());
-        resp.put("email", c.getEmail());
+        resp.put("email", email);
         resp.put("categoria", c.getCategoria());
         resp.put("admitido", c.getAdmitido());
         resp.put("nombre", nombre);

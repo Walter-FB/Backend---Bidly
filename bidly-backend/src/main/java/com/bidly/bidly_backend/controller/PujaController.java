@@ -2,8 +2,10 @@ package com.bidly.bidly_backend.controller;
 
 import com.bidly.bidly_backend.model.ItemCatalogo;
 import com.bidly.bidly_backend.model.Puja;
+import com.bidly.bidly_backend.model.PujoFecha;
 import com.bidly.bidly_backend.repository.ItemCatalogoRepository;
 import com.bidly.bidly_backend.repository.PujaRepository;
+import com.bidly.bidly_backend.repository.PujoFechaRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -24,6 +26,9 @@ public class PujaController {
 
     @Autowired
     private ItemCatalogoRepository itemCatalogoRepository;
+
+    @Autowired
+    private PujoFechaRepository pujoFechaRepository;
 
     @GetMapping
     public ResponseEntity<?> listar(
@@ -69,8 +74,13 @@ public class PujaController {
         }
 
         puja.setGanador("no");
-        puja.setFechaHora(LocalDateTime.now());
         Puja guardada = pujaRepository.save(puja);
+        LocalDateTime ahora = LocalDateTime.now();
+        PujoFecha pf = new PujoFecha();
+        pf.setPujo(guardada.getIdentificador());
+        pf.setFechaHora(ahora);
+        pujoFechaRepository.save(pf);
+        guardada.setFechaHora(ahora);
         return ResponseEntity.status(201).body(guardada);
     }
 
