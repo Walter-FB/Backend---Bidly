@@ -1,7 +1,11 @@
 package com.bidly.bidly_backend.controller;
 
+import com.bidly.bidly_backend.model.Duenio;
+import com.bidly.bidly_backend.model.Empleado;
 import com.bidly.bidly_backend.model.Foto;
 import com.bidly.bidly_backend.model.Producto;
+import com.bidly.bidly_backend.repository.DuenioRepository;
+import com.bidly.bidly_backend.repository.EmpleadoRepository;
 import com.bidly.bidly_backend.repository.FotoRepository;
 import com.bidly.bidly_backend.repository.ProductoRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -13,6 +17,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 
 @RestController
 @RequestMapping("/api/productos")
@@ -24,6 +29,20 @@ public class ProductoController {
     @Autowired
     private FotoRepository fotoRepository;
 
+    @Autowired
+    private DuenioRepository duenioRepository;
+
+    @Autowired
+    private EmpleadoRepository empleadoRepository;
+
+    private final Random random = new Random();
+
+    private Long empleadoAleatorio() {
+        List<Empleado> empleados = empleadoRepository.findAll();
+        if (empleados.isEmpty()) return 1L;
+        return empleados.get(random.nextInt(empleados.size())).getIdentificador();
+    }
+
     @GetMapping("/{id}")
     public ResponseEntity<Producto> obtener(@PathVariable Long id) {
         return productoRepository.findById(id)
@@ -33,10 +52,20 @@ public class ProductoController {
 
     @PostMapping
     public ResponseEntity<Producto> crear(@RequestBody Producto producto) {
-        // Si no viene revisor, usar el dueño para cumplir el NOT NULL de la DB
-        if (producto.getRevisor() == null && producto.getDuenio() != null) {
-            producto.setRevisor(producto.getDuenio());
+        Long revisorId = empleadoAleatorio();
+        producto.setRevisor(revisorId);
+
+        Long duenioId = producto.getDuenio();
+        if (duenioId != null && !duenioRepository.existsById(duenioId)) {
+            Duenio nuevo = new Duenio();
+            nuevo.setIdentificador(duenioId);
+            nuevo.setNumeroPais(1);
+            nuevo.setVerificacionFinanciera("no");
+            nuevo.setVerificacionJudicial("no");
+            nuevo.setVerificador(revisorId);
+            duenioRepository.save(nuevo);
         }
+
         return ResponseEntity.status(201).body(productoRepository.save(producto));
     }
 
