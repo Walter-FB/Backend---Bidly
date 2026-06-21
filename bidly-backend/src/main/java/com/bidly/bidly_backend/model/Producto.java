@@ -1,5 +1,6 @@
 package com.bidly.bidly_backend.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.*;
 import java.time.LocalDate;
@@ -28,6 +29,7 @@ public class Producto {
     private Long duenio;
     private String seguro;
 
+    @JsonIgnore
     @OneToMany(mappedBy = "producto", fetch = FetchType.LAZY)
     private List<Foto> fotos;
 }

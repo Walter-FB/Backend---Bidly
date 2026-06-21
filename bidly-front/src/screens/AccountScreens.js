@@ -75,6 +75,7 @@ export function PerfilScreen({ navigation }) {
   const catColor = CATEGORIAS_COLOR[categoria] || colors.muted;
 
   const rows = [
+    ['Mis Productos', 'MisProductos'],
     ['Datos personales', 'DatosPersonales'],
     ['Medios de pago', 'MedioPago'],
     ['Mis compras', 'MisCompras'],
@@ -562,6 +563,18 @@ export function CrearSubastaScreen({ navigation, route }) {
     );
   };
 
+  const agregarProducto = (prod) => {
+    setItemsSeleccionados((prev) => {
+      if (prev.find((i) => i.productoId === prod.identificador)) return prev;
+      return [...prev, {
+        productoId: prod.identificador,
+        titulo: prod.descripcionCatalogo || `Producto #${prod.identificador}`,
+        precioBase: '',
+        comision: '10',
+      }];
+    });
+  };
+
   const onSiguiente = () => {
     if (!f.fecha) return Alert.alert('Fecha requerida', 'Seleccioná una fecha en el calendario.');
     if (!f.hora) return Alert.alert('Hora requerida', 'Ingresá la hora de inicio.');
@@ -682,13 +695,19 @@ export function CrearSubastaScreen({ navigation, route }) {
         <Card el style={{ alignItems: 'center', paddingVertical: 20, marginBottom: 14 }}>
           <Ionicons name="cube-outline" size={36} color={colors.muted} />
           <Text style={{ color: colors.muted, fontSize: 13, marginTop: 8, textAlign: 'center' }}>
-            No hay productos aún.{'\n'}Publicá uno o agregá su ID abajo.
+            No hay productos aún.
           </Text>
           <TouchableOpacity
             style={{ marginTop: 12 }}
+            onPress={() => navigation.navigate('MisProductos', { onSeleccionar: agregarProducto })}
+          >
+            <Text style={{ color: colors.blue, fontWeight: '700', fontSize: 13 }}>Elegir de mis productos →</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={{ marginTop: 8 }}
             onPress={() => navigation.navigate('Publicar')}
           >
-            <Text style={{ color: colors.blue, fontWeight: '700', fontSize: 13 }}>+ Publicar nuevo producto</Text>
+            <Text style={{ color: colors.muted, fontSize: 12 }}>+ Publicar nuevo producto</Text>
           </TouchableOpacity>
         </Card>
       )}
@@ -732,48 +751,19 @@ export function CrearSubastaScreen({ navigation, route }) {
         </Card>
       ))}
 
-      <AgregarProductoBtn
-        onAgregar={(id, titulo) => {
-          const numId = parseInt(id, 10);
-          if (isNaN(numId)) return Alert.alert('ID inválido', 'El ID debe ser un número.');
-          if (itemsSeleccionados.find((i) => i.productoId === numId)) return;
-          setItemsSeleccionados((prev) => [...prev, { productoId: numId, titulo, precioBase: '', comision: '10' }]);
-        }}
-      />
+      <TouchableOpacity
+        style={cs.addProductoBtn}
+        onPress={() => navigation.navigate('MisProductos', { onSeleccionar: agregarProducto })}
+        activeOpacity={0.8}
+      >
+        <Ionicons name="add-circle-outline" size={20} color={colors.blue} />
+        <Text style={{ color: colors.blue, fontWeight: '700', fontSize: 14 }}>Elegir de mis productos</Text>
+      </TouchableOpacity>
 
       <View style={{ marginTop: 24 }}>
         <Btn title={loading ? 'Creando subasta…' : `Crear subasta con ${itemsSeleccionados.length} producto(s)`} onPress={onCrear} disabled={loading || itemsSeleccionados.length === 0} />
       </View>
     </Screen>
-  );
-}
-
-function AgregarProductoBtn({ onAgregar }) {
-  const [id, setId] = useState('');
-  return (
-    <Card style={{ gap: 10 }}>
-      <Text style={{ color: colors.muted, fontSize: 12, fontWeight: '700' }}>AGREGAR PRODUCTO POR ID</Text>
-      <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
-        <View style={{ flex: 1 }}>
-          <Field
-            placeholder="ID del producto (ej: 12)"
-            value={id}
-            onChangeText={setId}
-            keyboardType="numeric"
-          />
-        </View>
-        <TouchableOpacity
-          style={[cs.addBtn, !id.trim() && { opacity: 0.4 }]}
-          onPress={() => { if (id.trim()) { onAgregar(id); setId(''); } }}
-          disabled={!id.trim()}
-        >
-          <Ionicons name="add" size={22} color="#fff" />
-        </TouchableOpacity>
-      </View>
-      <Text style={{ color: colors.muted, fontSize: 11.5 }}>
-        Encontrás el ID en el alert de confirmación al publicar un producto.
-      </Text>
-    </Card>
   );
 }
 
@@ -1027,6 +1017,101 @@ export function DatosPersonalesScreen({ navigation }) {
   );
 }
 
+// ─── MIS PRODUCTOS SCREEN ────────────────────────────────────────────────────
+export function MisProductosScreen({ navigation, route }) {
+  const { user } = useAuth();
+  const onSeleccionar = route.params?.onSeleccionar;
+  const modoSeleccion = !!onSeleccionar;
+  const [productos, setProductos] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const cargar = () => {
+      if (!user?.clienteId) { setLoading(false); return; }
+      setLoading(true);
+      Productos.porDuenio(user.clienteId)
+        .then((data) => setProductos(data || []))
+        .catch(() => setProductos([]))
+        .finally(() => setLoading(false));
+    };
+    const unsub = navigation.addListener('focus', cargar);
+    return unsub;
+  }, [navigation, user]);
+
+  const seleccionar = (p) => {
+    onSeleccionar(p);
+    navigation.goBack();
+  };
+
+  return (
+    <Screen scroll contentStyle={{ paddingHorizontal: 22, paddingBottom: 40 }}>
+      <Header />
+      <Title>{modoSeleccion ? 'Elegir\nproducto' : 'Mis\nproductos'}</Title>
+      {modoSeleccion && (
+        <Sub>Tocá un producto para agregarlo a la subasta.</Sub>
+      )}
+      {loading && <ActivityIndicator color={colors.blue} style={{ marginTop: 20 }} />}
+      {!loading && productos.length === 0 && (
+        <Card el style={{ alignItems: 'center', paddingVertical: 28, gap: 12 }}>
+          <Ionicons name="cube-outline" size={44} color={colors.muted} />
+          <Text style={{ color: colors.muted, fontSize: 13, textAlign: 'center' }}>
+            Todavía no publicaste ningún producto.
+          </Text>
+          <TouchableOpacity onPress={() => navigation.navigate('Publicar')}>
+            <Text style={{ color: colors.blue, fontWeight: '700', fontSize: 13 }}>+ Publicar mi primer producto</Text>
+          </TouchableOpacity>
+        </Card>
+      )}
+      <View style={{ gap: 12 }}>
+        {productos.map((p) => (
+          <TouchableOpacity
+            key={p.identificador}
+            onPress={modoSeleccion ? () => seleccionar(p) : undefined}
+            activeOpacity={modoSeleccion ? 0.75 : 1}
+          >
+            <Card el style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
+              <View style={{ width: 64, height: 64, borderRadius: 10, backgroundColor: colors.cardEl, overflow: 'hidden' }}>
+                <Image
+                  source={{ uri: `${BASE_URL}/productos/${p.identificador}/portada` }}
+                  style={{ width: '100%', height: '100%' }}
+                  resizeMode="cover"
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
+                  <Display style={{ fontSize: 14, flex: 1, marginRight: 8 }} numberOfLines={1}>
+                    {p.descripcionCatalogo || `Producto #${p.identificador}`}
+                  </Display>
+                  <Tag
+                    label={p.disponible === 'si' ? 'ACTIVO' : 'INACTIVO'}
+                    color={p.disponible === 'si' ? colors.green : colors.muted}
+                  />
+                </View>
+                {!!p.descripcionCompleta && (
+                  <Text style={{ color: colors.muted, fontSize: 12 }} numberOfLines={2}>
+                    {p.descripcionCompleta}
+                  </Text>
+                )}
+                <Text style={{ color: colors.blue, fontSize: 11, fontWeight: '700', marginTop: 4 }}>
+                  ID #{p.identificador}
+                </Text>
+              </View>
+              {modoSeleccion && (
+                <Ionicons name="add-circle" size={28} color={colors.blue} />
+              )}
+            </Card>
+          </TouchableOpacity>
+        ))}
+      </View>
+      {!modoSeleccion && (
+        <View style={{ marginTop: 24 }}>
+          <Btn title="+ Publicar nuevo producto" onPress={() => navigation.navigate('Publicar')} />
+        </View>
+      )}
+    </Screen>
+  );
+}
+
 const s = StyleSheet.create({
   bigAvatar: { width: 84, height: 84, borderRadius: 42, backgroundColor: colors.cardEl, alignItems: 'center', justifyContent: 'center' },
   catBadge: { marginTop: 10, borderRadius: 6, paddingVertical: 5, paddingHorizontal: 12 },
@@ -1072,6 +1157,7 @@ const cs = StyleSheet.create({
   pickerCellText: { color: '#fff', fontSize: 14, fontWeight: '700' },
   pickerMinCell: { flex: 1, paddingVertical: 18, alignItems: 'center', justifyContent: 'center',
     borderRadius: 12, backgroundColor: colors.cardEl },
-  // Agregar producto btn
-  addBtn: { backgroundColor: colors.blue, borderRadius: 10, width: 46, height: 46, alignItems: 'center', justifyContent: 'center' },
+  addProductoBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    backgroundColor: colors.blueSoft, borderWidth: 1, borderColor: colors.blue,
+    borderRadius: 12, paddingVertical: 14, marginTop: 4 },
 });

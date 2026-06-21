@@ -117,6 +117,7 @@ export const Personas = {
 // POST  /api/productos/{id}/fotos
 export const Productos = {
   obtener: (id) => api.get(`/productos/${id}`),
+  porDuenio: (duenioId) => api.get(`/productos/duenio/${duenioId}`),
   crear: (payload) => api.post('/productos', payload),
   disponible: (id, disponible) =>
     api.patch(`/productos/${id}/disponible`, { disponible }),

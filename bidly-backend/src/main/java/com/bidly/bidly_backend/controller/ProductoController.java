@@ -54,6 +54,11 @@ public class ProductoController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
+    @GetMapping("/duenio/{duenioId}")
+    public ResponseEntity<List<Producto>> porDuenio(@PathVariable Long duenioId) {
+        return ResponseEntity.ok(productoRepository.findByDuenio(duenioId));
+    }
+
     @PostMapping
     public ResponseEntity<Producto> crear(@RequestBody Producto producto) {
         Long revisorId = empleadoAleatorio();
