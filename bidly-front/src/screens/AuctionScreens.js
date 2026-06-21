@@ -192,6 +192,7 @@ export function ProductoScreen({ navigation, route }) {
             onPress={() => navigation.navigate('SubastaEnVivo', {
               subastaId: subasta.identificador,
               itemId: primerItem.identificador,
+              productoId: primerItem.producto?.identificador,
               precioBase: primerItem.precioBase,
               titulo,
               moneda: subasta.moneda,
@@ -212,6 +213,7 @@ export function SubastaEnVivoScreen({ navigation, route }) {
   const {
     subastaId,
     itemId,
+    productoId,
     precioBase = 0,
     titulo = 'Subasta en vivo',
     moneda = 'pesos',
@@ -353,7 +355,11 @@ export function SubastaEnVivoScreen({ navigation, route }) {
       <Header />
       <ScrollView contentContainerStyle={{ paddingHorizontal: 22, paddingBottom: 120 }} showsVerticalScrollIndicator={false}>
         <View>
-          <ImgBox style={{ width: '100%', height: 170 }} size={40} />
+          <ImgBox
+            style={{ width: '100%', height: 200 }}
+            size={40}
+            src={productoId ? `${BASE_URL}/productos/${productoId}/portada` : undefined}
+          />
           <LiveBadge style={{ position: 'absolute', top: 12, left: 12 }} />
         </View>
         <Display style={{ fontSize: 20, marginVertical: 14, lineHeight: 23 }}>{titulo}</Display>
@@ -695,6 +701,14 @@ export function SubastaAdminScreen({ navigation, route }) {
         {/* Ítem activo */}
         {itemActivo ? (
           <Card el style={{ gap: 10 }}>
+            {/* Foto del ítem */}
+            {itemActivo.producto?.identificador && (
+              <ImgBox
+                style={{ width: '100%', height: 160, borderRadius: 10 }}
+                size={36}
+                src={`${BASE_URL}/productos/${itemActivo.producto.identificador}/portada`}
+              />
+            )}
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
               <Text style={{ color: colors.muted, fontSize: 11, fontWeight: '800', letterSpacing: 1 }}>ÍTEM EN SUBASTA</Text>
               {itemActivoAdjudicado && <Tag label="ADJUDICADO" color={colors.green} />}

@@ -451,62 +451,62 @@ function CalendarPicker({ value, onChange }) {
 }
 
 // ─── TIME SELECTOR ────────────────────────────────────────────────────────────
+const MINUTOS_OPTS = ['00', '15', '30', '45'];
+
 function TimeSelector({ value, onChange }) {
   const [hh, setHh] = useState(value ? value.split(':')[0] : '');
-  const [mm, setMm] = useState(value ? value.split(':')[1] : '');
-  const mmRef = useRef(null);
+  const mm = value ? value.split(':')[1] : null;
 
-  const update = (newHh, newMm) => {
+  const commit = (newHh, newMm) => {
     const h = newHh.replace(/\D/g, '').slice(0, 2);
-    const m = newMm.replace(/\D/g, '').slice(0, 2);
-    if (h && m) {
-      const hNum = Math.min(23, parseInt(h, 10));
-      const mNum = Math.min(59, parseInt(m, 10));
-      onChange(`${String(hNum).padStart(2,'0')}:${String(mNum).padStart(2,'0')}`);
-    } else {
-      onChange('');
-    }
+    if (!h || !newMm) { onChange(''); return; }
+    const hNum = Math.min(23, parseInt(h, 10));
+    onChange(`${String(hNum).padStart(2, '0')}:${newMm}`);
   };
 
   return (
-    <View style={cs.timeRow}>
-      <Ionicons name="time-outline" size={20} color={value ? colors.blue : colors.muted} style={{ marginRight: 10 }} />
-      <View style={cs.timeBox}>
-        <TextInput
-          style={cs.timeInput}
-          placeholder="HH"
-          placeholderTextColor={colors.muted}
-          value={hh}
-          keyboardType="number-pad"
-          maxLength={2}
-          onChangeText={(v) => {
-            const clean = v.replace(/\D/g, '').slice(0, 2);
-            setHh(clean);
-            if (clean.length === 2) mmRef.current?.focus();
-            update(clean, mm);
-          }}
-        />
+    <View style={{ gap: 10 }}>
+      {/* Hora */}
+      <View style={cs.timeRow}>
+        <Ionicons name="time-outline" size={20} color={value ? colors.blue : colors.muted} style={{ marginRight: 10 }} />
+        <View style={cs.timeBox}>
+          <TextInput
+            style={cs.timeInput}
+            placeholder="HH"
+            placeholderTextColor={colors.muted}
+            value={hh}
+            keyboardType="number-pad"
+            maxLength={2}
+            onChangeText={(v) => {
+              const clean = v.replace(/\D/g, '').slice(0, 2);
+              setHh(clean);
+              commit(clean, mm);
+            }}
+          />
+        </View>
+        <Text style={{ color: colors.muted, fontSize: 24, fontWeight: '800', marginHorizontal: 8 }}>:</Text>
+        <Text style={{ color: mm ? '#fff' : colors.muted, fontSize: 26, fontWeight: '800', minWidth: 42 }}>
+          {mm ?? '--'}
+        </Text>
+        {value && (
+          <Text style={{ color: colors.muted, fontSize: 13, marginLeft: 8 }}>hs</Text>
+        )}
       </View>
-      <Text style={{ color: colors.muted, fontSize: 24, fontWeight: '800', marginHorizontal: 6 }}>:</Text>
-      <View style={cs.timeBox}>
-        <TextInput
-          ref={mmRef}
-          style={cs.timeInput}
-          placeholder="MM"
-          placeholderTextColor={colors.muted}
-          value={mm}
-          keyboardType="number-pad"
-          maxLength={2}
-          onChangeText={(v) => {
-            const clean = v.replace(/\D/g, '').slice(0, 2);
-            setMm(clean);
-            update(hh, clean);
-          }}
-        />
+      {/* Minutos chips */}
+      <View style={{ flexDirection: 'row', gap: 10 }}>
+        {MINUTOS_OPTS.map((opt) => {
+          const active = mm === opt;
+          return (
+            <TouchableOpacity
+              key={opt}
+              style={[cs.minChip, active && cs.minChipActive]}
+              onPress={() => commit(hh, opt)}
+            >
+              <Text style={[cs.minChipText, active && { color: '#fff' }]}>{opt}</Text>
+            </TouchableOpacity>
+          );
+        })}
       </View>
-      {value && (
-        <Text style={{ color: colors.muted, fontSize: 13, marginLeft: 10 }}>hs</Text>
-      )}
     </View>
   );
 }
@@ -1043,6 +1043,10 @@ const cs = StyleSheet.create({
     borderColor: colors.border, borderRadius: 12, paddingVertical: 10, paddingHorizontal: 14 },
   timeBox: { backgroundColor: colors.cardEl, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 },
   timeInput: { color: '#fff', fontSize: 26, fontWeight: '800', textAlign: 'center', minWidth: 46 },
+  minChip: { flex: 1, paddingVertical: 10, borderRadius: 10, borderWidth: 1.5, borderColor: colors.border,
+    alignItems: 'center', backgroundColor: colors.card },
+  minChipActive: { backgroundColor: colors.blue, borderColor: colors.blue },
+  minChipText: { color: colors.muted, fontSize: 17, fontWeight: '800' },
   // Agregar producto btn
   addBtn: { backgroundColor: colors.blue, borderRadius: 10, width: 46, height: 46, alignItems: 'center', justifyContent: 'center' },
 });
