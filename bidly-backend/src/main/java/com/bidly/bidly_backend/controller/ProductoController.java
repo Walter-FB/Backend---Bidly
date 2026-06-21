@@ -33,6 +33,10 @@ public class ProductoController {
 
     @PostMapping
     public ResponseEntity<Producto> crear(@RequestBody Producto producto) {
+        // Si no viene revisor, usar el dueño para cumplir el NOT NULL de la DB
+        if (producto.getRevisor() == null && producto.getDuenio() != null) {
+            producto.setRevisor(producto.getDuenio());
+        }
         return ResponseEntity.status(201).body(productoRepository.save(producto));
     }
 
