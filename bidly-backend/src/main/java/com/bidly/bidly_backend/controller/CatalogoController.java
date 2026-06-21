@@ -36,7 +36,7 @@ public class CatalogoController {
         Catalogo c = new Catalogo();
         c.setDescripcion(body.getOrDefault("descripcion", "Catálogo").toString());
         c.setSubasta(subasta);
-        c.setResponsable(Long.valueOf(body.get("responsable").toString()));
+        c.setResponsable(1L);
         return ResponseEntity.status(201).body(catalogoRepository.save(c));
     }
 
