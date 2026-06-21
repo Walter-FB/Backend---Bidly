@@ -1,5 +1,7 @@
 package com.bidly.bidly_backend.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -17,7 +19,9 @@ public class Foto {
 
     @ManyToOne
     @JoinColumn(name = "producto")
+    @JsonIgnoreProperties("fotos")
     private Producto producto;
 
+    @JsonIgnore
     private byte[] foto;
 }

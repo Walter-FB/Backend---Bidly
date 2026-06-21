@@ -1,6 +1,6 @@
 // BIDLY — mapa de endpoints hacia el backend Spring Boot (puerto 8083).
 // Todos los paths son relativos al BASE_URL definido en client.js.
-import api, { setToken } from './client';
+import api, { setToken, upload } from './client';
 
 // ─── AUTH ────────────────────────────────────────────────────────────────────
 // POST /api/auth/login   → { token, clienteId, email, nombre, categoria, admitido }
@@ -47,6 +47,7 @@ export const Subastas = {
   crear: (payload) => api.post('/subastas', payload),
   porSubastador: (subastadorId) =>
     api.get(`/subastadores/${subastadorId}/subastas`),
+  asistentes: (id) => api.get(`/subastas/${id}/asistentes`),
 };
 
 // ─── PUJAS ───────────────────────────────────────────────────────────────────
@@ -67,9 +68,13 @@ export const Pujas = {
 };
 
 // ─── CATÁLOGOS ───────────────────────────────────────────────────────────────
-// GET /api/catalogos/{id}/items
+// GET  /api/catalogos/{id}/items
+// POST /api/catalogos
+// POST /api/catalogos/{id}/items
 export const Catalogos = {
   items: (catalogoId) => api.get(`/catalogos/${catalogoId}/items`),
+  crear: (payload) => api.post('/catalogos', payload),
+  agregarItem: (catalogoId, payload) => api.post(`/catalogos/${catalogoId}/items`, payload),
 };
 
 // ─── ASISTENTES ──────────────────────────────────────────────────────────────
@@ -115,7 +120,8 @@ export const Productos = {
   crear: (payload) => api.post('/productos', payload),
   disponible: (id, disponible) =>
     api.patch(`/productos/${id}/disponible`, { disponible }),
-  agregarFoto: (id, foto) => api.post(`/productos/${id}/fotos`, foto),
+  fotos: (id) => api.get(`/productos/${id}/fotos`),
+  agregarFotos: (id, formData) => upload(`/productos/${id}/fotos`, formData),
 };
 
 // ─── REGISTRO DE SUBASTA ─────────────────────────────────────────────────────
@@ -151,6 +157,22 @@ export const Seguros = {
   actualizar: (nroPoliza, payload) => api.put(`/seguros/${nroPoliza}`, payload),
 };
 
+// ─── SUBASTADORES ────────────────────────────────────────────────────────────
+// GET  /api/subastadores/{id}
+// POST /api/subastadores  → { identificador, matricula?, region? }
+export const Subastadores = {
+  obtener: (id) => api.get(`/subastadores/${id}`),
+  crear: (payload) => api.post('/subastadores', payload),
+};
+
+// ─── ÍTEMS DE CATÁLOGO ───────────────────────────────────────────────────────
+// GET   /api/items/{id}
+// PATCH /api/items/{id}/adjudicar  → cierra pujas, marca ganador, crea registro
+export const Items = {
+  obtener: (id) => api.get(`/items/${id}`),
+  adjudicar: (id) => api.patch(`/items/${id}/adjudicar`, {}),
+};
+
 // ─── NOTIFICACIONES ──────────────────────────────────────────────────────────
 // GET /api/notificaciones/{id}
 // GET /api/notificaciones/cliente/{clienteId}
@@ -172,4 +194,6 @@ export default {
   Multas,
   Seguros,
   Notificaciones,
+  Subastadores,
+  Items,
 };

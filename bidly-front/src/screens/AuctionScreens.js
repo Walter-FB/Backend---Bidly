@@ -1,10 +1,11 @@
 // BIDLY — Producto, SubastaEnVivo, Ganaste, SubastaFinalizada.
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { View, Text, ScrollView, StyleSheet, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, ActivityIndicator, Alert, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen, Header, Title, SectionLabel, Btn, Card, LiveBadge, Tag, ImgBox, BottomBar, Row, Display } from '../components/ui';
 import { colors } from '../theme/theme';
-import { Subastas, Pujas, Asistentes } from '../api/endpoints';
+import { Subastas, Pujas, Asistentes, Productos, Items } from '../api/endpoints';
+import { BASE_URL } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
@@ -58,6 +59,7 @@ export function ProductoScreen({ navigation, route }) {
 
   const [subasta, setSubasta] = useState(null);
   const [items, setItems] = useState([]);
+  const [fotoIds, setFotoIds] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -70,6 +72,12 @@ export function ProductoScreen({ navigation, route }) {
       .then(([s, catalogoItems]) => {
         setSubasta(s);
         setItems(catalogoItems || []);
+        const productoId = catalogoItems?.[0]?.producto?.identificador;
+        if (productoId) {
+          Productos.fotos(productoId)
+            .then((ids) => setFotoIds(ids || []))
+            .catch(() => {});
+        }
       })
       .catch((e) => setError(e.message || 'No se pudo cargar la subasta.'))
       .finally(() => setLoading(false));
@@ -107,12 +115,18 @@ export function ProductoScreen({ navigation, route }) {
       <Header />
       <ScrollView contentContainerStyle={{ paddingHorizontal: 22, paddingBottom: 110 }} showsVerticalScrollIndicator={false}>
         <View>
-          <ImgBox style={{ width: '100%', height: 230 }} size={42} />
+          <ImgBox
+            style={{ width: '100%', height: 230 }}
+            size={42}
+            src={fotoIds.length > 0 ? `${BASE_URL}/fotos/${fotoIds[0]}` : undefined}
+          />
           {viva && <LiveBadge style={{ position: 'absolute', top: 12, left: 12 }} />}
         </View>
-        {items.length > 1 && (
+        {fotoIds.length > 1 && (
           <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
-            {items.slice(0, 4).map((_, i) => <ImgBox key={i} style={{ flex: 1, height: 56 }} size={18} />)}
+            {fotoIds.slice(0, 4).map((fotoId) => (
+              <ImgBox key={fotoId} style={{ flex: 1, height: 56 }} size={18} src={`${BASE_URL}/fotos/${fotoId}`} />
+            ))}
           </View>
         )}
         <Text style={st.kicker}>{categoria.toUpperCase()}</Text>
@@ -213,10 +227,15 @@ export function SubastaEnVivoScreen({ navigation, route }) {
   const [pollingError, setPollingError] = useState(false);
   const [timeLeft, setTimeLeft] = useState(() => calcSecondsLeft(fecha, hora));
   const mounted = useRef(true);
+  const asistenteIdRef = useRef(null);
+  const navegado = useRef(false);
 
   useEffect(() => {
     return () => { mounted.current = false; };
   }, []);
+
+  // Mantener ref actualizada para usarla en callbacks sin crear dependencias.
+  useEffect(() => { asistenteIdRef.current = asistenteId; }, [asistenteId]);
 
   // Countdown ticker — actualiza cada segundo.
   useEffect(() => {
@@ -238,17 +257,46 @@ export function SubastaEnVivoScreen({ navigation, route }) {
   }, [user, subastaId]);
 
   // Cargar pujas y refrescar cada 5 segundos.
+  // Detecta automáticamente cuando el ítem fue adjudicado y navega al resultado.
   const cargarPujas = useCallback(() => {
     if (!itemId) return;
     Pujas.porItem(itemId)
       .then((data) => {
-        if (!mounted.current) return;
-        setPujas(data || []);
+        if (!mounted.current || navegado.current) return;
+        const lista = data || [];
+        setPujas(lista);
         setPollingError(false);
+
+        const ganadora = lista.find((p) => p.ganador === 'si');
+        if (!ganadora) return;
+
+        navegado.current = true;
+        const yoGane = !user?.isGuest &&
+          asistenteIdRef.current != null &&
+          ganadora.asistente?.identificador === asistenteIdRef.current;
+
+        if (yoGane) {
+          navigation.replace('Ganaste', {
+            titulo,
+            moneda,
+            importe: ganadora.importe,
+            subastaId,
+            itemId,
+            comision,
+          });
+        } else {
+          navigation.replace('SubastaFinalizada', {
+            titulo,
+            moneda,
+            importe: ganadora.importe,
+            totalPostores: new Set(lista.map((p) => p.asistente?.identificador)).size,
+            subastaId,
+          });
+        }
       })
       .catch(() => { if (mounted.current) setPollingError(true); })
       .finally(() => { if (mounted.current) setLoadingPujas(false); });
-  }, [itemId]);
+  }, [itemId, user, navigation, titulo, moneda, subastaId, comision]);
 
   useEffect(() => {
     cargarPujas();
@@ -482,6 +530,296 @@ export function SubastaFinalizadaScreen({ navigation, route }) {
       </View>
       <BottomBar>
         <Btn title="Volver al Home" onPress={() => navigation.navigate('Main')} />
+      </BottomBar>
+    </Screen>
+  );
+}
+
+// ─── SUBASTA ADMIN (panel del subastador) ────────────────────────────────────
+export function SubastaAdminScreen({ navigation, route }) {
+  const { subastaId } = route.params || {};
+  const [subasta, setSubasta] = useState(null);
+  const [items, setItems] = useState([]);
+  const [itemActivo, setItemActivo] = useState(null);
+  const [pujas, setPujas] = useState([]);
+  const [asistentes, setAsistentes] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [adjudicando, setAdjudicando] = useState(false);
+  const [cambiandoEstado, setCambiandoEstado] = useState(false);
+  const mounted = useRef(true);
+
+  useEffect(() => { return () => { mounted.current = false; }; }, []);
+
+  const cargarSubasta = useCallback(() => {
+    if (!subastaId) return;
+    Promise.all([
+      Subastas.obtener(subastaId),
+      Subastas.catalogos(subastaId),
+      Subastas.asistentes(subastaId),
+    ])
+      .then(([s, catalogoItems, asis]) => {
+        if (!mounted.current) return;
+        setSubasta(s);
+        const lista = catalogoItems || [];
+        setItems(lista);
+        setAsistentes(asis || []);
+        // Seleccionar primer ítem no adjudicado como activo
+        const pendiente = lista.find((i) => i.subastado !== 'si');
+        setItemActivo((prev) => {
+          if (prev && lista.find((i) => i.identificador === prev.identificador && i.subastado !== 'si')) return prev;
+          return pendiente || lista[0] || null;
+        });
+      })
+      .catch(() => {})
+      .finally(() => { if (mounted.current) setLoading(false); });
+  }, [subastaId]);
+
+  const cargarPujas = useCallback(() => {
+    if (!itemActivo?.identificador) return;
+    Pujas.porItem(itemActivo.identificador)
+      .then((data) => { if (mounted.current) setPujas(data || []); })
+      .catch(() => {});
+  }, [itemActivo?.identificador]);
+
+  // Carga inicial
+  useEffect(() => { cargarSubasta(); }, [cargarSubasta]);
+
+  // Polling de pujas del ítem activo cada 5 segundos
+  useEffect(() => {
+    if (!itemActivo) return;
+    cargarPujas();
+    const interval = setInterval(cargarPujas, 5000);
+    return () => clearInterval(interval);
+  }, [cargarPujas]);
+
+  const onToggleEstado = async () => {
+    if (!subasta) return;
+    const nuevoEstado = subasta.estado === 'abierta' ? 'cerrada' : 'abierta';
+    const accion = nuevoEstado === 'abierta' ? 'Abrir' : 'Cerrar';
+    Alert.alert(
+      `${accion} subasta`,
+      `¿Confirmas ${accion.toLowerCase()} la subasta?`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: accion,
+          style: nuevoEstado === 'cerrada' ? 'destructive' : 'default',
+          onPress: async () => {
+            setCambiandoEstado(true);
+            try {
+              const updated = await Subastas.actualizarEstado(subastaId, nuevoEstado);
+              if (mounted.current) setSubasta(updated);
+            } catch (e) {
+              Alert.alert('Error', e.message || 'No se pudo actualizar el estado.');
+            } finally {
+              if (mounted.current) setCambiandoEstado(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const onAdjudicar = async () => {
+    if (!itemActivo) return;
+    if (pujas.length === 0) {
+      return Alert.alert('Sin pujas', 'No hay pujas en este ítem. No se puede adjudicar.');
+    }
+    Alert.alert(
+      'Adjudicar ítem',
+      `¿Cerrar las pujas de "${itemActivo.producto?.descripcionCatalogo || `ítem #${itemActivo.identificador}`}" y marcar ganador?`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Adjudicar',
+          onPress: async () => {
+            setAdjudicando(true);
+            try {
+              const resultado = await Items.adjudicar(itemActivo.identificador);
+              Alert.alert(
+                '¡Ítem adjudicado!',
+                `Ganador: Cliente #${resultado.ganadorClienteId}\nImporte: ${formatImporte(resultado.importeFinal, subasta?.moneda)}`,
+                [{ text: 'OK', onPress: () => cargarSubasta() }]
+              );
+            } catch (e) {
+              Alert.alert('Error', e.data?.error || e.message || 'No se pudo adjudicar.');
+            } finally {
+              if (mounted.current) setAdjudicando(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const onSiguiente = () => {
+    const pendientes = items.filter((i) => i.subastado !== 'si' && i.identificador !== itemActivo?.identificador);
+    if (pendientes.length === 0) {
+      return Alert.alert('Sin ítems pendientes', 'Todos los ítems ya fueron adjudicados.');
+    }
+    setItemActivo(pendientes[0]);
+    setPujas([]);
+  };
+
+  if (loading) {
+    return (
+      <Screen><Header />
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+          <ActivityIndicator color={colors.blue} size="large" />
+        </View>
+      </Screen>
+    );
+  }
+
+  const pujaTop = pujas[0];
+  const moneda = subasta?.moneda || 'pesos';
+  const estaAbierta = subasta?.estado === 'abierta';
+  const itemActivoAdjudicado = itemActivo?.subastado === 'si';
+
+  return (
+    <Screen>
+      <Header />
+      <ScrollView contentContainerStyle={{ paddingHorizontal: 22, paddingBottom: 130 }} showsVerticalScrollIndicator={false}>
+        {/* Cabecera */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
+          <Display style={{ fontSize: 20 }}>Subasta #{subastaId}</Display>
+          <Tag
+            label={estaAbierta ? 'ABIERTA' : 'CERRADA'}
+            color={estaAbierta ? colors.green : colors.muted}
+          />
+        </View>
+        <Text style={{ color: colors.muted, fontSize: 13, marginBottom: 14 }}>
+          {subasta?.categoria ? subasta.categoria.toUpperCase() : ''} · {asistentes.length} asistentes
+        </Text>
+
+        {/* Ítem activo */}
+        {itemActivo ? (
+          <Card el style={{ gap: 10 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Text style={{ color: colors.muted, fontSize: 11, fontWeight: '800', letterSpacing: 1 }}>ÍTEM EN SUBASTA</Text>
+              {itemActivoAdjudicado && <Tag label="ADJUDICADO" color={colors.green} />}
+            </View>
+            <Display style={{ fontSize: 16 }} numberOfLines={2}>
+              {itemActivo.producto?.descripcionCatalogo || `Ítem #${itemActivo.identificador}`}
+            </Display>
+            <Text style={{ color: colors.muted, fontSize: 13 }}>
+              Precio base: {formatImporte(itemActivo.precioBase, moneda)}
+            </Text>
+
+            {/* Puja más alta */}
+            <View style={{ marginTop: 6 }}>
+              <Text style={{ color: colors.muted, fontSize: 11, fontWeight: '800', letterSpacing: 1 }}>PUJA MÁS ALTA</Text>
+              {pujaTop ? (
+                <>
+                  <Text style={{ color: colors.green, fontSize: 28, fontWeight: '800', marginTop: 2 }}>
+                    {formatImporte(pujaTop.importe, moneda)}
+                  </Text>
+                  <Text style={{ color: colors.muted, fontSize: 12.5 }}>
+                    Postor #{pujaTop.asistente?.numeroPostor || pujaTop.asistente?.identificador}
+                  </Text>
+                </>
+              ) : (
+                <Text style={{ color: colors.muted, fontSize: 14, marginTop: 4 }}>Sin pujas aún</Text>
+              )}
+            </View>
+
+            {/* Acciones sobre el ítem */}
+            {!itemActivoAdjudicado && (
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: 8 }}>
+                <Btn
+                  title={adjudicando ? 'Adjudicando…' : 'Adjudicar ítem'}
+                  onPress={onAdjudicar}
+                  disabled={adjudicando || !estaAbierta}
+                  style={{ flex: 1 }}
+                />
+                <Btn
+                  title="Siguiente →"
+                  kind="ghost"
+                  onPress={onSiguiente}
+                  style={{ flex: 1 }}
+                />
+              </View>
+            )}
+            {itemActivoAdjudicado && (
+              <Btn title="Siguiente ítem →" onPress={onSiguiente} style={{ marginTop: 8 }} />
+            )}
+          </Card>
+        ) : (
+          <Card el>
+            <Text style={{ color: colors.muted, textAlign: 'center' }}>No hay ítems en esta subasta aún.</Text>
+          </Card>
+        )}
+
+        {/* Historial de pujas del ítem activo */}
+        {pujas.length > 0 && (
+          <>
+            <SectionLabel>Historial de pujas</SectionLabel>
+            {pujas.map((p, i) => (
+              <View key={p.identificador ?? i} style={st.bidRow}>
+                <Text style={{ color: '#fff', fontSize: 13, fontWeight: '700' }}>
+                  Postor #{p.asistente?.numeroPostor || p.asistente?.identificador}
+                </Text>
+                <Text style={{ color: colors.green, fontSize: 13, fontWeight: '800' }}>
+                  {formatImporte(p.importe, moneda)}
+                </Text>
+              </View>
+            ))}
+          </>
+        )}
+
+        {/* Lista completa de ítems */}
+        <SectionLabel>Todos los ítems</SectionLabel>
+        {items.map((item) => {
+          const esActivo = item.identificador === itemActivo?.identificador;
+          const adjudicado = item.subastado === 'si';
+          return (
+            <TouchableOpacity
+              key={item.identificador}
+              onPress={() => { setItemActivo(item); setPujas([]); }}
+              activeOpacity={0.8}
+            >
+              <Card
+                el={!esActivo}
+                style={{
+                  flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 8,
+                  borderWidth: esActivo ? 1.5 : 1,
+                  borderColor: esActivo ? colors.blue : colors.border,
+                }}
+              >
+                <View style={{ flex: 1 }}>
+                  <Display style={{ fontSize: 13 }} numberOfLines={1}>
+                    {item.producto?.descripcionCatalogo || `Ítem #${item.identificador}`}
+                  </Display>
+                  <Text style={{ color: colors.muted, fontSize: 12, marginTop: 2 }}>
+                    Base: {formatImporte(item.precioBase, moneda)}
+                  </Text>
+                </View>
+                {adjudicado ? (
+                  <Ionicons name="checkmark-circle" size={22} color={colors.green} />
+                ) : esActivo ? (
+                  <LiveBadge />
+                ) : (
+                  <Ionicons name="ellipse-outline" size={22} color={colors.muted} />
+                )}
+              </Card>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+
+      <BottomBar>
+        <Btn
+          title={
+            cambiandoEstado
+              ? 'Actualizando…'
+              : estaAbierta
+              ? 'Cerrar subasta'
+              : 'Abrir subasta'
+          }
+          kind={estaAbierta ? 'danger' : 'primary'}
+          onPress={onToggleEstado}
+          disabled={cambiandoEstado}
+        />
       </BottomBar>
     </Screen>
   );

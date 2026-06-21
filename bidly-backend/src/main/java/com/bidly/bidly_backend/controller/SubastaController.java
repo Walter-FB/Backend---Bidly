@@ -1,12 +1,17 @@
 package com.bidly.bidly_backend.controller;
 
+import com.bidly.bidly_backend.model.Asistente;
+import com.bidly.bidly_backend.model.Foto;
 import com.bidly.bidly_backend.model.ItemCatalogo;
 import com.bidly.bidly_backend.model.Subasta;
 import com.bidly.bidly_backend.model.SubastaMoneda;
+import com.bidly.bidly_backend.repository.AsistenteRepository;
+import com.bidly.bidly_backend.repository.FotoRepository;
 import com.bidly.bidly_backend.repository.ItemCatalogoRepository;
 import com.bidly.bidly_backend.repository.SubastaMonedaRepository;
 import com.bidly.bidly_backend.repository.SubastaRepository;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -25,6 +30,12 @@ public class SubastaController {
 
     @Autowired
     private ItemCatalogoRepository itemCatalogoRepository;
+
+    @Autowired
+    private AsistenteRepository asistenteRepository;
+
+    @Autowired
+    private FotoRepository fotoRepository;
 
     @GetMapping
     public List<Subasta> listar(
@@ -84,6 +95,24 @@ public class SubastaController {
         return subastaRepository.findById(id)
                 .map(s -> ResponseEntity.ok((Object) Map.of("estado", s.getEstado())))
                 .orElse(ResponseEntity.notFound().build());
+    }
+
+    @GetMapping(value = "/{id}/portada", produces = MediaType.IMAGE_JPEG_VALUE)
+    public ResponseEntity<byte[]> portada(@PathVariable Long id) {
+        List<ItemCatalogo> items = itemCatalogoRepository.findByCatalogoSubastaIdentificador(id);
+        if (items.isEmpty()) return ResponseEntity.notFound().build();
+        Long productoId = items.get(0).getProducto().getIdentificador();
+        List<Foto> fotos = fotoRepository.findByProductoIdentificador(productoId);
+        if (fotos.isEmpty()) return ResponseEntity.notFound().build();
+        return ResponseEntity.ok().contentType(MediaType.IMAGE_JPEG).body(fotos.get(0).getFoto());
+    }
+
+    @GetMapping("/{id}/asistentes")
+    public ResponseEntity<List<Asistente>> asistentes(@PathVariable Long id) {
+        if (!subastaRepository.existsById(id)) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(asistenteRepository.findBySubastaIdentificador(id));
     }
 
     @PatchMapping("/{id}/estado")

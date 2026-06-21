@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Screen, Header, Title, Sub, SectionLabel, Btn, Chip, Card, Field, LiveBadge, Tag, ImgBox, Display } from '../components/ui';
 import { colors } from '../theme/theme';
 import { Subastas, Notificaciones } from '../api/endpoints';
+import { BASE_URL } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 
 // Convierte una Subasta del backend al shape que espera AuctionCard.
@@ -28,7 +29,7 @@ function mapSubasta(s) {
     estado: s.estado,
     moneda: s.moneda || 'pesos',
     simbolo: simboloMoneda(s.moneda),
-    // datos extra para pantalla de detalle
+    portadaUrl: `${BASE_URL}/subastas/${s.identificador}/portada`,
     ubicacion: s.ubicacion,
     subastador: s.subastador,
   };
@@ -73,7 +74,7 @@ export function AuctionCard({ a, onPress }) {
     <Card el style={{ padding: 14 }}>
       {viva && <LiveBadge style={{ marginBottom: 10 }} />}
       <View style={{ flexDirection: 'row', gap: 12 }}>
-        <ImgBox style={{ width: 74, height: 74 }} size={26} />
+        <ImgBox style={{ width: 74, height: 74 }} size={26} src={a.portadaUrl} />
         <View style={{ flex: 1 }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
             <View style={{ flex: 1, paddingRight: 8 }}>

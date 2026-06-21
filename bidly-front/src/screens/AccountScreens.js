@@ -1,13 +1,14 @@
 // BIDLY — Perfil, MisSubastas, MisCompras, Historial, Publicar, DatosGanador.
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, Image } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen, Header, Title, Sub, SectionLabel, Btn, Chip, Card, Field, Tag, ImgBox, BottomBar, Row, Display } from '../components/ui';
 import { colors } from '../theme/theme';
 import { AuctionCard } from './HomeScreens';
 import { useAuth } from '../context/AuthContext';
-import { Clientes, Personas, RegistroSubasta, Subastas, Productos } from '../api/endpoints';
+import { Clientes, Personas, RegistroSubasta, Subastas, Productos, Subastadores, Catalogos } from '../api/endpoints';
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
@@ -232,11 +233,19 @@ export function MisSubastasScreen({ navigation }) {
   const [subastas, setSubastas] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  const cargar = () => {
+    if (!user?.clienteId) { setLoading(false); return; }
+    setLoading(true);
+    Subastas.porSubastador(user.clienteId)
+      .then((data) => setSubastas(data || []))
+      .catch(() => setSubastas([]))
+      .finally(() => setLoading(false));
+  };
+
   useEffect(() => {
-    // Los clientes no son subastadores: la pantalla muestra estado vacío con mensaje.
-    setSubastas([]);
-    setLoading(false);
-  }, []);
+    const unsubscribe = navigation.addListener('focus', cargar);
+    return unsubscribe;
+  }, [navigation, user]);
 
   const filtradas = subastas.filter((a) => {
     if (tab === 'curso') return a.estado === 'abierta';
@@ -249,7 +258,8 @@ export function MisSubastasScreen({ navigation }) {
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 22, height: 52 }}>
         <Display style={{ color: colors.blueLogo, fontSize: 20 }}>BIDLY</Display>
         <TouchableOpacity onPress={() => navigation.navigate('Notificaciones')}>
-          <Ionicons name="notifications-outline" size={21} color="#fff" /></TouchableOpacity>
+          <Ionicons name="notifications-outline" size={21} color="#fff" />
+        </TouchableOpacity>
       </View>
       <ScrollView contentContainerStyle={{ paddingHorizontal: 22, paddingBottom: 170 }} showsVerticalScrollIndicator={false}>
         <Title>Mis subastas</Title>
@@ -263,32 +273,298 @@ export function MisSubastasScreen({ navigation }) {
         {loading && <ActivityIndicator color={colors.blue} style={{ marginTop: 20 }} />}
         {!loading && filtradas.length === 0 && (
           <Text style={{ color: colors.muted, textAlign: 'center', marginTop: 20 }}>
-            Aún no publicaste subastas.{'\n'}Usá el botón + para comenzar.
+            Aún no tenés subastas.{'\n'}Presioná "Nueva subasta" para comenzar.
           </Text>
         )}
         <View style={{ gap: 14 }}>
           {filtradas.map((a) => (
-            <AuctionCard
-              key={a.id}
-              a={a}
-              onPress={() => navigation.navigate('Producto', { subastaId: a.id, subasta: a })}
-            />
+            <TouchableOpacity
+              key={a.identificador}
+              onPress={() => navigation.navigate('SubastaAdmin', { subastaId: a.identificador, subasta: a })}
+              activeOpacity={0.85}
+            >
+              <Card el style={{ gap: 6 }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Display style={{ fontSize: 15 }}>Subasta #{a.identificador}</Display>
+                  <Tag
+                    label={a.estado === 'abierta' ? 'EN VIVO' : 'CERRADA'}
+                    color={a.estado === 'abierta' ? colors.green : colors.muted}
+                  />
+                </View>
+                <Text style={{ color: colors.muted, fontSize: 13 }}>
+                  {a.categoria ? a.categoria.toUpperCase() : '—'} · {a.fecha || '—'}
+                </Text>
+                {a.ubicacion ? (
+                  <Text style={{ color: colors.muted, fontSize: 12 }}>📍 {a.ubicacion}</Text>
+                ) : null}
+                <Text style={{ color: colors.blue, fontSize: 13, fontWeight: '700', marginTop: 4 }}>
+                  Gestionar →
+                </Text>
+              </Card>
+            </TouchableOpacity>
           ))}
         </View>
       </ScrollView>
       <BottomBar>
-        <Btn title="+ Publicar producto" onPress={() => navigation.navigate('Publicar')} />
+        <Btn title="+ Nueva subasta" onPress={() => navigation.navigate('CrearSubasta')} />
       </BottomBar>
     </View>
   );
 }
 
+// ─── CREAR SUBASTA ────────────────────────────────────────────────────────────
+const CATS_SUBASTA = ['comun', 'especial', 'plata', 'oro', 'platino'];
+const MONEDAS = ['pesos', 'dolares'];
+
+export function CrearSubastaScreen({ navigation }) {
+  const { user } = useAuth();
+  const [paso, setPaso] = useState(1);
+  const [f, setF] = useState({
+    fecha: '',
+    hora: '',
+    categoria: 'comun',
+    moneda: 'pesos',
+    ubicacion: '',
+  });
+  const [itemsSeleccionados, setItemsSeleccionados] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const set = (k) => (v) => setF((s) => ({ ...s, [k]: v }));
+
+  const toggleItem = (productoId) => {
+    setItemsSeleccionados((prev) => {
+      const existe = prev.find((i) => i.productoId === productoId);
+      if (existe) return prev.filter((i) => i.productoId !== productoId);
+      return [...prev, { productoId, precioBase: '', comision: '10' }];
+    });
+  };
+
+  const setItemField = (productoId, campo, valor) => {
+    setItemsSeleccionados((prev) =>
+      prev.map((i) => (i.productoId === productoId ? { ...i, [campo]: valor } : i))
+    );
+  };
+
+  const onSiguiente = () => {
+    if (!f.fecha.trim() || !f.hora.trim() || !f.ubicacion.trim()) {
+      return Alert.alert('Campos requeridos', 'Completá fecha, hora y ubicación.');
+    }
+    setPaso(2);
+  };
+
+  const onCrear = async () => {
+    if (itemsSeleccionados.length === 0) {
+      return Alert.alert('Sin ítems', 'Agregá al menos un producto a la subasta.');
+    }
+    const sinPrecio = itemsSeleccionados.find((i) => !i.precioBase.trim());
+    if (sinPrecio) {
+      return Alert.alert('Precio faltante', 'Completá el precio base de cada ítem seleccionado.');
+    }
+    setLoading(true);
+    try {
+      // 1. Asegurar registro de subastador
+      await Subastadores.crear({ identificador: user.clienteId }).catch(() => {});
+
+      // 2. Crear subasta
+      const subasta = await Subastas.crear({
+        fecha: f.fecha,
+        hora: f.hora + ':00',
+        estado: 'cerrada',
+        subastador: user.clienteId,
+        ubicacion: f.ubicacion,
+        categoria: f.categoria,
+        moneda: f.moneda,
+      });
+
+      // 3. Crear catálogo
+      const catalogo = await Catalogos.crear({
+        descripcion: `Catálogo subasta #${subasta.identificador}`,
+        subasta: subasta.identificador,
+        responsable: user.clienteId,
+      });
+
+      // 4. Agregar ítems
+      await Promise.all(
+        itemsSeleccionados.map((it) =>
+          Catalogos.agregarItem(catalogo.identificador, {
+            producto: it.productoId,
+            precioBase: parseFloat(it.precioBase),
+            comision: parseFloat(it.comision) || 10,
+          })
+        )
+      );
+
+      Alert.alert(
+        '¡Subasta creada!',
+        `Subasta #${subasta.identificador} lista. Abrila desde "Mis subastas" cuando estés listo.`,
+        [{ text: 'OK', onPress: () => navigation.navigate('Subastas') }]
+      );
+    } catch (e) {
+      Alert.alert('Error', e.message || 'No se pudo crear la subasta.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+
+  if (paso === 1) {
+    return (
+      <Screen scroll contentStyle={{ paddingHorizontal: 22, paddingBottom: 40 }}>
+        <Header />
+        <Title>Nueva subasta</Title>
+        <Sub>Paso 1 de 2 — Información básica</Sub>
+
+        <SectionLabel>Fecha y hora</SectionLabel>
+        <View style={{ gap: 12 }}>
+          <Field
+            placeholder="Fecha (YYYY-MM-DD)"
+            value={f.fecha}
+            onChangeText={set('fecha')}
+          />
+          <Field
+            placeholder="Hora de inicio (HH:MM)"
+            value={f.hora}
+            onChangeText={set('hora')}
+          />
+          <Field
+            placeholder="Ubicación / dirección"
+            value={f.ubicacion}
+            onChangeText={set('ubicacion')}
+          />
+        </View>
+
+        <SectionLabel>Categoría</SectionLabel>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {CATS_SUBASTA.map((c) => (
+              <Chip
+                key={c}
+                label={c.charAt(0).toUpperCase() + c.slice(1)}
+                active={f.categoria === c}
+                onPress={() => set('categoria')(c)}
+              />
+            ))}
+          </View>
+        </ScrollView>
+
+        <SectionLabel>Moneda</SectionLabel>
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          {MONEDAS.map((m) => (
+            <Chip
+              key={m}
+              label={m === 'pesos' ? 'Pesos $' : 'Dólares U$D'}
+              active={f.moneda === m}
+              onPress={() => set('moneda')(m)}
+            />
+          ))}
+        </View>
+
+        <View style={{ marginTop: 28 }}>
+          <Btn title="Siguiente →" onPress={onSiguiente} />
+        </View>
+      </Screen>
+    );
+  }
+
+  return (
+    <Screen scroll contentStyle={{ paddingHorizontal: 22, paddingBottom: 40 }}>
+      <Header onBack={() => setPaso(1)} />
+      <Title>Nueva subasta</Title>
+      <Sub>Paso 2 de 2 — Agregar productos</Sub>
+      <Text style={{ color: colors.muted, fontSize: 13, marginBottom: 14 }}>
+        Ingresá el ID de cada producto que publicaste y configurá su precio base.
+      </Text>
+
+      {itemsSeleccionados.map((item, idx) => (
+        <Card key={item.productoId} el style={{ gap: 10, marginBottom: 12 }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Display style={{ fontSize: 14 }}>Producto #{item.productoId}</Display>
+            <TouchableOpacity onPress={() => toggleItem(item.productoId)}>
+              <Ionicons name="close-circle" size={22} color={colors.red} />
+            </TouchableOpacity>
+          </View>
+          <Field
+            placeholder="Precio base ($)"
+            value={item.precioBase}
+            onChangeText={(v) => setItemField(item.productoId, 'precioBase', v)}
+            keyboardType="numeric"
+          />
+          <Field
+            placeholder="Comisión ($)"
+            value={item.comision}
+            onChangeText={(v) => setItemField(item.productoId, 'comision', v)}
+            keyboardType="numeric"
+          />
+        </Card>
+      ))}
+
+      <AgregarProductoBtn
+        onAgregar={(id) => {
+          if (!id) return;
+          const numId = parseInt(id, 10);
+          if (isNaN(numId)) return Alert.alert('ID inválido', 'Ingresá un número.');
+          if (itemsSeleccionados.find((i) => i.productoId === numId)) return;
+          setItemsSeleccionados((prev) => [...prev, { productoId: numId, precioBase: '', comision: '10' }]);
+        }}
+      />
+
+      <View style={{ marginTop: 20 }}>
+        <Btn title={loading ? 'Creando…' : 'Crear subasta'} onPress={onCrear} disabled={loading} />
+      </View>
+    </Screen>
+  );
+}
+
+function AgregarProductoBtn({ onAgregar }) {
+  const [id, setId] = useState('');
+  return (
+    <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center', marginTop: 4 }}>
+      <View style={{ flex: 1 }}>
+        <Field
+          placeholder="ID del producto a agregar"
+          value={id}
+          onChangeText={setId}
+          keyboardType="numeric"
+        />
+      </View>
+      <TouchableOpacity
+        style={{ backgroundColor: colors.blue, borderRadius: 10, padding: 13 }}
+        onPress={() => { onAgregar(id); setId(''); }}
+      >
+        <Ionicons name="add" size={20} color="#fff" />
+      </TouchableOpacity>
+    </View>
+  );
+}
+
 // ─── PUBLICAR SCREEN ─────────────────────────────────────────────────────────
+const MAX_FOTOS = 6;
+
 export function PublicarScreen({ navigation }) {
   const { user } = useAuth();
   const [f, setF] = useState({ titulo: '', categoria: '', estado: '', precio: '', descripcion: '' });
+  const [fotos, setFotos] = useState([]);
   const [loading, setLoading] = useState(false);
   const set = (k) => (v) => setF((s) => ({ ...s, [k]: v }));
+
+  const elegirFoto = async () => {
+    if (fotos.length >= MAX_FOTOS) return;
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permiso requerido', 'Necesitamos acceso a tu galería para agregar fotos.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsMultipleSelection: true,
+      selectionLimit: MAX_FOTOS - fotos.length,
+      quality: 0.7,
+    });
+    if (!result.canceled) {
+      setFotos((prev) => [...prev, ...result.assets].slice(0, MAX_FOTOS));
+    }
+  };
+
+  const quitarFoto = (idx) => setFotos((prev) => prev.filter((_, i) => i !== idx));
 
   const onPublicar = async () => {
     if (!f.titulo.trim() || !f.precio.trim()) {
@@ -304,6 +580,19 @@ export function PublicarScreen({ navigation }) {
         duenio: user?.clienteId || null,
         seguro: null,
       });
+
+      if (fotos.length > 0) {
+        const formData = new FormData();
+        fotos.forEach((foto, i) => {
+          formData.append('fotos', {
+            uri: foto.uri,
+            name: `foto_${i}.jpg`,
+            type: 'image/jpeg',
+          });
+        });
+        await Productos.agregarFotos(producto.identificador, formData);
+      }
+
       Alert.alert(
         '¡Producto creado!',
         `Producto #${producto.identificador} registrado. Un administrador lo asignará a una subasta.`,
@@ -320,23 +609,37 @@ export function PublicarScreen({ navigation }) {
     Alert.alert('Próximamente', 'La función de borradores estará disponible en una próxima versión.');
   };
 
+  const slots = Array.from({ length: MAX_FOTOS });
+
   return (
     <Screen>
       <Header />
       <ScrollView contentContainerStyle={{ paddingHorizontal: 22, paddingBottom: 30 }} showsVerticalScrollIndicator={false}>
         <Title>Publicar{'\n'}producto</Title>
         <Sub>Completá los datos y se enviará a revisión.</Sub>
-        <SectionLabel>Fotos (mín. 6)</SectionLabel>
+        <SectionLabel>Fotos ({fotos.length}/{MAX_FOTOS})</SectionLabel>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
-          <ImgBox style={s.photo} size={24} />
-          <ImgBox style={s.photo} size={24} />
-          <TouchableOpacity
-            style={[s.photo, s.photoAdd]}
-            onPress={() => Alert.alert('Próximamente', 'La carga de fotos estará disponible en una próxima versión.')}
-          >
-            <Ionicons name="add" size={26} color={colors.blue} />
-          </TouchableOpacity>
-          {[3, 4, 5].map((i) => <View key={i} style={[s.photo, s.photoEmpty]} />)}
+          {slots.map((_, i) => {
+            const foto = fotos[i];
+            if (foto) {
+              return (
+                <TouchableOpacity key={i} style={s.photo} onPress={() => quitarFoto(i)} activeOpacity={0.8}>
+                  <Image source={{ uri: foto.uri }} style={{ width: '100%', height: '100%', borderRadius: 10 }} resizeMode="cover" />
+                  <View style={s.removeOverlay}>
+                    <Ionicons name="close-circle" size={20} color="#fff" />
+                  </View>
+                </TouchableOpacity>
+              );
+            }
+            if (i === fotos.length) {
+              return (
+                <TouchableOpacity key={i} style={[s.photo, s.photoAdd]} onPress={elegirFoto}>
+                  <Ionicons name="add" size={26} color={colors.blue} />
+                </TouchableOpacity>
+              );
+            }
+            return <View key={i} style={[s.photo, s.photoEmpty]} />;
+          })}
         </View>
         <SectionLabel>Datos del producto</SectionLabel>
         <View style={{ gap: 12 }}>
@@ -482,7 +785,8 @@ const s = StyleSheet.create({
   catBadge: { marginTop: 10, borderRadius: 6, paddingVertical: 5, paddingHorizontal: 12 },
   listItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: colors.card,
     borderWidth: 1, borderColor: colors.border, borderRadius: 12, paddingVertical: 16, paddingHorizontal: 16 },
-  photo: { width: '30%', aspectRatio: 1, flexGrow: 1 },
+  photo: { width: '30%', aspectRatio: 1, flexGrow: 1, overflow: 'hidden' },
+  removeOverlay: { position: 'absolute', top: 4, right: 4 },
   photoAdd: { borderWidth: 1.5, borderStyle: 'dashed', borderColor: colors.borderHi, backgroundColor: colors.blueSoft,
     alignItems: 'center', justifyContent: 'center', borderRadius: 12 },
   photoEmpty: { borderWidth: 1.5, borderStyle: 'dashed', borderColor: colors.border, backgroundColor: colors.card, borderRadius: 12 },

@@ -11,7 +11,6 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 
@@ -49,10 +48,19 @@ public class ProductoController {
     }
 
     @GetMapping("/{id}/fotos")
-    public ResponseEntity<List<Foto>> obtenerFotos(@PathVariable Long id) {
-        return productoRepository.findById(id)
-                .map(producto -> ResponseEntity.ok(producto.getFotos()))
-                .orElse(ResponseEntity.notFound().build());
+    public ResponseEntity<List<Long>> obtenerFotoIds(@PathVariable Long id) {
+        if (!productoRepository.existsById(id)) return ResponseEntity.notFound().build();
+        List<Long> ids = fotoRepository.findByProductoIdentificador(id).stream()
+                .map(Foto::getIdentificador)
+                .toList();
+        return ResponseEntity.ok(ids);
+    }
+
+    @GetMapping(value = "/{id}/portada", produces = MediaType.IMAGE_JPEG_VALUE)
+    public ResponseEntity<byte[]> portada(@PathVariable Long id) {
+        List<Foto> fotos = fotoRepository.findByProductoIdentificador(id);
+        if (fotos.isEmpty()) return ResponseEntity.notFound().build();
+        return ResponseEntity.ok().contentType(MediaType.IMAGE_JPEG).body(fotos.get(0).getFoto());
     }
 
     @PostMapping(value = "/{id}/fotos", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)

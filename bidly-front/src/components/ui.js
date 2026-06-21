@@ -1,7 +1,7 @@
 // BIDLY — shared UI kit (RN). Mirrors preview/components.jsx.
 import React from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet,
+  View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Image,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -104,7 +104,18 @@ export function Tag({ label, color = colors.blue, fill }) {
   );
 }
 
-export function ImgBox({ style, size = 32 }) {
+export function ImgBox({ style, size = 32, src }) {
+  const [failed, setFailed] = React.useState(false);
+  if (src && !failed) {
+    return (
+      <Image
+        source={{ uri: src }}
+        style={[{ backgroundColor: colors.cardEl, borderRadius: 12 }, style]}
+        resizeMode="cover"
+        onError={() => setFailed(true)}
+      />
+    );
+  }
   return (
     <View style={[{ backgroundColor: colors.cardEl, borderRadius: 12, borderWidth: 1,
       borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }, style]}>

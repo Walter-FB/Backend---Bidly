@@ -155,21 +155,24 @@ export function VerificarEmailScreen({ navigation, route }) {
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
+  const [error, setError] = useState('');
 
   const onVerificar = async () => {
+    setError('');
     if (code.trim().length !== 6) {
-      return Alert.alert('Código incompleto', 'El código tiene 6 dígitos.');
+      setError('El código debe tener 6 dígitos.');
+      return;
     }
     setLoading(true);
     try {
       const res = await Auth.verifyCode(email, code.trim());
-      navigation.navigate('CrearPassword', {
+      navigation.replace('CrearPassword', {
         email,
         verificationToken: res.verificationToken,
         datosPersonales,
       });
     } catch (e) {
-      Alert.alert('Código incorrecto', e.message || 'El código es inválido o expiró. Pedí uno nuevo.');
+      setError(e.message || 'El código es inválido o expiró. Pedí uno nuevo.');
     } finally {
       setLoading(false);
     }
@@ -177,6 +180,7 @@ export function VerificarEmailScreen({ navigation, route }) {
 
   const onReenviar = async () => {
     setResending(true);
+    setError('');
     try {
       await Auth.sendVerification(email);
       Alert.alert('Código reenviado', `Revisá tu casilla ${email}.`);
@@ -205,13 +209,20 @@ export function VerificarEmailScreen({ navigation, route }) {
 
       <TextInput
         value={code}
-        onChangeText={setCode}
+        onChangeText={(v) => { setCode(v); setError(''); }}
         placeholder="000000"
         placeholderTextColor={colors.muted}
         keyboardType="numeric"
         maxLength={6}
-        style={st.codeInput}
+        style={[st.codeInput, error ? { borderColor: '#ef4444' } : null]}
       />
+
+      {error ? (
+        <View style={st.errorBanner}>
+          <Ionicons name="alert-circle" size={16} color="#ef4444" />
+          <Text style={st.errorText}>{error}</Text>
+        </View>
+      ) : null}
 
       <Btn
         title={loading ? 'Verificando…' : 'Verificar'}
@@ -316,4 +327,11 @@ const st = StyleSheet.create({
   },
   checkRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginVertical: 18 },
   checkbox: { width: 22, height: 22, borderRadius: 6, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
+  errorBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: 'rgba(239,68,68,0.12)', borderRadius: 8,
+    borderWidth: 1, borderColor: 'rgba(239,68,68,0.35)',
+    paddingHorizontal: 12, paddingVertical: 10, marginTop: 10,
+  },
+  errorText: { color: '#ef4444', fontSize: 13.5, flex: 1, lineHeight: 18 },
 });

@@ -44,6 +44,25 @@ export async function request(path, { method = 'GET', body, auth = true, headers
   return data;
 }
 
+// Multipart upload — no fija Content-Type para que fetch añada el boundary automáticamente.
+export async function upload(path, formData) {
+  const token = await getToken();
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: formData,
+  });
+  const text = await res.text();
+  const data = text ? JSON.parse(text) : null;
+  if (!res.ok) {
+    const message = (data && (data.message || data.error)) || `HTTP ${res.status}`;
+    const err = new Error(message);
+    err.status = res.status;
+    throw err;
+  }
+  return data;
+}
+
 export const api = {
   get: (p, opts) => request(p, { ...opts, method: 'GET' }),
   post: (p, body, opts) => request(p, { ...opts, method: 'POST', body }),
