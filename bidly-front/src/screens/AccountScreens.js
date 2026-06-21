@@ -821,16 +821,10 @@ export function PublicarScreen({ navigation }) {
         seguro: null,
       });
 
-      if (fotos.length > 0) {
-        const formData = new FormData();
-        fotos.forEach((foto, i) => {
-          formData.append('fotos', {
-            uri: foto.uri,
-            name: `foto_${i}.jpg`,
-            type: 'image/jpeg',
-          });
-        });
-        await Productos.agregarFotos(producto.identificador, formData);
+      for (let i = 0; i < fotos.length; i++) {
+        const fd = new FormData();
+        fd.append('fotos', { uri: fotos[i].uri, name: `foto_${i}.jpg`, type: 'image/jpeg' });
+        await Productos.agregarFotos(producto.identificador, fd);
       }
 
       Alert.alert(
@@ -883,9 +877,14 @@ export function PublicarScreen({ navigation }) {
         <SectionLabel>Datos del producto</SectionLabel>
         <View style={{ gap: 12 }}>
           <Field placeholder="Título" value={f.titulo} onChangeText={set('titulo')} />
-          <View style={{ flexDirection: 'row', gap: 12 }}>
-            <View style={{ flex: 1 }}><Field placeholder="Categoría" value={f.categoria} onChangeText={set('categoria')} /></View>
-            <View style={{ flex: 1 }}><Field placeholder="Estado (nuevo/usado)" value={f.estado} onChangeText={set('estado')} /></View>
+          <Field placeholder="Categoría" value={f.categoria} onChangeText={set('categoria')} />
+          <View>
+            <Text style={{ color: colors.muted, fontSize: 12, fontWeight: '700', marginBottom: 8 }}>ESTADO</Text>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              {['nuevo', 'usado'].map((op) => (
+                <Chip key={op} label={op.charAt(0).toUpperCase() + op.slice(1)} active={f.estado === op} onPress={() => set('estado')(op)} />
+              ))}
+            </View>
           </View>
           <Field placeholder="Precio base ($)" value={f.precio} onChangeText={set('precio')} keyboardType="numeric" />
           <Field placeholder="Descripción completa" value={f.descripcion} onChangeText={set('descripcion')} multiline />
