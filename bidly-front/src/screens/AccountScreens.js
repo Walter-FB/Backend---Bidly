@@ -1,6 +1,6 @@
 // BIDLY — Perfil, MisSubastas, MisCompras, Historial, Publicar, DatosGanador.
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, Image, Modal, TextInput } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, Image, Modal } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -318,7 +318,7 @@ const DIAS_CORTOS = ['Lu','Ma','Mi','Ju','Vi','Sa','Do'];
 
 function minFechaSubasta() {
   const d = new Date();
-  d.setDate(d.getDate() + 10);
+  d.setDate(d.getDate() + 11); // constraint DB: fecha > CURRENT_DATE + 10 (estricto)
   d.setHours(0, 0, 0, 0);
   return d;
 }
@@ -381,7 +381,7 @@ function CalendarPicker({ value, onChange }) {
       </TouchableOpacity>
       {!value && (
         <Text style={{ color: colors.gold, fontSize: 11.5, marginTop: 4 }}>
-          ⚠ Debe ser al menos 10 días desde hoy ({formatFechaDisplay(toYMD(minDate))})
+          ⚠ Mínimo: {formatFechaDisplay(toYMD(minDate))}
         </Text>
       )}
 
@@ -451,62 +451,84 @@ function CalendarPicker({ value, onChange }) {
 }
 
 // ─── TIME SELECTOR ────────────────────────────────────────────────────────────
+const HORAS_OPTS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'));
 const MINUTOS_OPTS = ['00', '15', '30', '45'];
 
 function TimeSelector({ value, onChange }) {
-  const [hh, setHh] = useState(value ? value.split(':')[0] : '');
+  const [showHour, setShowHour] = useState(false);
+  const [showMin, setShowMin] = useState(false);
+  const hh = value ? value.split(':')[0] : null;
   const mm = value ? value.split(':')[1] : null;
 
-  const commit = (newHh, newMm) => {
-    const h = newHh.replace(/\D/g, '').slice(0, 2);
-    if (!h || !newMm) { onChange(''); return; }
-    const hNum = Math.min(23, parseInt(h, 10));
-    onChange(`${String(hNum).padStart(2, '0')}:${newMm}`);
+  const selectHour = (h) => {
+    onChange(`${h}:${mm || '00'}`);
+    setShowHour(false);
+    if (!mm) setTimeout(() => setShowMin(true), 180);
+  };
+
+  const selectMin = (m) => {
+    if (!hh) { setShowMin(false); setShowHour(true); return; }
+    onChange(`${hh}:${m}`);
+    setShowMin(false);
   };
 
   return (
-    <View style={{ gap: 10 }}>
-      {/* Hora */}
-      <View style={cs.timeRow}>
-        <Ionicons name="time-outline" size={20} color={value ? colors.blue : colors.muted} style={{ marginRight: 10 }} />
-        <View style={cs.timeBox}>
-          <TextInput
-            style={cs.timeInput}
-            placeholder="HH"
-            placeholderTextColor={colors.muted}
-            value={hh}
-            keyboardType="number-pad"
-            maxLength={2}
-            onChangeText={(v) => {
-              const clean = v.replace(/\D/g, '').slice(0, 2);
-              setHh(clean);
-              commit(clean, mm);
-            }}
-          />
-        </View>
-        <Text style={{ color: colors.muted, fontSize: 24, fontWeight: '800', marginHorizontal: 8 }}>:</Text>
-        <Text style={{ color: mm ? '#fff' : colors.muted, fontSize: 26, fontWeight: '800', minWidth: 42 }}>
-          {mm ?? '--'}
-        </Text>
-        {value && (
-          <Text style={{ color: colors.muted, fontSize: 13, marginLeft: 8 }}>hs</Text>
-        )}
+    <View>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+        <Ionicons name="time-outline" size={18} color={value ? colors.blue : colors.muted} />
+        <TouchableOpacity style={cs.timePicker} onPress={() => setShowHour(true)} activeOpacity={0.8}>
+          <Text style={[cs.timePickerText, !hh && { color: colors.muted }]}>{hh ?? 'HH'}</Text>
+        </TouchableOpacity>
+        <Text style={{ color: colors.muted, fontSize: 20, fontWeight: '800' }}>:</Text>
+        <TouchableOpacity style={cs.timePicker} onPress={() => setShowMin(true)} activeOpacity={0.8}>
+          <Text style={[cs.timePickerText, !mm && { color: colors.muted }]}>{mm ?? 'MM'}</Text>
+        </TouchableOpacity>
+        {value && <Text style={{ color: colors.muted, fontSize: 13, marginLeft: 2 }}>hs</Text>}
       </View>
-      {/* Minutos chips */}
-      <View style={{ flexDirection: 'row', gap: 10 }}>
-        {MINUTOS_OPTS.map((opt) => {
-          const active = mm === opt;
-          return (
-            <TouchableOpacity
-              key={opt}
-              style={[cs.minChip, active && cs.minChipActive]}
-              onPress={() => commit(hh, opt)}
-            >
-              <Text style={[cs.minChipText, active && { color: '#fff' }]}>{opt}</Text>
+
+      {/* Modal horas */}
+      <Modal visible={showHour} transparent animationType="fade" onRequestClose={() => setShowHour(false)}>
+        <TouchableOpacity style={cs.modalOverlay} activeOpacity={1} onPress={() => setShowHour(false)}>
+          <View style={{ flex: 1, justifyContent: 'center' }}>
+            <TouchableOpacity activeOpacity={1} style={cs.pickerBox}>
+              <Text style={cs.pickerTitle}>Hora</Text>
+              <View style={cs.pickerGrid}>
+                {HORAS_OPTS.map((h) => (
+                  <TouchableOpacity
+                    key={h}
+                    style={[cs.pickerCell, hh === h && cs.pickerCellActive]}
+                    onPress={() => selectHour(h)}
+                  >
+                    <Text style={cs.pickerCellText}>{h}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
             </TouchableOpacity>
-          );
-        })}
-      </View>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Modal minutos */}
+      <Modal visible={showMin} transparent animationType="fade" onRequestClose={() => setShowMin(false)}>
+        <TouchableOpacity style={cs.modalOverlay} activeOpacity={1} onPress={() => setShowMin(false)}>
+          <View style={{ flex: 1, justifyContent: 'center' }}>
+            <TouchableOpacity activeOpacity={1} style={cs.pickerBox}>
+              <Text style={cs.pickerTitle}>Minutos</Text>
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                {MINUTOS_OPTS.map((m) => (
+                  <TouchableOpacity
+                    key={m}
+                    style={[cs.pickerMinCell, mm === m && cs.pickerCellActive]}
+                    onPress={() => selectMin(m)}
+                  >
+                    <Text style={{ color: '#fff', fontSize: 22, fontWeight: '800' }}>{m}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
@@ -836,8 +858,6 @@ export function PublicarScreen({ navigation }) {
     Alert.alert('Próximamente', 'La función de borradores estará disponible en una próxima versión.');
   };
 
-  const slots = Array.from({ length: MAX_FOTOS });
-
   return (
     <Screen>
       <Header />
@@ -846,27 +866,19 @@ export function PublicarScreen({ navigation }) {
         <Sub>Completá los datos y se enviará a revisión.</Sub>
         <SectionLabel>Fotos ({fotos.length}/{MAX_FOTOS})</SectionLabel>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
-          {slots.map((_, i) => {
-            const foto = fotos[i];
-            if (foto) {
-              return (
-                <TouchableOpacity key={i} style={s.photo} onPress={() => quitarFoto(i)} activeOpacity={0.8}>
-                  <Image source={{ uri: foto.uri }} style={{ width: '100%', height: '100%', borderRadius: 10 }} resizeMode="cover" />
-                  <View style={s.removeOverlay}>
-                    <Ionicons name="close-circle" size={20} color="#fff" />
-                  </View>
-                </TouchableOpacity>
-              );
-            }
-            if (i === fotos.length) {
-              return (
-                <TouchableOpacity key={i} style={[s.photo, s.photoAdd]} onPress={elegirFoto}>
-                  <Ionicons name="add" size={26} color={colors.blue} />
-                </TouchableOpacity>
-              );
-            }
-            return <View key={i} style={[s.photo, s.photoEmpty]} />;
-          })}
+          {fotos.map((foto, i) => (
+            <TouchableOpacity key={i} style={s.photo} onPress={() => quitarFoto(i)} activeOpacity={0.8}>
+              <Image source={{ uri: foto.uri }} style={{ width: '100%', height: '100%', borderRadius: 10 }} resizeMode="cover" />
+              <View style={s.removeOverlay}>
+                <Ionicons name="close-circle" size={20} color="#fff" />
+              </View>
+            </TouchableOpacity>
+          ))}
+          {fotos.length < MAX_FOTOS && (
+            <TouchableOpacity style={[s.photo, s.photoAdd]} onPress={elegirFoto}>
+              <Ionicons name="add" size={26} color={colors.blue} />
+            </TouchableOpacity>
+          )}
         </View>
         <SectionLabel>Datos del producto</SectionLabel>
         <View style={{ gap: 12 }}>
@@ -1038,15 +1050,20 @@ const cs = StyleSheet.create({
   calCellSelected: { backgroundColor: colors.blue },
   calCellHoy: { borderWidth: 1.5, borderColor: colors.gold, borderRadius: 8 },
   calDayText: { color: '#fff', fontSize: 14 },
-  // Time
-  timeRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.card, borderWidth: 1,
-    borderColor: colors.border, borderRadius: 12, paddingVertical: 10, paddingHorizontal: 14 },
-  timeBox: { backgroundColor: colors.cardEl, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 },
-  timeInput: { color: '#fff', fontSize: 26, fontWeight: '800', textAlign: 'center', minWidth: 46 },
-  minChip: { flex: 1, paddingVertical: 10, borderRadius: 10, borderWidth: 1.5, borderColor: colors.border,
-    alignItems: 'center', backgroundColor: colors.card },
-  minChipActive: { backgroundColor: colors.blue, borderColor: colors.blue },
-  minChipText: { color: colors.muted, fontSize: 17, fontWeight: '800' },
+  // Time picker
+  timePicker: { backgroundColor: colors.cardEl, borderRadius: 10, paddingHorizontal: 16, paddingVertical: 8,
+    minWidth: 56, alignItems: 'center', justifyContent: 'center' },
+  timePickerText: { color: '#fff', fontSize: 20, fontWeight: '800', textAlign: 'center' },
+  pickerBox: { backgroundColor: colors.card, borderRadius: 20, padding: 20, margin: 24,
+    borderWidth: 1, borderColor: colors.border },
+  pickerTitle: { color: '#fff', fontWeight: '800', fontSize: 15, marginBottom: 14 },
+  pickerGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  pickerCell: { width: 50, height: 38, alignItems: 'center', justifyContent: 'center',
+    borderRadius: 8, backgroundColor: colors.cardEl },
+  pickerCellActive: { backgroundColor: colors.blue },
+  pickerCellText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  pickerMinCell: { flex: 1, paddingVertical: 18, alignItems: 'center', justifyContent: 'center',
+    borderRadius: 12, backgroundColor: colors.cardEl },
   // Agregar producto btn
   addBtn: { backgroundColor: colors.blue, borderRadius: 10, width: 46, height: 46, alignItems: 'center', justifyContent: 'center' },
 });
