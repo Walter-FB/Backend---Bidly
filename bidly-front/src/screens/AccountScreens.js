@@ -2,12 +2,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, Image, Modal } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen, Header, Title, Sub, SectionLabel, Btn, Chip, Card, Field, Tag, ImgBox, BottomBar, Row, Display } from '../components/ui';
 import { colors } from '../theme/theme';
 import { AuctionCard } from './HomeScreens';
 import { useAuth } from '../context/AuthContext';
+import { BASE_URL, getToken } from '../api/client';
 import { Clientes, Personas, RegistroSubasta, Subastas, Productos, Subastadores, Catalogos } from '../api/endpoints';
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
@@ -821,10 +823,19 @@ export function PublicarScreen({ navigation }) {
         seguro: null,
       });
 
+      const token = await getToken();
       for (let i = 0; i < fotos.length; i++) {
-        const fd = new FormData();
-        fd.append('fotos', { uri: fotos[i].uri, name: `foto_${i}.jpg`, type: 'image/jpeg' });
-        await Productos.agregarFotos(producto.identificador, fd);
+        await FileSystem.uploadAsync(
+          `${BASE_URL}/productos/${producto.identificador}/fotos`,
+          fotos[i].uri,
+          {
+            fieldName: 'fotos',
+            httpMethod: 'POST',
+            uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+            mimeType: fotos[i].mimeType || 'image/jpeg',
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+          }
+        );
       }
 
       Alert.alert(
