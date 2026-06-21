@@ -1,6 +1,6 @@
 // BIDLY — Perfil, MisSubastas, MisCompras, Historial, Publicar, DatosGanador.
-import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, Image } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, Image, Modal, TextInput } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -312,11 +312,210 @@ export function MisSubastasScreen({ navigation }) {
   );
 }
 
+// ─── CALENDAR PICKER ─────────────────────────────────────────────────────────
+const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+const DIAS_CORTOS = ['Lu','Ma','Mi','Ju','Vi','Sa','Do'];
+
+function minFechaSubasta() {
+  const d = new Date();
+  d.setDate(d.getDate() + 10);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function toYMD(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function formatFechaDisplay(ymd) {
+  if (!ymd) return null;
+  const [y, m, d] = ymd.split('-').map(Number);
+  return `${d} de ${MESES[m - 1]} de ${y}`;
+}
+
+function CalendarPicker({ value, onChange }) {
+  const minDate = minFechaSubasta();
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
+
+  const initDate = value ? new Date(value + 'T00:00:00') : minDate;
+  const [visible, setVisible] = useState(false);
+  const [viewYear, setViewYear] = useState(initDate.getFullYear());
+  const [viewMonth, setViewMonth] = useState(initDate.getMonth());
+
+  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+  // Monday-first offset
+  const rawFirst = new Date(viewYear, viewMonth, 1).getDay();
+  const offset = rawFirst === 0 ? 6 : rawFirst - 1;
+
+  const prevMonth = () => {
+    if (viewMonth === 0) { setViewMonth(11); setViewYear(y => y - 1); }
+    else setViewMonth(m => m - 1);
+  };
+  const nextMonth = () => {
+    if (viewMonth === 11) { setViewMonth(0); setViewYear(y => y + 1); }
+    else setViewMonth(m => m + 1);
+  };
+
+  const onSelectDay = (day) => {
+    const selected = new Date(viewYear, viewMonth, day);
+    if (selected < minDate) return;
+    onChange(toYMD(selected));
+    setVisible(false);
+  };
+
+  const cells = [];
+  for (let i = 0; i < offset; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+
+  return (
+    <>
+      <TouchableOpacity style={cs.dateBtn} onPress={() => setVisible(true)} activeOpacity={0.8}>
+        <Ionicons name="calendar-outline" size={20} color={value ? colors.blue : colors.muted} />
+        <Text style={{ color: value ? '#fff' : colors.muted, fontSize: 15, flex: 1 }}>
+          {value ? formatFechaDisplay(value) : 'Seleccionar fecha'}
+        </Text>
+        <Ionicons name="chevron-down" size={16} color={colors.muted} />
+      </TouchableOpacity>
+      {!value && (
+        <Text style={{ color: colors.gold, fontSize: 11.5, marginTop: 4 }}>
+          ⚠ Debe ser al menos 10 días desde hoy ({formatFechaDisplay(toYMD(minDate))})
+        </Text>
+      )}
+
+      <Modal visible={visible} transparent animationType="slide" onRequestClose={() => setVisible(false)}>
+        <TouchableOpacity style={cs.modalOverlay} activeOpacity={1} onPress={() => setVisible(false)}>
+          <TouchableOpacity activeOpacity={1} style={cs.calBox} onPress={() => {}}>
+            {/* Nav header */}
+            <View style={cs.calHeader}>
+              <TouchableOpacity onPress={prevMonth} style={cs.calNavBtn}>
+                <Ionicons name="chevron-back" size={22} color="#fff" />
+              </TouchableOpacity>
+              <Text style={cs.calMonthLabel}>{MESES[viewMonth]} {viewYear}</Text>
+              <TouchableOpacity onPress={nextMonth} style={cs.calNavBtn}>
+                <Ionicons name="chevron-forward" size={22} color="#fff" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Day headers */}
+            <View style={cs.calRow}>
+              {DIAS_CORTOS.map(d => (
+                <Text key={d} style={cs.calDayHeader}>{d}</Text>
+              ))}
+            </View>
+
+            {/* Day grid */}
+            <View style={cs.calGrid}>
+              {cells.map((day, i) => {
+                if (!day) return <View key={`e-${i}`} style={cs.calCell} />;
+                const cellDate = new Date(viewYear, viewMonth, day);
+                cellDate.setHours(0,0,0,0);
+                const isDisabled = cellDate < minDate;
+                const isSelected = value === toYMD(cellDate);
+                const isHoy = cellDate.getTime() === hoy.getTime();
+                return (
+                  <TouchableOpacity
+                    key={day}
+                    style={[
+                      cs.calCell,
+                      isSelected && cs.calCellSelected,
+                      isHoy && !isSelected && cs.calCellHoy,
+                    ]}
+                    onPress={() => onSelectDay(day)}
+                    disabled={isDisabled}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[
+                      cs.calDayText,
+                      isDisabled && { color: colors.border },
+                      isSelected && { color: '#fff', fontWeight: '800' },
+                      isHoy && !isSelected && { color: colors.gold },
+                    ]}>
+                      {day}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <TouchableOpacity onPress={() => setVisible(false)} style={{ marginTop: 14, alignItems: 'center' }}>
+              <Text style={{ color: colors.muted, fontSize: 14 }}>Cancelar</Text>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+    </>
+  );
+}
+
+// ─── TIME SELECTOR ────────────────────────────────────────────────────────────
+function TimeSelector({ value, onChange }) {
+  const [hh, setHh] = useState(value ? value.split(':')[0] : '');
+  const [mm, setMm] = useState(value ? value.split(':')[1] : '');
+  const mmRef = useRef(null);
+
+  const update = (newHh, newMm) => {
+    const h = newHh.replace(/\D/g, '').slice(0, 2);
+    const m = newMm.replace(/\D/g, '').slice(0, 2);
+    if (h && m) {
+      const hNum = Math.min(23, parseInt(h, 10));
+      const mNum = Math.min(59, parseInt(m, 10));
+      onChange(`${String(hNum).padStart(2,'0')}:${String(mNum).padStart(2,'0')}`);
+    } else {
+      onChange('');
+    }
+  };
+
+  return (
+    <View style={cs.timeRow}>
+      <Ionicons name="time-outline" size={20} color={value ? colors.blue : colors.muted} style={{ marginRight: 10 }} />
+      <View style={cs.timeBox}>
+        <TextInput
+          style={cs.timeInput}
+          placeholder="HH"
+          placeholderTextColor={colors.muted}
+          value={hh}
+          keyboardType="number-pad"
+          maxLength={2}
+          onChangeText={(v) => {
+            const clean = v.replace(/\D/g, '').slice(0, 2);
+            setHh(clean);
+            if (clean.length === 2) mmRef.current?.focus();
+            update(clean, mm);
+          }}
+        />
+      </View>
+      <Text style={{ color: colors.muted, fontSize: 24, fontWeight: '800', marginHorizontal: 6 }}>:</Text>
+      <View style={cs.timeBox}>
+        <TextInput
+          ref={mmRef}
+          style={cs.timeInput}
+          placeholder="MM"
+          placeholderTextColor={colors.muted}
+          value={mm}
+          keyboardType="number-pad"
+          maxLength={2}
+          onChangeText={(v) => {
+            const clean = v.replace(/\D/g, '').slice(0, 2);
+            setMm(clean);
+            update(hh, clean);
+          }}
+        />
+      </View>
+      {value && (
+        <Text style={{ color: colors.muted, fontSize: 13, marginLeft: 10 }}>hs</Text>
+      )}
+    </View>
+  );
+}
+
 // ─── CREAR SUBASTA ────────────────────────────────────────────────────────────
 const CATS_SUBASTA = ['comun', 'especial', 'plata', 'oro', 'platino'];
 const MONEDAS = ['pesos', 'dolares'];
 
-export function CrearSubastaScreen({ navigation }) {
+export function CrearSubastaScreen({ navigation, route }) {
   const { user } = useAuth();
   const [paso, setPaso] = useState(1);
   const [f, setF] = useState({
@@ -326,17 +525,13 @@ export function CrearSubastaScreen({ navigation }) {
     moneda: 'pesos',
     ubicacion: '',
   });
-  const [itemsSeleccionados, setItemsSeleccionados] = useState([]);
+  // Si viene con un producto pre-cargado desde PublicarScreen
+  const productoInicial = route.params?.productoId
+    ? [{ productoId: route.params.productoId, titulo: route.params.titulo || '', precioBase: '', comision: '10' }]
+    : [];
+  const [itemsSeleccionados, setItemsSeleccionados] = useState(productoInicial);
   const [loading, setLoading] = useState(false);
   const set = (k) => (v) => setF((s) => ({ ...s, [k]: v }));
-
-  const toggleItem = (productoId) => {
-    setItemsSeleccionados((prev) => {
-      const existe = prev.find((i) => i.productoId === productoId);
-      if (existe) return prev.filter((i) => i.productoId !== productoId);
-      return [...prev, { productoId, precioBase: '', comision: '10' }];
-    });
-  };
 
   const setItemField = (productoId, campo, valor) => {
     setItemsSeleccionados((prev) =>
@@ -345,26 +540,24 @@ export function CrearSubastaScreen({ navigation }) {
   };
 
   const onSiguiente = () => {
-    if (!f.fecha.trim() || !f.hora.trim() || !f.ubicacion.trim()) {
-      return Alert.alert('Campos requeridos', 'Completá fecha, hora y ubicación.');
-    }
+    if (!f.fecha) return Alert.alert('Fecha requerida', 'Seleccioná una fecha en el calendario.');
+    if (!f.hora) return Alert.alert('Hora requerida', 'Ingresá la hora de inicio.');
+    if (!f.ubicacion.trim()) return Alert.alert('Ubicación requerida', 'Completá la dirección.');
     setPaso(2);
   };
 
   const onCrear = async () => {
     if (itemsSeleccionados.length === 0) {
-      return Alert.alert('Sin ítems', 'Agregá al menos un producto a la subasta.');
+      return Alert.alert('Sin productos', 'Agregá al menos un producto a la subasta.');
     }
-    const sinPrecio = itemsSeleccionados.find((i) => !i.precioBase.trim());
+    const sinPrecio = itemsSeleccionados.find((i) => !String(i.precioBase).trim());
     if (sinPrecio) {
-      return Alert.alert('Precio faltante', 'Completá el precio base de cada ítem seleccionado.');
+      return Alert.alert('Precio faltante', 'Completá el precio base de cada producto.');
     }
     setLoading(true);
     try {
-      // 1. Asegurar registro de subastador
       await Subastadores.crear({ identificador: user.clienteId }).catch(() => {});
 
-      // 2. Crear subasta
       const subasta = await Subastas.crear({
         fecha: f.fecha,
         hora: f.hora + ':00',
@@ -375,14 +568,12 @@ export function CrearSubastaScreen({ navigation }) {
         moneda: f.moneda,
       });
 
-      // 3. Crear catálogo
       const catalogo = await Catalogos.crear({
         descripcion: `Catálogo subasta #${subasta.identificador}`,
         subasta: subasta.identificador,
         responsable: user.clienteId,
       });
 
-      // 4. Agregar ítems
       await Promise.all(
         itemsSeleccionados.map((it) =>
           Catalogos.agregarItem(catalogo.identificador, {
@@ -395,120 +586,140 @@ export function CrearSubastaScreen({ navigation }) {
 
       Alert.alert(
         '¡Subasta creada!',
-        `Subasta #${subasta.identificador} lista. Abrila desde "Mis subastas" cuando estés listo.`,
-        [{ text: 'OK', onPress: () => navigation.navigate('Subastas') }]
+        `Subasta #${subasta.identificador} creada con ${itemsSeleccionados.length} producto(s). Abrila desde "Mis subastas" cuando estés listo.`,
+        [{ text: 'Ir a mis subastas', onPress: () => navigation.navigate('Subastas') }]
       );
     } catch (e) {
-      Alert.alert('Error', e.message || 'No se pudo crear la subasta.');
+      Alert.alert('Error al crear subasta', e.message || 'Revisá los datos e intentá nuevamente.');
     } finally {
       setLoading(false);
     }
   };
 
-
   if (paso === 1) {
     return (
-      <Screen scroll contentStyle={{ paddingHorizontal: 22, paddingBottom: 40 }}>
+      <Screen scroll contentStyle={{ paddingHorizontal: 22, paddingBottom: 50 }}>
         <Header />
         <Title>Nueva subasta</Title>
         <Sub>Paso 1 de 2 — Información básica</Sub>
 
-        <SectionLabel>Fecha y hora</SectionLabel>
-        <View style={{ gap: 12 }}>
-          <Field
-            placeholder="Fecha (YYYY-MM-DD)"
-            value={f.fecha}
-            onChangeText={set('fecha')}
-          />
-          <Field
-            placeholder="Hora de inicio (HH:MM)"
-            value={f.hora}
-            onChangeText={set('hora')}
-          />
-          <Field
-            placeholder="Ubicación / dirección"
-            value={f.ubicacion}
-            onChangeText={set('ubicacion')}
-          />
-        </View>
+        <SectionLabel>Fecha</SectionLabel>
+        <CalendarPicker value={f.fecha} onChange={set('fecha')} />
 
-        <SectionLabel>Categoría</SectionLabel>
+        <SectionLabel style={{ marginTop: 18 }}>Hora de inicio</SectionLabel>
+        <TimeSelector value={f.hora} onChange={set('hora')} />
+
+        <SectionLabel style={{ marginTop: 18 }}>Ubicación</SectionLabel>
+        <Field
+          placeholder="Dirección donde se realiza la subasta"
+          value={f.ubicacion}
+          onChangeText={set('ubicacion')}
+        />
+
+        <SectionLabel style={{ marginTop: 18 }}>Categoría</SectionLabel>
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
           <View style={{ flexDirection: 'row', gap: 8 }}>
             {CATS_SUBASTA.map((c) => (
-              <Chip
-                key={c}
-                label={c.charAt(0).toUpperCase() + c.slice(1)}
-                active={f.categoria === c}
-                onPress={() => set('categoria')(c)}
-              />
+              <Chip key={c} label={c.charAt(0).toUpperCase() + c.slice(1)} active={f.categoria === c} onPress={() => set('categoria')(c)} />
             ))}
           </View>
         </ScrollView>
 
-        <SectionLabel>Moneda</SectionLabel>
+        <SectionLabel style={{ marginTop: 18 }}>Moneda</SectionLabel>
         <View style={{ flexDirection: 'row', gap: 8 }}>
           {MONEDAS.map((m) => (
-            <Chip
-              key={m}
-              label={m === 'pesos' ? 'Pesos $' : 'Dólares U$D'}
-              active={f.moneda === m}
-              onPress={() => set('moneda')(m)}
-            />
+            <Chip key={m} label={m === 'pesos' ? 'Pesos $' : 'Dólares U$D'} active={f.moneda === m} onPress={() => set('moneda')(m)} />
           ))}
         </View>
 
-        <View style={{ marginTop: 28 }}>
-          <Btn title="Siguiente →" onPress={onSiguiente} />
+        <View style={{ marginTop: 32 }}>
+          <Btn title="Siguiente → Agregar productos" onPress={onSiguiente} />
         </View>
       </Screen>
     );
   }
 
   return (
-    <Screen scroll contentStyle={{ paddingHorizontal: 22, paddingBottom: 40 }}>
+    <Screen scroll contentStyle={{ paddingHorizontal: 22, paddingBottom: 50 }}>
       <Header onBack={() => setPaso(1)} />
       <Title>Nueva subasta</Title>
-      <Sub>Paso 2 de 2 — Agregar productos</Sub>
-      <Text style={{ color: colors.muted, fontSize: 13, marginBottom: 14 }}>
-        Ingresá el ID de cada producto que publicaste y configurá su precio base.
-      </Text>
+      <Sub>Paso 2 de 2 — Productos</Sub>
 
-      {itemsSeleccionados.map((item, idx) => (
+      {/* Resumen de paso 1 */}
+      <Card el style={{ flexDirection: 'row', gap: 14, alignItems: 'center', marginBottom: 18 }}>
+        <Ionicons name="calendar" size={22} color={colors.blue} />
+        <View>
+          <Text style={{ color: '#fff', fontSize: 14, fontWeight: '700' }}>{formatFechaDisplay(f.fecha)}</Text>
+          <Text style={{ color: colors.muted, fontSize: 12.5 }}>{f.hora} hs · {f.ubicacion}</Text>
+        </View>
+      </Card>
+
+      {/* Lista de productos agregados */}
+      {itemsSeleccionados.length === 0 && (
+        <Card el style={{ alignItems: 'center', paddingVertical: 20, marginBottom: 14 }}>
+          <Ionicons name="cube-outline" size={36} color={colors.muted} />
+          <Text style={{ color: colors.muted, fontSize: 13, marginTop: 8, textAlign: 'center' }}>
+            No hay productos aún.{'\n'}Publicá uno o agregá su ID abajo.
+          </Text>
+          <TouchableOpacity
+            style={{ marginTop: 12 }}
+            onPress={() => navigation.navigate('Publicar')}
+          >
+            <Text style={{ color: colors.blue, fontWeight: '700', fontSize: 13 }}>+ Publicar nuevo producto</Text>
+          </TouchableOpacity>
+        </Card>
+      )}
+
+      {itemsSeleccionados.map((item) => (
         <Card key={item.productoId} el style={{ gap: 10, marginBottom: 12 }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Display style={{ fontSize: 14 }}>Producto #{item.productoId}</Display>
-            <TouchableOpacity onPress={() => toggleItem(item.productoId)}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <View style={{ width: 30, height: 30, borderRadius: 8, backgroundColor: colors.blue + '22', alignItems: 'center', justifyContent: 'center' }}>
+                <Ionicons name="cube" size={16} color={colors.blue} />
+              </View>
+              <View>
+                <Display style={{ fontSize: 13 }}>Producto #{item.productoId}</Display>
+                {item.titulo ? <Text style={{ color: colors.muted, fontSize: 11 }}>{item.titulo}</Text> : null}
+              </View>
+            </View>
+            <TouchableOpacity onPress={() => setItemsSeleccionados(prev => prev.filter(i => i.productoId !== item.productoId))}>
               <Ionicons name="close-circle" size={22} color={colors.red} />
             </TouchableOpacity>
           </View>
-          <Field
-            placeholder="Precio base ($)"
-            value={item.precioBase}
-            onChangeText={(v) => setItemField(item.productoId, 'precioBase', v)}
-            keyboardType="numeric"
-          />
-          <Field
-            placeholder="Comisión ($)"
-            value={item.comision}
-            onChangeText={(v) => setItemField(item.productoId, 'comision', v)}
-            keyboardType="numeric"
-          />
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: colors.muted, fontSize: 11, marginBottom: 4 }}>PRECIO BASE</Text>
+              <Field
+                placeholder="$ 0.00"
+                value={String(item.precioBase)}
+                onChangeText={(v) => setItemField(item.productoId, 'precioBase', v)}
+                keyboardType="numeric"
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: colors.muted, fontSize: 11, marginBottom: 4 }}>COMISIÓN</Text>
+              <Field
+                placeholder="$ 10"
+                value={String(item.comision)}
+                onChangeText={(v) => setItemField(item.productoId, 'comision', v)}
+                keyboardType="numeric"
+              />
+            </View>
+          </View>
         </Card>
       ))}
 
       <AgregarProductoBtn
-        onAgregar={(id) => {
-          if (!id) return;
+        onAgregar={(id, titulo) => {
           const numId = parseInt(id, 10);
-          if (isNaN(numId)) return Alert.alert('ID inválido', 'Ingresá un número.');
+          if (isNaN(numId)) return Alert.alert('ID inválido', 'El ID debe ser un número.');
           if (itemsSeleccionados.find((i) => i.productoId === numId)) return;
-          setItemsSeleccionados((prev) => [...prev, { productoId: numId, precioBase: '', comision: '10' }]);
+          setItemsSeleccionados((prev) => [...prev, { productoId: numId, titulo, precioBase: '', comision: '10' }]);
         }}
       />
 
-      <View style={{ marginTop: 20 }}>
-        <Btn title={loading ? 'Creando…' : 'Crear subasta'} onPress={onCrear} disabled={loading} />
+      <View style={{ marginTop: 24 }}>
+        <Btn title={loading ? 'Creando subasta…' : `Crear subasta con ${itemsSeleccionados.length} producto(s)`} onPress={onCrear} disabled={loading || itemsSeleccionados.length === 0} />
       </View>
     </Screen>
   );
@@ -517,22 +728,29 @@ export function CrearSubastaScreen({ navigation }) {
 function AgregarProductoBtn({ onAgregar }) {
   const [id, setId] = useState('');
   return (
-    <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center', marginTop: 4 }}>
-      <View style={{ flex: 1 }}>
-        <Field
-          placeholder="ID del producto a agregar"
-          value={id}
-          onChangeText={setId}
-          keyboardType="numeric"
-        />
+    <Card style={{ gap: 10 }}>
+      <Text style={{ color: colors.muted, fontSize: 12, fontWeight: '700' }}>AGREGAR PRODUCTO POR ID</Text>
+      <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
+        <View style={{ flex: 1 }}>
+          <Field
+            placeholder="ID del producto (ej: 12)"
+            value={id}
+            onChangeText={setId}
+            keyboardType="numeric"
+          />
+        </View>
+        <TouchableOpacity
+          style={[cs.addBtn, !id.trim() && { opacity: 0.4 }]}
+          onPress={() => { if (id.trim()) { onAgregar(id); setId(''); } }}
+          disabled={!id.trim()}
+        >
+          <Ionicons name="add" size={22} color="#fff" />
+        </TouchableOpacity>
       </View>
-      <TouchableOpacity
-        style={{ backgroundColor: colors.blue, borderRadius: 10, padding: 13 }}
-        onPress={() => { onAgregar(id); setId(''); }}
-      >
-        <Ionicons name="add" size={20} color="#fff" />
-      </TouchableOpacity>
-    </View>
+      <Text style={{ color: colors.muted, fontSize: 11.5 }}>
+        Encontrás el ID en el alert de confirmación al publicar un producto.
+      </Text>
+    </Card>
   );
 }
 
@@ -594,9 +812,18 @@ export function PublicarScreen({ navigation }) {
       }
 
       Alert.alert(
-        '¡Producto creado!',
-        `Producto #${producto.identificador} registrado. Un administrador lo asignará a una subasta.`,
-        [{ text: 'OK', onPress: () => navigation.navigate('Main') }],
+        '¡Producto publicado!',
+        `Producto #${producto.identificador} listo. ¿Querés crear una subasta con este producto ahora?`,
+        [
+          {
+            text: 'Crear subasta',
+            onPress: () => navigation.navigate('CrearSubasta', {
+              productoId: producto.identificador,
+              titulo: f.titulo,
+            }),
+          },
+          { text: 'Ir al inicio', style: 'cancel', onPress: () => navigation.navigate('Main') },
+        ],
       );
     } catch (e) {
       Alert.alert('Error', e.message || 'No se pudo publicar el producto.');
@@ -792,4 +1019,30 @@ const s = StyleSheet.create({
   photoEmpty: { borderWidth: 1.5, borderStyle: 'dashed', borderColor: colors.border, backgroundColor: colors.card, borderRadius: 12 },
   winnerAvatar: { width: 46, height: 46, borderRadius: 23, backgroundColor: colors.cardEl, alignItems: 'center', justifyContent: 'center' },
   dpIcon: { width: 40, height: 40, borderRadius: 10, backgroundColor: 'rgba(59,130,246,0.12)', alignItems: 'center', justifyContent: 'center' },
+});
+
+// Estilos del calendar picker y time selector
+const cs = StyleSheet.create({
+  // Calendar
+  dateBtn: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: colors.card, borderWidth: 1,
+    borderColor: colors.border, borderRadius: 12, paddingVertical: 14, paddingHorizontal: 14 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
+  calBox: { backgroundColor: colors.card, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 36 },
+  calHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
+  calNavBtn: { padding: 6 },
+  calMonthLabel: { color: '#fff', fontSize: 17, fontWeight: '800' },
+  calRow: { flexDirection: 'row', marginBottom: 8 },
+  calDayHeader: { flex: 1, textAlign: 'center', color: colors.muted, fontSize: 12, fontWeight: '700' },
+  calGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+  calCell: { width: `${100/7}%`, aspectRatio: 1, alignItems: 'center', justifyContent: 'center', borderRadius: 8 },
+  calCellSelected: { backgroundColor: colors.blue },
+  calCellHoy: { borderWidth: 1.5, borderColor: colors.gold, borderRadius: 8 },
+  calDayText: { color: '#fff', fontSize: 14 },
+  // Time
+  timeRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.card, borderWidth: 1,
+    borderColor: colors.border, borderRadius: 12, paddingVertical: 10, paddingHorizontal: 14 },
+  timeBox: { backgroundColor: colors.cardEl, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 },
+  timeInput: { color: '#fff', fontSize: 26, fontWeight: '800', textAlign: 'center', minWidth: 46 },
+  // Agregar producto btn
+  addBtn: { backgroundColor: colors.blue, borderRadius: 10, width: 46, height: 46, alignItems: 'center', justifyContent: 'center' },
 });
