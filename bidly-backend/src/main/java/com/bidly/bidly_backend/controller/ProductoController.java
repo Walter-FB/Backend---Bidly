@@ -8,6 +8,8 @@ import com.bidly.bidly_backend.repository.DuenioRepository;
 import com.bidly.bidly_backend.repository.EmpleadoRepository;
 import com.bidly.bidly_backend.repository.FotoRepository;
 import com.bidly.bidly_backend.repository.ProductoRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -22,6 +24,8 @@ import java.util.Random;
 @RestController
 @RequestMapping("/api/productos")
 public class ProductoController {
+
+    private static final Logger log = LoggerFactory.getLogger(ProductoController.class);
 
     @Autowired
     private ProductoRepository productoRepository;
@@ -56,6 +60,8 @@ public class ProductoController {
         producto.setRevisor(revisorId);
 
         Long duenioId = producto.getDuenio();
+        log.info("PRODUCTO CREAR - duenio={} revisor={}", duenioId, revisorId);
+
         if (duenioId != null && !duenioRepository.existsById(duenioId)) {
             Duenio nuevo = new Duenio();
             nuevo.setIdentificador(duenioId);
@@ -64,9 +70,12 @@ public class ProductoController {
             nuevo.setVerificacionJudicial("no");
             nuevo.setVerificador(revisorId);
             duenioRepository.save(nuevo);
+            log.info("PRODUCTO CREAR - duenio={} auto-registrado en tabla duenios", duenioId);
         }
 
-        return ResponseEntity.status(201).body(productoRepository.save(producto));
+        Producto guardado = productoRepository.save(producto);
+        log.info("PRODUCTO CREAR OK - id={} duenio={} revisor={}", guardado.getIdentificador(), duenioId, revisorId);
+        return ResponseEntity.status(201).body(guardado);
     }
 
     @PatchMapping("/{id}/disponible")
@@ -97,28 +106,34 @@ public class ProductoController {
     }
 
     @PostMapping(value = "/{id}/fotos", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-public ResponseEntity<?> agregarFotos(@PathVariable Long id,
-                                       @RequestPart("fotos") List<MultipartFile> archivos) {
-    return productoRepository.findById(id)
-            .map(producto -> {
-                if (archivos == null || archivos.isEmpty()) {
-                    return ResponseEntity.badRequest()
-                            .<Object>body(Map.of("error", "La lista de fotos no puede estar vacía"));
-                }
-                for (MultipartFile archivo : archivos) {
-                    try {
-                        Foto foto = new Foto();
-                        foto.setProducto(producto);
-                        foto.setFoto(archivo.getBytes());
-                        fotoRepository.save(foto);
-                    } catch (IOException e) {
-                        return ResponseEntity.status(500)
-                                .<Object>body(Map.of("error", "Error leyendo archivo: " + archivo.getOriginalFilename()));
+    public ResponseEntity<?> agregarFotos(@PathVariable Long id,
+                                           @RequestPart("fotos") List<MultipartFile> archivos) {
+        log.info("FOTOS UPLOAD - productoId={} archivos={}", id, archivos != null ? archivos.size() : "null");
+        return productoRepository.findById(id)
+                .map(producto -> {
+                    if (archivos == null || archivos.isEmpty()) {
+                        log.warn("FOTOS UPLOAD - productoId={} lista vacía", id);
+                        return ResponseEntity.badRequest()
+                                .<Object>body(Map.of("error", "La lista de fotos no puede estar vacía"));
                     }
-                }
-                return ResponseEntity.status(201)
-                        .<Object>body(Map.of("guardadas", archivos.size()));
-            })
-            .orElse(ResponseEntity.notFound().build());
-}
+                    for (MultipartFile archivo : archivos) {
+                        try {
+                            log.info("FOTOS UPLOAD - productoId={} archivo={} size={}B contentType={}",
+                                    id, archivo.getOriginalFilename(), archivo.getSize(), archivo.getContentType());
+                            Foto foto = new Foto();
+                            foto.setProducto(producto);
+                            foto.setFoto(archivo.getBytes());
+                            fotoRepository.save(foto);
+                        } catch (IOException e) {
+                            log.error("FOTOS UPLOAD ERROR - productoId={} archivo={} error={}", id, archivo.getOriginalFilename(), e.getMessage());
+                            return ResponseEntity.status(500)
+                                    .<Object>body(Map.of("error", "Error leyendo archivo: " + archivo.getOriginalFilename()));
+                        }
+                    }
+                    log.info("FOTOS UPLOAD OK - productoId={} guardadas={}", id, archivos.size());
+                    return ResponseEntity.status(201)
+                            .<Object>body(Map.of("guardadas", archivos.size()));
+                })
+                .orElse(ResponseEntity.notFound().build());
+    }
 }
