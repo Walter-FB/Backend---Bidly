@@ -2,7 +2,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, Image, Modal } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import * as FileSystem from 'expo-file-system';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen, Header, Title, Sub, SectionLabel, Btn, Chip, Card, Field, Tag, ImgBox, BottomBar, Row, Display } from '../components/ui';
@@ -825,17 +824,16 @@ export function PublicarScreen({ navigation }) {
 
       const token = await getToken();
       for (let i = 0; i < fotos.length; i++) {
-        await FileSystem.uploadAsync(
-          `${BASE_URL}/productos/${producto.identificador}/fotos`,
-          fotos[i].uri,
-          {
-            fieldName: 'fotos',
-            httpMethod: 'POST',
-            uploadType: FileSystem.FileSystemUploadType.MULTIPART,
-            mimeType: fotos[i].mimeType || 'image/jpeg',
-            headers: token ? { Authorization: `Bearer ${token}` } : {},
-          }
-        );
+        await new Promise((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open('POST', `${BASE_URL}/productos/${producto.identificador}/fotos`);
+          if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+          xhr.onload = () => xhr.status < 300 ? resolve() : reject(new Error(`HTTP ${xhr.status}`));
+          xhr.onerror = () => reject(new Error('Error de red al subir foto'));
+          const fd = new FormData();
+          fd.append('fotos', { uri: fotos[i].uri, name: `foto_${i}.jpg`, type: fotos[i].mimeType || 'image/jpeg' });
+          xhr.send(fd);
+        });
       }
 
       Alert.alert(
