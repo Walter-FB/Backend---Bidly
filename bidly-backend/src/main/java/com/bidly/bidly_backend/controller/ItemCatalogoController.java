@@ -22,6 +22,8 @@ import java.util.Map;
 @RestController
 public class ItemCatalogoController {
 
+    private static final BigDecimal COMISION_BIDLY = new BigDecimal("0.10");
+
     @Autowired
     private ItemCatalogoRepository itemCatalogoRepository;
 
@@ -50,8 +52,9 @@ public class ItemCatalogoController {
         ItemCatalogo item = new ItemCatalogo();
         item.setCatalogo(catalogo);
         item.setProducto(producto);
-        item.setPrecioBase(new BigDecimal(body.get("precioBase").toString()));
-        item.setComision(new BigDecimal(body.get("comision").toString()));
+        BigDecimal precioBase = new BigDecimal(body.get("precioBase").toString());
+        item.setPrecioBase(precioBase);
+        item.setComision(precioBase.multiply(COMISION_BIDLY));
         item.setSubastado("no");
         return ResponseEntity.status(201).body(itemCatalogoRepository.save(item));
     }

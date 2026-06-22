@@ -11,6 +11,8 @@ import { useAuth } from '../context/AuthContext';
 import { BASE_URL, getToken } from '../api/client';
 import { Clientes, Personas, RegistroSubasta, Subastas, Productos, Subastadores, Catalogos } from '../api/endpoints';
 
+const COMISION_BIDLY = 0.10;
+
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
 const CATEGORIAS_LABEL = {
@@ -556,7 +558,7 @@ export function CrearSubastaScreen({ navigation, route }) {
   });
   // Si viene con un producto pre-cargado desde PublicarScreen
   const productoInicial = route.params?.productoId
-    ? [{ productoId: route.params.productoId, titulo: route.params.titulo || '', precioBase: '', comision: '10' }]
+    ? [{ productoId: route.params.productoId, titulo: route.params.titulo || '', precioBase: '' }]
     : [];
   const [itemsSeleccionados, setItemsSeleccionados] = useState(productoInicial);
   const [loading, setLoading] = useState(false);
@@ -575,7 +577,6 @@ export function CrearSubastaScreen({ navigation, route }) {
         productoId: prod.identificador,
         titulo: prod.descripcionCatalogo || `Producto #${prod.identificador}`,
         precioBase: '',
-        comision: '10',
       }];
     });
   };
@@ -620,7 +621,6 @@ export function CrearSubastaScreen({ navigation, route }) {
           Catalogos.agregarItem(catalogo.identificador, {
             producto: it.productoId,
             precioBase: parseFloat(it.precioBase),
-            comision: parseFloat(it.comision) || 10,
           })
         )
       );
@@ -733,25 +733,33 @@ export function CrearSubastaScreen({ navigation, route }) {
               <Ionicons name="close-circle" size={22} color={colors.red} />
             </TouchableOpacity>
           </View>
-          <View style={{ flexDirection: 'row', gap: 10 }}>
-            <View style={{ flex: 1 }}>
-              <Text style={{ color: colors.muted, fontSize: 11, marginBottom: 4 }}>PRECIO BASE</Text>
-              <Field
-                placeholder="$ 0.00"
-                value={String(item.precioBase)}
-                onChangeText={(v) => setItemField(item.productoId, 'precioBase', v)}
-                keyboardType="numeric"
-              />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={{ color: colors.muted, fontSize: 11, marginBottom: 4 }}>COMISIÓN</Text>
-              <Field
-                placeholder="$ 10"
-                value={String(item.comision)}
-                onChangeText={(v) => setItemField(item.productoId, 'comision', v)}
-                keyboardType="numeric"
-              />
-            </View>
+          <View style={{ gap: 8 }}>
+            <Text style={{ color: colors.muted, fontSize: 11, marginBottom: 2 }}>PRECIO BASE</Text>
+            <Field
+              placeholder="$ 0.00"
+              value={String(item.precioBase)}
+              onChangeText={(v) => setItemField(item.productoId, 'precioBase', v)}
+              keyboardType="numeric"
+            />
+            {parseFloat(item.precioBase) > 0 && (() => {
+              const base = parseFloat(item.precioBase);
+              const retenido = base * COMISION_BIDLY;
+              const neta = base - retenido;
+              const fmt = (n) => n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+              return (
+                <View style={{ backgroundColor: colors.cardEl, borderRadius: 10, padding: 12, gap: 6, marginTop: 2 }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                    <Text style={{ color: colors.muted, fontSize: 12 }}>Comisión Bidly (10%)</Text>
+                    <Text style={{ color: '#ef4444', fontSize: 12, fontWeight: '700' }}>- $ {fmt(retenido)}</Text>
+                  </View>
+                  <View style={{ height: 1, backgroundColor: colors.border }} />
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                    <Text style={{ color: '#fff', fontSize: 13, fontWeight: '700' }}>Ganancia neta</Text>
+                    <Text style={{ color: colors.green, fontSize: 13, fontWeight: '800' }}>$ {fmt(neta)}</Text>
+                  </View>
+                </View>
+              );
+            })()}
           </View>
         </Card>
       ))}
