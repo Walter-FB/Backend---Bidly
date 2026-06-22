@@ -320,7 +320,7 @@ const DIAS_CORTOS = ['Lu','Ma','Mi','Ju','Vi','Sa','Do'];
 
 function minFechaSubasta() {
   const d = new Date();
-  d.setDate(d.getDate() + 11); // constraint DB: fecha > CURRENT_DATE + 10 (estricto)
+  d.setDate(d.getDate() + 1);
   d.setHours(0, 0, 0, 0);
   return d;
 }
@@ -372,9 +372,16 @@ function CalendarPicker({ value, onChange }) {
   for (let i = 0; i < offset; i++) cells.push(null);
   for (let d = 1; d <= daysInMonth; d++) cells.push(d);
 
+  const openCalendar = () => {
+    const start = value ? new Date(value + 'T00:00:00') : minDate;
+    setViewYear(start.getFullYear());
+    setViewMonth(start.getMonth());
+    setVisible(true);
+  };
+
   return (
     <>
-      <TouchableOpacity style={cs.dateBtn} onPress={() => setVisible(true)} activeOpacity={0.8}>
+      <TouchableOpacity style={cs.dateBtn} onPress={openCalendar} activeOpacity={0.8}>
         <Ionicons name="calendar-outline" size={20} color={value ? colors.blue : colors.muted} />
         <Text style={{ color: value ? '#fff' : colors.muted, fontSize: 15, flex: 1 }}>
           {value ? formatFechaDisplay(value) : 'Seleccionar fecha'}

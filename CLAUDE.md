@@ -54,10 +54,8 @@ Las columnas `revisor` (productos), `verificador` (clientes, duenios), `responsa
 Si se crean endpoints nuevos que inserten en estas tablas, aplicar el mismo patrón.
 
 ### Constraint chkFecha en subastas
-```sql
-fecha > CURRENT_DATE + 10  -- ESTRICTO, no >=
-```
-El mínimo válido es **hoy + 11 días**. El `CalendarPicker` del front ya lo tiene correcto (`minDate = hoy + 11`).
+El constraint original del profe era `fecha > CURRENT_DATE + 10` pero **no está activo en Railway** (sintaxis SQL Server, no migrada a PostgreSQL).
+El frontend usa `minDate = hoy + 1`. Si el constraint volviera a activarse, hay que consultarle al usuario antes de modificar la tabla `subastas`.
 
 ### Tablas propias del equipo (no son del profe, sí se pueden modificar)
 - `credenciales` — auth: email + passwordHash por cliente
