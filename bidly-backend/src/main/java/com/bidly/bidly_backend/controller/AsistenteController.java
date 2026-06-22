@@ -19,6 +19,10 @@ import java.util.Map;
 @RequestMapping("/api/asistentes")
 public class AsistenteController {
 
+    private static final java.util.Map<String, Integer> ORDEN_CATEGORIA = java.util.Map.of(
+            "comun", 0, "especial", 1, "plata", 2, "oro", 3, "platino", 4
+    );
+
     @Autowired
     private AsistenteRepository asistenteRepository;
 
@@ -71,6 +75,17 @@ public class AsistenteController {
             return ResponseEntity.badRequest()
                     .body(Map.of("error", "Cliente o subasta no encontrados"));
         }
+
+        int ordenCliente  = ORDEN_CATEGORIA.getOrDefault(cliente.getCategoria(),  0);
+        int ordenSubasta  = ORDEN_CATEGORIA.getOrDefault(subasta.getCategoria(),  0);
+        if (ordenSubasta > ordenCliente) {
+            return ResponseEntity.status(403).body(Map.of(
+                    "error", "Categoría insuficiente para esta subasta",
+                    "categoriaRequerida", subasta.getCategoria(),
+                    "categoriaCliente",   cliente.getCategoria()
+            ));
+        }
+
         long totalExistentes = asistenteRepository.count();
         Asistente nuevo = new Asistente();
         nuevo.setCliente(cliente);

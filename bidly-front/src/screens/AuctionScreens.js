@@ -52,8 +52,11 @@ function formatCountdown(seconds) {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
+const ORDEN_CATEGORIA = { comun: 0, especial: 1, plata: 2, oro: 3, platino: 4 };
+
 // ─── PRODUCTO SCREEN ──────────────────────────────────────────────────────────
 export function ProductoScreen({ navigation, route }) {
+  const { user } = useAuth();
   const subastaId = route.params?.subastaId || route.params?.subasta?.id;
   const subastaPreview = route.params?.subasta;
 
@@ -185,24 +188,39 @@ export function ProductoScreen({ navigation, route }) {
         )}
       </ScrollView>
 
-      {viva && primerItem && (
-        <BottomBar>
-          <Btn
-            title="Ir a la subasta en vivo"
-            onPress={() => navigation.navigate('SubastaEnVivo', {
-              subastaId: subasta.identificador,
-              itemId: primerItem.identificador,
-              productoId: primerItem.producto?.identificador,
-              precioBase: primerItem.precioBase,
-              titulo,
-              moneda: subasta.moneda,
-              comision: primerItem.comision,
-              fecha: subasta.fecha,
-              hora: subasta.hora,
-            })}
-          />
-        </BottomBar>
-      )}
+      {viva && primerItem && (() => {
+        const ordenSubasta = ORDEN_CATEGORIA[subasta.categoria] ?? 0;
+        const ordenUsuario = ORDEN_CATEGORIA[user?.categoria] ?? 0;
+        const puedeEntrar = user?.isGuest || ordenSubasta <= ordenUsuario;
+        return (
+          <BottomBar>
+            {!puedeEntrar ? (
+              <View style={{ alignItems: 'center', gap: 6 }}>
+                <Text style={{ color: colors.gold, fontSize: 13, fontWeight: '700', textAlign: 'center' }}>
+                  Necesitás categoría {subasta.categoria.toUpperCase()} o superior para participar.
+                  {'\n'}Tu categoría: {(user?.categoria || 'comun').toUpperCase()}.
+                </Text>
+                <Btn title="Ir a la subasta en vivo" disabled />
+              </View>
+            ) : (
+              <Btn
+                title="Ir a la subasta en vivo"
+                onPress={() => navigation.navigate('SubastaEnVivo', {
+                  subastaId: subasta.identificador,
+                  itemId: primerItem.identificador,
+                  productoId: primerItem.producto?.identificador,
+                  precioBase: primerItem.precioBase,
+                  titulo,
+                  moneda: subasta.moneda,
+                  comision: primerItem.comision,
+                  fecha: subasta.fecha,
+                  hora: subasta.hora,
+                })}
+              />
+            )}
+          </BottomBar>
+        );
+      })()}
     </Screen>
   );
 }
