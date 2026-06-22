@@ -50,7 +50,7 @@ export function MedioPagoScreen({ navigation, route }) {
 
   // Campos para agregar nueva tarjeta
   const [mostrarForm, setMostrarForm] = useState(false);
-  const [nuevaTarjeta, setNuevaTarjeta] = useState({ tipo: 'credito', numeroTarjeta: '', vencimiento: '', titular: '' });
+  const [nuevaTarjeta, setNuevaTarjeta] = useState({ tipo: 'tarjeta', numeroTarjeta: '', vencimiento: '', titular: '' });
   const [guardando, setGuardando] = useState(false);
 
   useEffect(() => {
@@ -77,7 +77,7 @@ export function MedioPagoScreen({ navigation, route }) {
       setMedios((m) => [...m, guardada]);
       setSelIdx(medios.length);
       setMostrarForm(false);
-      setNuevaTarjeta({ tipo: 'credito', numeroTarjeta: '', vencimiento: '', titular: '' });
+      setNuevaTarjeta({ tipo: 'tarjeta', numeroTarjeta: '', vencimiento: '', titular: '' });
     } catch (e) {
       Alert.alert('Error', e.message || 'No se pudo guardar la tarjeta.');
     } finally {
