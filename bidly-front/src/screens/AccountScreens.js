@@ -320,7 +320,7 @@ const DIAS_CORTOS = ['Lu','Ma','Mi','Ju','Vi','Sa','Do'];
 
 function minFechaSubasta() {
   const d = new Date();
-  d.setDate(d.getDate() + 1);
+  d.setDate(d.getDate() + 11); // DB exige fecha > CURRENT_DATE + 10 (estricto)
   d.setHours(0, 0, 0, 0);
   return d;
 }
@@ -388,11 +388,9 @@ function CalendarPicker({ value, onChange }) {
         </Text>
         <Ionicons name="chevron-down" size={16} color={colors.muted} />
       </TouchableOpacity>
-      {!value && (
-        <Text style={{ color: colors.gold, fontSize: 11.5, marginTop: 4 }}>
-          ⚠ Mínimo: {formatFechaDisplay(toYMD(minDate))}
-        </Text>
-      )}
+      <Text style={{ color: colors.muted, fontSize: 11, marginTop: 4 }}>
+        Las subastas requieren al menos 10 días de anticipación (reglamento de la casa). Fecha mínima: {formatFechaDisplay(toYMD(minDate))}
+      </Text>
 
       <Modal visible={visible} transparent animationType="slide" onRequestClose={() => setVisible(false)}>
         <TouchableOpacity style={cs.modalOverlay} activeOpacity={1} onPress={() => setVisible(false)}>
@@ -876,7 +874,9 @@ export function PublicarScreen({ navigation }) {
           ))}
           {fotos.length < MAX_FOTOS && (
             <TouchableOpacity style={[s.photo, s.photoAdd]} onPress={elegirFoto}>
-              <Ionicons name="add" size={26} color={colors.blue} />
+              <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}>
+                <Ionicons name="add" size={26} color={colors.blue} />
+              </View>
             </TouchableOpacity>
           )}
         </View>
