@@ -123,6 +123,7 @@ export const Productos = {
     api.patch(`/productos/${id}/disponible`, { disponible }),
   fotos: (id) => api.get(`/productos/${id}/fotos`),
   agregarFotos: (id, formData) => upload(`/productos/${id}/fotos`, formData),
+  eliminar: (id) => api.delete(`/productos/${id}`),
 };
 
 // ─── REGISTRO DE SUBASTA ─────────────────────────────────────────────────────

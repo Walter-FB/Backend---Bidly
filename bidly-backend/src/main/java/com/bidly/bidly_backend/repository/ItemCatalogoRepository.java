@@ -11,4 +11,6 @@ public interface ItemCatalogoRepository extends JpaRepository<ItemCatalogo, Long
 
     @Query("SELECT i FROM ItemCatalogo i WHERE i.catalogo.subasta.estado = 'abierta' AND (i.subastado IS NULL OR i.subastado <> 'si')")
     List<ItemCatalogo> findItemsActivosEnSubastasAbiertas();
+
+    boolean existsByProductoIdentificador(Long productoId);
 }

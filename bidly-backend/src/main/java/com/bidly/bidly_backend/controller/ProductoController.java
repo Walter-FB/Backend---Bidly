@@ -7,6 +7,7 @@ import com.bidly.bidly_backend.model.Producto;
 import com.bidly.bidly_backend.repository.DuenioRepository;
 import com.bidly.bidly_backend.repository.EmpleadoRepository;
 import com.bidly.bidly_backend.repository.FotoRepository;
+import com.bidly.bidly_backend.repository.ItemCatalogoRepository;
 import com.bidly.bidly_backend.repository.ProductoRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -38,6 +39,9 @@ public class ProductoController {
 
     @Autowired
     private EmpleadoRepository empleadoRepository;
+
+    @Autowired
+    private ItemCatalogoRepository itemCatalogoRepository;
 
     private final Random random = new Random();
 
@@ -81,6 +85,17 @@ public class ProductoController {
         Producto guardado = productoRepository.save(producto);
         log.info("PRODUCTO CREAR OK - id={} duenio={} revisor={}", guardado.getIdentificador(), duenioId, revisorId);
         return ResponseEntity.status(201).body(guardado);
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<?> eliminar(@PathVariable Long id) {
+        if (!productoRepository.existsById(id)) return ResponseEntity.notFound().build();
+        if (itemCatalogoRepository.existsByProductoIdentificador(id)) {
+            return ResponseEntity.status(409).body(Map.of("error", "El producto ya está asignado a una subasta y no puede eliminarse."));
+        }
+        fotoRepository.deleteAll(fotoRepository.findByProductoIdentificador(id));
+        productoRepository.deleteById(id);
+        return ResponseEntity.noContent().build();
     }
 
     @PatchMapping("/{id}/disponible")

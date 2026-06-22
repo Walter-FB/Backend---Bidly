@@ -1050,6 +1050,27 @@ export function MisProductosScreen({ navigation, route }) {
     navigation.goBack();
   };
 
+  const confirmarEliminar = (p) => {
+    Alert.alert(
+      'Eliminar producto',
+      `¿Eliminar "${p.descripcionCatalogo || `Producto #${p.identificador}`}"? Esta acción no se puede deshacer.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar', style: 'destructive',
+          onPress: async () => {
+            try {
+              await Productos.eliminar(p.identificador);
+              setProductos((prev) => prev.filter((x) => x.identificador !== p.identificador));
+            } catch (e) {
+              Alert.alert('No se pudo eliminar', e.message || 'El producto puede estar asignado a una subasta.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   return (
     <Screen scroll contentStyle={{ paddingHorizontal: 22, paddingBottom: 40 }}>
       <Header />
@@ -1103,9 +1124,14 @@ export function MisProductosScreen({ navigation, route }) {
                   ID #{p.identificador}
                 </Text>
               </View>
-              {modoSeleccion && (
-                <Ionicons name="add-circle" size={28} color={colors.blue} />
-              )}
+              {modoSeleccion
+                ? <Ionicons name="add-circle" size={28} color={colors.blue} />
+                : (
+                  <TouchableOpacity onPress={() => confirmarEliminar(p)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                    <Ionicons name="trash-outline" size={22} color="#ef4444" />
+                  </TouchableOpacity>
+                )
+              }
             </Card>
           </TouchableOpacity>
         ))}
