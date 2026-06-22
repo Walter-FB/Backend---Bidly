@@ -1,4 +1,4 @@
-// BIDLY — Home, Filtros, Notificaciones, Favoritos (+ shared AuctionCard).
+// BIDLY — Home, Filtros, Notificaciones (+ shared AuctionCard).
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -57,12 +57,9 @@ function HomeTopBar({ navigation }) {
   return (
     <View style={[s.topbar, { paddingTop: insets.top + 8 }]}>
       <Display style={{ color: colors.blueLogo, fontSize: 20 }}>BIDLY</Display>
-      <View style={{ flexDirection: 'row', gap: 18 }}>
-        <TouchableOpacity onPress={() => navigation.navigate('Favoritos')}>
-          <Ionicons name="heart" size={21} color="#fff" /></TouchableOpacity>
-        <TouchableOpacity onPress={() => navigation.navigate('Notificaciones')}>
-          <Ionicons name="notifications-outline" size={21} color="#fff" /></TouchableOpacity>
-      </View>
+      <TouchableOpacity onPress={() => navigation.navigate('Notificaciones')}>
+        <Ionicons name="notifications-outline" size={21} color="#fff" />
+      </TouchableOpacity>
     </View>
   );
 }
@@ -81,7 +78,6 @@ export function AuctionCard({ a, onPress }) {
               <Display style={{ fontSize: 15 }} numberOfLines={1}>{a.title}</Display>
               <Text style={{ color: colors.muted, fontSize: 12, marginTop: 2 }}>{a.cat}</Text>
             </View>
-            <Ionicons name="heart-outline" size={18} color={colors.muted} />
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', marginTop: 8 }}>
             <Text>
@@ -332,33 +328,6 @@ export function NotificacionesScreen() {
   );
 }
 
-// ─── FAVORITOS SCREEN ─────────────────────────────────────────────────────────
-// El backend no tiene endpoint de favoritos; mostramos subastas abiertas como placeholder.
-export function FavoritosScreen({ navigation }) {
-  const [subastas, setSubastas] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    Subastas.listar({ estado: 'abierta' })
-      .then((data) => setSubastas((data || []).slice(0, 3).map(mapSubasta)))
-      .catch(() => setSubastas([]))
-      .finally(() => setLoading(false));
-  }, []);
-
-  return (
-    <Screen scroll contentStyle={{ paddingHorizontal: 22 }}>
-      <Header />
-      <Title>Favoritos</Title>
-      <Sub>Próximamente podrás guardar subastas favoritas. Por ahora te mostramos las activas.</Sub>
-      {loading && <ActivityIndicator color={colors.blue} style={{ marginTop: 20 }} />}
-      <View style={{ gap: 14 }}>
-        {subastas.map((a) => (
-          <AuctionCard key={a.id} a={a} onPress={() => navigation.navigate('Producto', { subastaId: a.id, subasta: a })} />
-        ))}
-      </View>
-    </Screen>
-  );
-}
 
 const s = StyleSheet.create({
   topbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 22, paddingBottom: 4 },

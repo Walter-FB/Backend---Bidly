@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import TabNavigator from './TabNavigator';
 
 import { SplashScreen, LoginScreen, RegistroScreen, VerificarEmailScreen, CrearPasswordScreen } from '../screens/AuthScreens';
-import { FiltrosScreen, NotificacionesScreen, FavoritosScreen } from '../screens/HomeScreens';
+import { FiltrosScreen, NotificacionesScreen } from '../screens/HomeScreens';
 import { ProductoScreen, SubastaEnVivoScreen, GanasteScreen, SubastaFinalizadaScreen, SubastaAdminScreen } from '../screens/AuctionScreens';
 import { MedioPagoScreen, SeguroScreen, ConfirmarPagoScreen, PagoConfirmadoScreen, MultaScreen, ReembolsoScreen } from '../screens/PaymentScreens';
 import { MisComprasScreen, HistorialScreen, PublicarScreen, DatosGanadorScreen, DatosPersonalesScreen, CrearSubastaScreen, MisProductosScreen } from '../screens/AccountScreens';
@@ -33,7 +33,6 @@ export default function RootNavigator() {
           {/* discovery */}
           <Stack.Screen name="Filtros" component={FiltrosScreen} options={{ presentation: 'modal' }} />
           <Stack.Screen name="Notificaciones" component={NotificacionesScreen} />
-          <Stack.Screen name="Favoritos" component={FavoritosScreen} />
           {/* auction */}
           <Stack.Screen name="Producto" component={ProductoScreen} />
           <Stack.Screen name="SubastaEnVivo" component={SubastaEnVivoScreen} />
