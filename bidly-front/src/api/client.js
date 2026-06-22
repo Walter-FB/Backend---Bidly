@@ -4,7 +4,7 @@ import Constants from 'expo-constants';
 
 // PRODUCCIÓN: 'https://backend-bidly.up.railway.app/api'
 // LOCAL celular físico: 'http://192.168.1.15:8083/api'
-export const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.15:8083/api';
+export const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://backend-bidly.up.railway.app/api';
 
 const TOKEN_KEY = '@bidly_token';
 

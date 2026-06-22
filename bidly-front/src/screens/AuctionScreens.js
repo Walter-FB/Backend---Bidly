@@ -215,6 +215,8 @@ export function ProductoScreen({ navigation, route }) {
                   comision: primerItem.comision,
                   fecha: subasta.fecha,
                   hora: subasta.hora,
+                  categoriaSubasta: subasta.categoria,
+                  subastador: subasta.subastador,
                 })}
               />
             )}
@@ -238,6 +240,8 @@ export function SubastaEnVivoScreen({ navigation, route }) {
     comision = 0,
     fecha,
     hora,
+    categoriaSubasta,
+    subastador,
   } = route.params || {};
 
   const [pujas, setPujas] = useState([]);
@@ -324,14 +328,21 @@ export function SubastaEnVivoScreen({ navigation, route }) {
     return () => clearInterval(interval);
   }, [cargarPujas]);
 
-  // Calcular puja actual y próximo importe.
+  // Reglas de puja
   const pujaActual = pujas.length > 0 ? pujas[0].importe : null;
-  const minIncremento = precioBase > 0
-    ? Math.ceil(Number(precioBase) * 0.01 * 100) / 100
-    : 1;
+  const precioBaseValido = Number(precioBase) > 0;
+  const esExento = categoriaSubasta === 'oro' || categoriaSubasta === 'platino';  // R3
+  const esDuenio = !user?.isGuest && user?.clienteId != null && user?.clienteId === subastador;
+
+  const minIncremento = precioBaseValido ? Math.ceil(Number(precioBase) * 0.01 * 100) / 100 : 0;
+  const maxIncremento = precioBaseValido ? Math.floor(Number(precioBase) * 0.20 * 100) / 100 : 0;
+
   const proximaPuja = pujaActual != null
     ? Number(pujaActual) + minIncremento
     : Number(precioBase);
+  const maximaPuja = pujaActual != null
+    ? Number(pujaActual) + maxIncremento
+    : null;
 
   const onPujar = async () => {
     // Invitado: mostrar aviso y redirigir al login.
@@ -345,6 +356,12 @@ export function SubastaEnVivoScreen({ navigation, route }) {
         ],
       );
       return;
+    }
+    if (esDuenio) {
+      return Alert.alert('No permitido', 'No podés pujar en tu propia subasta.');
+    }
+    if (!precioBaseValido) {
+      return Alert.alert('Error', 'El precio base del ítem no está disponible.');
     }
     if (!asistenteId) {
       return Alert.alert('Espera', 'Estamos registrando tu acceso a la subasta. Intentá en un momento.');
@@ -462,18 +479,34 @@ export function SubastaEnVivoScreen({ navigation, route }) {
       </ScrollView>
 
       <BottomBar>
-        {esLidero ? (
+        {esDuenio ? (
+          <Btn title="No podés pujar en tu propia subasta" kind="ghost" disabled />
+        ) : !precioBaseValido ? (
+          <Btn title="Precio base no disponible" kind="ghost" disabled />
+        ) : esLidero ? (
           <Btn title="Ya sos el mayor postor" kind="ghost" disabled />
         ) : (
-          <Btn
-            title={
-              user?.isGuest
-                ? 'Pujar (requiere cuenta)'
-                : pujando ? 'Pujando…' : `Pujar ${formatImporte(proximaPuja, moneda)}`
-            }
-            onPress={onPujar}
-            disabled={pujando || (!user?.isGuest && !asistenteId)}
-          />
+          <>
+            {esExento && (
+              <Text style={{ color: colors.gold, fontSize: 11, fontWeight: '700', textAlign: 'center', marginBottom: 6 }}>
+                Subasta {categoriaSubasta?.toUpperCase()} — sin límite máximo de puja
+              </Text>
+            )}
+            {!esExento && maximaPuja != null && (
+              <Text style={{ color: colors.muted, fontSize: 11, textAlign: 'center', marginBottom: 6 }}>
+                Máx: {formatImporte(maximaPuja, moneda)}
+              </Text>
+            )}
+            <Btn
+              title={
+                user?.isGuest
+                  ? 'Pujar (requiere cuenta)'
+                  : pujando ? 'Pujando…' : `Pujar ${formatImporte(proximaPuja, moneda)}`
+              }
+              onPress={onPujar}
+              disabled={pujando || (!user?.isGuest && !asistenteId)}
+            />
+          </>
         )}
       </BottomBar>
     </Screen>
