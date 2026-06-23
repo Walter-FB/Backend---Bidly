@@ -42,15 +42,7 @@ Las alternativas permitidas sin preguntar son:
 
 ---
 
-## Cómo levantar en local
 
-### Backend
-```bash
-cd bidly-backend
-./mvnw spring-boot:run
-# O desde IntelliJ: run BidlyBackendApplication
-# Queda en http://localhost:8083
-```
 
 ### Frontend
 ```bash
