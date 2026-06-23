@@ -1,5 +1,4 @@
-// BIDLY — QA Console: observabilidad + validación del circuito de puja.
-// Herramienta interna. Gateada por isAdmin/DEV_QA. No visible al usuario final.
+// BIDLY — Panel de administración: subastas + solicitudes a confirmar.
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -7,8 +6,7 @@ import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { Display, Tag, Chip, Card, SectionLabel, Row, Btn, LiveBadge } from '../components/ui';
 import { colors } from '../theme/theme';
-import { useAuth } from '../context/AuthContext';
-import { Subastas, Pujas, Items, Asistentes, SubastaRevision } from '../api/endpoints';
+import { Subastas, Pujas, Items, SubastaRevision } from '../api/endpoints';
 import { tituloSubasta, formatFechaSubasta } from '../utils/subasta';
 
 const FILTROS_SUBASTA = [
@@ -18,24 +16,9 @@ const FILTROS_SUBASTA = [
   ['con_items', 'Con ítems'],
 ];
 
-// ─── Definición de escenarios ─────────────────────────────────────────────────
-const SCENARIOS = [
-  { key: 'valid_bid',   label: '✅ Puja válida',           exp: '201',               note: 'importe = mínimo + 1' },
-  { key: 'below_min',  label: '⛔ Bajo mínimo',           exp: '400 MIN_BID',       note: 'importe = mínimo − 1' },
-  { key: 'above_max',  label: '⛔ Sobre máximo',          exp: '400 MAX_BID',       note: 'importe = actual × 2.5' },
-  { key: 'gold_no_cap',label: '🥇 Oro sin tope',          exp: '201',               note: 'usar subasta oro/platino' },
-  { key: 'no_payment', label: '🚫 Sin medio verificado',  exp: '403 NO_PAYMENT',    note: 'puede no estar impl.' },
-  { key: 'race',       label: '🏁 Carrera concurrente',   exp: '1×201 + 1×4xx',    note: '2 POST simultáneos' },
-  { key: 'closed',     label: '🔒 Subasta cerrada',       exp: '409 AUCTION_CLOSED',note: 'cerrar subasta antes' },
-  { key: 'item_sold',  label: '📦 Ítem adjudicado',       exp: '409 ITEM_SOLD',     note: 'adjudicar ítem antes' },
-  { key: 'double_tap', label: '👆 Doble tap',             exp: '≤1 aceptada',       note: '2 POST mismo importe' },
-];
-
-// ─── Componente principal ─────────────────────────────────────────────────────
 export function DashboardAdminScreen() {
   const insets = useSafeAreaInsets();
   const nav = useNavigation();
-  const { user } = useAuth();
 
   const [tab, setTab] = useState('subastas');
   const [subastas, setSubastas] = useState([]);
@@ -46,10 +29,6 @@ export function DashboardAdminScreen() {
   const [asistentes, setAsistentes] = useState([]);
   const [pujas, setPujas] = useState([]);
   const [activeIdx, setActiveIdx] = useState(0);
-  const [log, setLog] = useState([]);
-  const [results, setResults] = useState({});
-  const [asisId, setAsisId] = useState(null);
-  const [running, setRunning] = useState(null);
   const [ctrl, setCtrl] = useState(false);
   const [lastRefresh, setLastRefresh] = useState('—');
   const [revisiones, setRevisiones] = useState([]);
@@ -61,13 +40,6 @@ export function DashboardAdminScreen() {
 
   const selSubasta = subastas.find(s => s.identificador === selId) ?? null;
   const activeItem = items[activeIdx] ?? null;
-  const lastPuja = pujas[0] ?? null;
-  const precioBase = Number(activeItem?.precioBase ?? 0);
-  const minBid = lastPuja ? Number(lastPuja.importe) + precioBase * 0.01 : precioBase;
-  const sinTope = ['oro', 'platino'].includes(selSubasta?.categoria);
-  const maxBidOver = sinTope
-    ? Number(lastPuja?.importe ?? precioBase) * 2.5
-    : (lastPuja ? Number(lastPuja.importe) : precioBase) + precioBase * 0.2;
 
   const subastasFiltradas = subastas.filter((sub) => {
     if (filtroLista === 'abierta') return sub.estado === 'abierta';
@@ -76,7 +48,6 @@ export function DashboardAdminScreen() {
     return true;
   });
 
-  // ── Cargar lista de subastas ───────────────────────────────────────────────
   const loadSubastas = useCallback(async () => {
     setLoadingSubastas(true);
     try {
@@ -109,7 +80,7 @@ export function DashboardAdminScreen() {
       setPendientesCount(Number(countData?.pendientes ?? 0));
     } catch (e) {
       if (mounted.current) {
-        Alert.alert('Error', e.message || 'No se pudo cargar subastas a confirmar.');
+        Alert.alert('Error', e.message || 'No se pudieron cargar las solicitudes.');
       }
     } finally {
       if (mounted.current) setLoadingRevisiones(false);
@@ -117,47 +88,6 @@ export function DashboardAdminScreen() {
   }, []);
 
   useEffect(() => { loadRevisiones(); }, [loadRevisiones]);
-
-  const actuarRevision = (subastaId, accion) => {
-    const cfg = {
-      aprobar: {
-        title: 'Aprobar subasta',
-        msg: 'La subasta será visible en el home. El subastador podrá abrirla cuando quiera.',
-        fn: () => SubastaRevision.aprobar(subastaId),
-      },
-      pausar: {
-        title: 'Pausar subasta',
-        msg: 'Quedará oculta del público y se cerrará hasta que la apruebes de nuevo.',
-        fn: () => SubastaRevision.pausar(subastaId),
-      },
-      rechazar: {
-        title: 'Eliminar solicitud',
-        msg: 'Se rechaza la subasta y queda cerrada. Esta acción no borra el historial.',
-        fn: () => SubastaRevision.rechazar(subastaId, 'Rechazada por administrador'),
-      },
-    }[accion];
-    if (!cfg) return;
-
-    Alert.alert(cfg.title, cfg.msg, [
-      { text: 'Cancelar', style: 'cancel' },
-      {
-        text: 'Confirmar',
-        style: accion === 'rechazar' ? 'destructive' : 'default',
-        onPress: async () => {
-          setCtrl(true);
-          try {
-            await exec(cfg.title, 'PATCH', `/subasta-revision/${subastaId}/${accion}`, cfg.fn, 200);
-            await Promise.all([loadRevisiones(), loadSubastas()]);
-            if (selId === subastaId && accion !== 'aprobar') await refreshContexto();
-          } catch (e) {
-            Alert.alert('Error', e.message || 'No se pudo completar la acción.');
-          } finally {
-            if (mounted.current) setCtrl(false);
-          }
-        },
-      },
-    ]);
-  };
 
   const refreshContexto = useCallback(async () => {
     if (!selId || !mounted.current) return;
@@ -176,23 +106,19 @@ export function DashboardAdminScreen() {
     } catch {}
   }, [selId]);
 
-  const selectSubasta = useCallback((id) => {
+  const abrirSubasta = useCallback((id) => {
     setSelId(id);
-    setResults({});
-    setTab('estado');
+    setTab('subastas');
   }, []);
 
-  // ── Al cambiar subasta seleccionada: cargar ítems, asistentes, inscribir ──
   useEffect(() => {
     if (!selId) {
       setItems([]);
       setAsistentes([]);
       setPujas([]);
-      setAsisId(null);
       setActiveIdx(0);
       return;
     }
-    // Limpiar de inmediato para no mostrar datos de la subasta anterior.
     setItems([]);
     setPujas([]);
     setActiveIdx(0);
@@ -211,24 +137,13 @@ export function DashboardAdminScreen() {
         setActiveIdx(firstFree >= 0 ? firstFree : 0);
       } catch (e) {
         if (!cancelled) {
-          Alert.alert('Error', e.message || 'No se pudo cargar la subasta seleccionada.');
+          Alert.alert('Error', e.message || 'No se pudo cargar la subasta.');
         }
-      }
-      if (user?.clienteId) {
-        try {
-          const a = await Asistentes.inscribir(user.clienteId, selId);
-          if (!cancelled) setAsisId(a?.identificador ?? null);
-        } catch {
-          if (!cancelled) setAsisId(null);
-        }
-      } else {
-        setAsisId(null);
       }
     })();
     return () => { cancelled = true; };
-  }, [selId, user?.clienteId]);
+  }, [selId]);
 
-  // ── Polling: refresco completo cada 5s ───────────────────────────────────
   useEffect(() => {
     if (!selId) return;
     refreshContexto();
@@ -236,7 +151,6 @@ export function DashboardAdminScreen() {
     return () => clearInterval(id);
   }, [selId, refreshContexto]);
 
-  // ── Polling: pujas del ítem activo cada 5s ────────────────────────────────
   useEffect(() => {
     const iid = activeItem?.identificador;
     if (!iid) { setPujas([]); return; }
@@ -252,171 +166,47 @@ export function DashboardAdminScreen() {
     return () => clearInterval(id);
   }, [activeItem?.identificador]);
 
-  // ── Helper: ejecuta un request y lo loguea en el inspector ───────────────
-  const exec = useCallback(async (label, method, path, fn, expStatus, expCode = null) => {
-    const entryId = Date.now() + Math.random();
-    const time = new Date().toLocaleTimeString('es-AR', { hour12: false });
-    setLog(prev =>
-      [{ entryId, time, label, method, path, status: '…', code: '…', expStatus, expCode, ok: null }, ...prev].slice(0, 20)
-    );
-    try {
-      const data = await fn();
-      const ok = expStatus >= 200 && expStatus < 300;
-      setLog(prev => prev.map(e => e.entryId === entryId ? { ...e, status: '2xx', code: 'OK', ok } : e));
-      return { ok, data, status: 200, code: 'OK' };
-    } catch (err) {
-      const status = err.status || 0;
-      const code = err.data?.code || '';
-      const ok = status === expStatus && (!expCode || code === expCode);
-      setLog(prev => prev.map(e => e.entryId === entryId ? { ...e, status, code, ok } : e));
-      return { ok, data: null, status, code };
-    }
-  }, []);
+  const actuarRevision = (subastaId, accion) => {
+    const cfg = {
+      aprobar: {
+        title: 'Aprobar subasta',
+        msg: 'La subasta será visible en el home. El subastador podrá abrirla cuando quiera.',
+        fn: () => SubastaRevision.aprobar(subastaId),
+      },
+      pausar: {
+        title: 'Pausar subasta',
+        msg: 'Quedará oculta del público y se cerrará hasta que la apruebes de nuevo.',
+        fn: () => SubastaRevision.pausar(subastaId),
+      },
+      rechazar: {
+        title: 'Eliminar solicitud',
+        msg: 'Se rechaza la subasta y queda cerrada.',
+        fn: () => SubastaRevision.rechazar(subastaId, 'Rechazada por administrador'),
+      },
+    }[accion];
+    if (!cfg) return;
 
-  // ── Runner de escenarios ──────────────────────────────────────────────────
-  const runScenario = useCallback(async (key) => {
-    if (running) return;
-    if (!selId || !activeItem) {
-      Alert.alert('Sin contexto', 'Seleccioná una subasta e ítem primero.');
-      return;
-    }
-    setRunning(key);
-    const iid = activeItem.identificador;
-    const aid = asisId;
-
-    try {
-      switch (key) {
-
-        case 'valid_bid': {
-          const importe = Math.ceil(minBid) + 1;
-          const r = await exec('Puja válida', 'POST', '/pujos',
-            () => Pujas.pujar(aid, iid, importe), 201);
-          setResults(p => ({ ...p, valid_bid: { ok: r.ok, msg: `${r.status} ${r.code}` } }));
-          break;
-        }
-
-        case 'below_min': {
-          const importe = Math.max(1, Math.floor(minBid) - 1);
-          const r = await exec('Bajo mínimo', 'POST', '/pujos',
-            () => Pujas.pujar(aid, iid, importe), 400, 'MIN_BID');
-          setResults(p => ({ ...p, below_min: { ok: r.ok, msg: `${r.status} ${r.code || 'OK'}` } }));
-          break;
-        }
-
-        case 'above_max': {
-          const importe = Math.ceil(maxBidOver);
-          const r = await exec('Sobre máximo', 'POST', '/pujos',
-            () => Pujas.pujar(aid, iid, importe), 400, 'MAX_BID');
-          setResults(p => ({ ...p, above_max: { ok: r.ok, msg: `${r.status} ${r.code || 'OK'}` } }));
-          break;
-        }
-
-        case 'gold_no_cap': {
-          const importe = Math.ceil(maxBidOver);
-          const isGold = ['oro', 'platino', 'especial'].includes(selSubasta?.categoria);
-          const r = await exec('Oro sin tope', 'POST', '/pujos',
-            () => Pujas.pujar(aid, iid, importe), 201);
-          const note = !isGold ? ' ⚠️ cat≠oro' : '';
-          setResults(p => ({ ...p, gold_no_cap: { ok: r.ok, msg: `${r.status} ${r.code || 'OK'}${note}` } }));
-          break;
-        }
-
-        case 'no_payment': {
-          const importe = Math.ceil(minBid) + 1;
-          const r = await exec('Sin medio verificado', 'POST', '/pujos',
-            () => Pujas.pujar(aid, iid, importe), 403, 'NO_PAYMENT');
-          setResults(p => ({ ...p, no_payment: { ok: r.ok, msg: `${r.status} ${r.code || 'OK'}` } }));
-          break;
-        }
-
-        case 'race': {
-          const importe = Math.ceil(minBid) + 1;
-          const t = new Date().toLocaleTimeString('es-AR', { hour12: false });
-          const idA = Date.now(); const idB = idA + 1;
-          setLog(prev => [
-            { entryId: idA, time: t, label: 'Carrera A', method: 'POST', path: '/pujos', status: '…', code: '…', expStatus: 201, expCode: null, ok: null },
-            { entryId: idB, time: t, label: 'Carrera B', method: 'POST', path: '/pujos', status: '…', code: '…', expStatus: -1, expCode: null, ok: null },
-            ...prev,
-          ].slice(0, 20));
-          const [rA, rB] = await Promise.all([
-            Pujas.pujar(aid, iid, importe)
-              .then(() => ({ ok: true, status: 201, code: 'OK' }))
-              .catch(e => ({ ok: false, status: e.status || 0, code: e.data?.code || '' })),
-            Pujas.pujar(aid, iid, importe)
-              .then(() => ({ ok: true, status: 201, code: 'OK' }))
-              .catch(e => ({ ok: false, status: e.status || 0, code: e.data?.code || '' })),
-          ]);
-          setLog(prev => prev.map(e => {
-            if (e.entryId === idA) return { ...e, status: rA.status, code: rA.code, ok: rA.ok };
-            if (e.entryId === idB) return { ...e, status: rB.status, code: rB.code, ok: !rB.ok };
-            return e;
-          }));
-          const exactlyOne = rA.ok !== rB.ok;
-          const msg = `A:${rA.status} B:${rB.status} — ${rA.ok && rB.ok ? '⚠️ ambas aceptadas' : exactlyOne ? '✅ 1 aceptada' : 'ambas rechazadas'}`;
-          setResults(p => ({ ...p, race: { ok: exactlyOne, msg } }));
-          break;
-        }
-
-        case 'closed': {
-          if (selSubasta?.estado === 'abierta') {
-            setResults(p => ({ ...p, closed: { ok: false, msg: 'Subasta abierta — cerrala en la pestaña Estado' } }));
-            break;
+    Alert.alert(cfg.title, cfg.msg, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Confirmar',
+        style: accion === 'rechazar' ? 'destructive' : 'default',
+        onPress: async () => {
+          setCtrl(true);
+          try {
+            await cfg.fn();
+            await Promise.all([loadRevisiones(), loadSubastas()]);
+            if (selId === subastaId && accion !== 'aprobar') await refreshContexto();
+          } catch (e) {
+            Alert.alert('Error', e.message || 'No se pudo completar la acción.');
+          } finally {
+            if (mounted.current) setCtrl(false);
           }
-          const importe = Math.ceil(minBid) + 1;
-          const r = await exec('Subasta cerrada', 'POST', '/pujos',
-            () => Pujas.pujar(aid, iid, importe), 409, 'AUCTION_CLOSED');
-          setResults(p => ({ ...p, closed: { ok: r.ok, msg: `${r.status} ${r.code || 'OK'}` } }));
-          break;
-        }
+        },
+      },
+    ]);
+  };
 
-        case 'item_sold': {
-          const sold = items.find(i => i.subastado === 'si');
-          if (!sold) {
-            setResults(p => ({ ...p, item_sold: { ok: false, msg: 'No hay ítems adjudicados — adjudicá uno primero' } }));
-            break;
-          }
-          const r = await exec('Ítem adjudicado', 'POST', '/pujos',
-            () => Pujas.pujar(aid, sold.identificador, Number(sold.precioBase)), 409, 'ITEM_SOLD');
-          setResults(p => ({ ...p, item_sold: { ok: r.ok, msg: `${r.status} ${r.code || 'OK'}` } }));
-          break;
-        }
-
-        case 'double_tap': {
-          const importe = Math.ceil(minBid) + 1;
-          const t = new Date().toLocaleTimeString('es-AR', { hour12: false });
-          const id1 = Date.now(); const id2 = id1 + 1;
-          setLog(prev => [
-            { entryId: id1, time: t, label: 'Doble tap 1', method: 'POST', path: '/pujos', status: '…', code: '…', expStatus: 201, expCode: null, ok: null },
-            { entryId: id2, time: t, label: 'Doble tap 2', method: 'POST', path: '/pujos', status: '…', code: '…', expStatus: -1, expCode: null, ok: null },
-            ...prev,
-          ].slice(0, 20));
-          const [r1, r2] = await Promise.all([
-            Pujas.pujar(aid, iid, importe)
-              .then(() => ({ ok: true, status: 201, code: 'OK' }))
-              .catch(e => ({ ok: false, status: e.status || 0, code: e.data?.code || '' })),
-            Pujas.pujar(aid, iid, importe)
-              .then(() => ({ ok: true, status: 201, code: 'OK' }))
-              .catch(e => ({ ok: false, status: e.status || 0, code: e.data?.code || '' })),
-          ]);
-          setLog(prev => prev.map(e => {
-            if (e.entryId === id1) return { ...e, status: r1.status, code: r1.code, ok: r1.ok };
-            if (e.entryId === id2) return { ...e, status: r2.status, code: r2.code, ok: !r2.ok };
-            return e;
-          }));
-          const atMostOne = !r1.ok || !r2.ok;
-          const msg2 = `T1:${r1.status} T2:${r2.status} — ${atMostOne ? '✅ ≤1 persistida' : '⚠️ ambas aceptadas'}`;
-          setResults(p => ({ ...p, double_tap: { ok: atMostOne, msg: msg2 } }));
-          break;
-        }
-
-        default: break;
-      }
-    } finally {
-      if (mounted.current) setRunning(null);
-    }
-  }, [running, selId, activeItem, asisId, minBid, maxBidOver, selSubasta, items, exec]);
-
-  // ── Acciones de control ───────────────────────────────────────────────────
   const aplicarEstado = (next) => {
     if (ctrl || !selId) return;
     const verbo = next === 'abierta' ? 'abrir' : 'cerrar';
@@ -431,15 +221,7 @@ export function DashboardAdminScreen() {
           onPress: async () => {
             setCtrl(true);
             try {
-              const r = await exec(
-                next === 'abierta' ? 'Abrir subasta' : 'Cerrar subasta',
-                'PATCH', `/subastas/${selId}/estado`,
-                () => Subastas.actualizarEstado(selId, next), 200,
-              );
-              if (!r.ok) {
-                Alert.alert('No se pudo cambiar el estado', `${r.status} ${r.code || ''}`.trim());
-                return;
-              }
+              await Subastas.actualizarEstado(selId, next);
               await refreshContexto();
               await loadSubastas();
             } catch (e) {
@@ -457,13 +239,14 @@ export function DashboardAdminScreen() {
     if (ctrl || !activeItem || activeItem.subastado === 'si') return;
     setCtrl(true);
     try {
-      await exec('Adjudicar ítem', 'PATCH', `/items/${activeItem.identificador}/adjudicar`,
-        () => Items.adjudicar(activeItem.identificador), 200);
+      await Items.adjudicar(activeItem.identificador);
       await refreshContexto();
       await loadSubastas();
     } catch (e) {
       Alert.alert('Error', e.message || 'No se pudo adjudicar el ítem.');
-    } finally { if (mounted.current) setCtrl(false); }
+    } finally {
+      if (mounted.current) setCtrl(false);
+    }
   };
 
   const nextItem = async () => {
@@ -474,66 +257,37 @@ export function DashboardAdminScreen() {
       if (!mounted.current) return;
       const list = Array.isArray(data) ? data : [];
       setItems(list);
-
       if (list.length === 0) {
         setPujas([]);
         Alert.alert('Sin catálogo', 'Esta subasta no tiene ítems cargados.');
         return;
       }
-
-      // QA: recorrer todo el catálogo, adjudicados o no.
       setActiveIdx(prev => (prev + 1) % list.length);
     } catch {
-      Alert.alert('No se pudo refrescar', 'Revisá la conexión con el backend y volvé a intentar.');
+      Alert.alert('Error', 'No se pudo refrescar el catálogo.');
     } finally {
       if (mounted.current) setCtrl(false);
     }
   };
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  const solicitudesLabel = pendientesCount > 0
+    ? `Solicitudes (${pendientesCount})`
+    : 'Solicitudes a confirmar';
+
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg, paddingTop: insets.top }}>
-
-      {/* Topbar */}
       <View style={s.topbar}>
         <TouchableOpacity onPress={() => nav.goBack()} hitSlop={10}>
           <Ionicons name="chevron-back" size={28} color="#fff" />
         </TouchableOpacity>
-        <Display style={{ color: colors.blueLogo, fontSize: 19 }}>BIDLY</Display>
-        <Tag label="MODO QA" color={colors.red} />
+        <Display style={{ color: colors.blueLogo, fontSize: 19 }}>Administración</Display>
+        <Tag label="ADMIN" color={colors.blue} />
       </View>
 
-      {/* Banner */}
-      <View style={s.banner}>
-        <Ionicons name="warning-outline" size={13} color={colors.gold} />
-        <Text style={s.bannerTxt}>HERRAMIENTA INTERNA DE QA — NO ES PANTALLA DE USUARIO FINAL</Text>
-      </View>
-
-      {/* Subasta activa */}
-      {selId ? (
-        <View style={s.selBar}>
-          <View style={{ flex: 1 }}>
-            <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>
-              #{selId} · {selSubasta?.estado === 'abierta' ? 'ABIERTA' : 'CERRADA'}
-            </Text>
-            <Text style={{ color: colors.muted, fontSize: 11.5 }} numberOfLines={1}>
-              {tituloSubasta(selSubasta, items)}
-            </Text>
-          </View>
-          <TouchableOpacity onPress={() => setSelId(null)} hitSlop={8}>
-            <Text style={{ color: colors.muted, fontSize: 12, fontWeight: '700' }}>Cambiar</Text>
-          </TouchableOpacity>
-        </View>
-      ) : null}
-
-      {/* Tabs */}
       <View style={s.tabRow}>
         {[
           ['subastas', 'Subastas'],
-          ['confirmar', pendientesCount > 0 ? `Confirmar (${pendientesCount})` : 'Confirmar'],
-          ['estado', 'Estado'],
-          ['escenarios', 'Tests'],
-          ['inspector', 'Log'],
+          ['solicitudes', solicitudesLabel],
         ].map(([k, label]) => (
           <TouchableOpacity key={k} onPress={() => setTab(k)} style={[s.tabBtn, tab === k && s.tabActive]}>
             <Text style={[s.tabTxt, tab === k && { color: '#fff', fontWeight: '700' }]} numberOfLines={1}>
@@ -543,27 +297,9 @@ export function DashboardAdminScreen() {
         ))}
       </View>
 
-      {/* Contenido */}
       <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 48 }} showsVerticalScrollIndicator={false}>
-        {tab === 'subastas' ? (
-          <SubastasListSection
-            subastas={subastasFiltradas}
-            total={subastas.length}
-            loading={loadingSubastas}
-            filtro={filtroLista}
-            onFiltro={setFiltroLista}
-            selId={selId}
-            onSelect={selectSubasta}
-            onRefresh={loadSubastas}
-            onAbrir={() => aplicarEstado('abierta')}
-            onCerrar={() => aplicarEstado('cerrada')}
-            onIrConfirmar={() => setTab('confirmar')}
-            pendientesCount={pendientesCount}
-            ctrl={ctrl}
-            sinLogin={!user?.clienteId}
-          />
-        ) : tab === 'confirmar' ? (
-          <ConfirmarSection
+        {tab === 'solicitudes' ? (
+          <SolicitudesSection
             revisiones={revisiones}
             loading={loadingRevisiones}
             ctrl={ctrl}
@@ -571,22 +307,16 @@ export function DashboardAdminScreen() {
             onAprobar={(id) => actuarRevision(id, 'aprobar')}
             onPausar={(id) => actuarRevision(id, 'pausar')}
             onRechazar={(id) => actuarRevision(id, 'rechazar')}
-            onVer={(id) => selectSubasta(id)}
+            onVer={abrirSubasta}
           />
-        ) : !selId ? (
-          <View style={{ paddingTop: 48, alignItems: 'center', gap: 8 }}>
-            <Ionicons name="flask-outline" size={40} color={colors.muted} />
-            <Text style={{ color: colors.muted, fontSize: 14, textAlign: 'center', lineHeight: 22 }}>
-              Elegí una subasta en la pestaña Subastas{'\n'}para usar Estado, Tests o Log.
-            </Text>
-          </View>
-        ) : tab === 'estado' ? (
+        ) : selId ? (
           <EstadoSection
             subasta={selSubasta}
             items={items}
             asistentes={asistentes}
             pujas={pujas}
             activeIdx={activeIdx}
+            onBack={() => setSelId(null)}
             onSelectItem={setActiveIdx}
             onAbrir={() => aplicarEstado('abierta')}
             onCerrar={() => aplicarEstado('cerrada')}
@@ -596,57 +326,36 @@ export function DashboardAdminScreen() {
             ctrl={ctrl}
             lastRefresh={lastRefresh}
           />
-        ) : tab === 'escenarios' ? (
-          <EscenariosSection
-            subasta={selSubasta}
-            activeItem={activeItem}
-            asisId={asisId}
-            minBid={minBid}
-            results={results}
-            running={running}
-            onRun={runScenario}
-          />
         ) : (
-          <InspectorSection log={log} onClear={() => setLog([])} />
+          <SubastasListSection
+            subastas={subastasFiltradas}
+            total={subastas.length}
+            loading={loadingSubastas}
+            filtro={filtroLista}
+            onFiltro={setFiltroLista}
+            onSelect={abrirSubasta}
+            onRefresh={loadSubastas}
+            onIrSolicitudes={() => setTab('solicitudes')}
+            pendientesCount={pendientesCount}
+          />
         )}
       </ScrollView>
     </View>
   );
 }
 
-// ─── Sección listado de subastas ──────────────────────────────────────────────
 function SubastasListSection({
-  subastas, total, loading, filtro, onFiltro, selId, onSelect, onRefresh, onAbrir, onCerrar,
-  onIrConfirmar, pendientesCount, ctrl, sinLogin,
+  subastas, total, loading, filtro, onFiltro, onSelect, onRefresh, onIrSolicitudes, pendientesCount,
 }) {
   return (
     <View style={{ gap: 12, paddingTop: 14 }}>
       <Btn
         title={pendientesCount > 0
-          ? `Subastas a confirmar (${pendientesCount})`
-          : 'Subastas a confirmar'}
+          ? `Solicitudes a confirmar (${pendientesCount})`
+          : 'Solicitudes a confirmar'}
         kind="primary"
-        onPress={onIrConfirmar}
+        onPress={onIrSolicitudes}
       />
-
-      <Card el style={{ gap: 6 }}>
-        <Text style={{ color: '#fff', fontWeight: '700', fontSize: 14 }}>¿Qué hace esta consola?</Text>
-        <Text style={{ color: colors.muted, fontSize: 12.5, lineHeight: 18 }}>
-          1. Revisar y aprobar subastas nuevas antes del home{'\n'}
-          2. Abrir/cerrar subastas y ver catálogo + pujas{'\n'}
-          3. Tests automáticos de reglas de puja{'\n'}
-          4. Log HTTP de cada acción
-        </Text>
-      </Card>
-
-      {sinLogin && (
-        <View style={s.warn}>
-          <Ionicons name="alert-circle-outline" size={14} color={colors.gold} />
-          <Text style={{ color: colors.gold, fontSize: 12.5, flex: 1 }}>
-            Entrá con usuario real (no invitado) para inscribirte y correr tests de puja.
-          </Text>
-        </View>
-      )}
 
       <ScrollView horizontal showsHorizontalScrollIndicator={false}>
         <View style={{ flexDirection: 'row', gap: 8, paddingBottom: 4 }}>
@@ -676,13 +385,9 @@ function SubastasListSection({
 
       {subastas.map((sub) => {
         const abierta = sub.estado === 'abierta';
-        const selected = selId === sub.identificador;
         return (
           <TouchableOpacity key={sub.identificador} onPress={() => onSelect(sub.identificador)} activeOpacity={0.85}>
-            <Card el style={[
-              { gap: 6 },
-              selected && { borderColor: colors.blue, borderWidth: 1.5 },
-            ]}>
+            <Card el style={{ gap: 6 }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
                 <View style={{ flex: 1 }}>
                   <Text style={{ color: colors.muted, fontSize: 11.5, fontWeight: '700' }}>#{sub.identificador}</Text>
@@ -690,7 +395,11 @@ function SubastasListSection({
                     {sub.titulo || tituloSubasta(sub)}
                   </Display>
                 </View>
-                <Tag label={abierta ? 'ABIERTA' : 'CERRADA'} color={abierta ? colors.green : colors.muted} />
+                <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                  {sub.revisionEstado === 'pendiente' && <Tag label="PENDIENTE" color={colors.gold} />}
+                  {sub.revisionEstado === 'pausada' && <Tag label="PAUSADA" color={colors.muted} />}
+                  <Tag label={abierta ? 'ABIERTA' : 'CERRADA'} color={abierta ? colors.green : colors.muted} />
+                </View>
               </View>
               <Text style={{ color: colors.muted, fontSize: 12 }}>
                 {sub.categoria ?? '—'} · {sub.moneda ?? '—'} · {formatFechaSubasta(sub.fecha)}
@@ -702,16 +411,6 @@ function SubastasListSection({
           </TouchableOpacity>
         );
       })}
-
-      {selId ? (
-        <View style={{ gap: 8, marginTop: 4 }}>
-          <SectionLabel style={{ marginTop: 4 }}>Control rápido · #{selId}</SectionLabel>
-          <View style={{ flexDirection: 'row', gap: 10 }}>
-            <Btn title="Abrir" kind="primary" style={{ flex: 1 }} onPress={onAbrir} disabled={ctrl} />
-            <Btn title="Cerrar" kind="danger" style={{ flex: 1 }} onPress={onCerrar} disabled={ctrl} />
-          </View>
-        </View>
-      ) : null}
     </View>
   );
 }
@@ -723,18 +422,14 @@ const REVISION_LABEL = {
   rechazada: { label: 'RECHAZADA', color: colors.red },
 };
 
-function ConfirmarSection({
+function SolicitudesSection({
   revisiones, loading, ctrl, onRefresh, onAprobar, onPausar, onRechazar, onVer,
 }) {
   return (
     <View style={{ gap: 12, paddingTop: 14 }}>
-      <Card el style={{ gap: 6 }}>
-        <Display style={{ fontSize: 15 }}>Subastas a confirmar</Display>
-        <Text style={{ color: colors.muted, fontSize: 12.5, lineHeight: 18 }}>
-          Cuando alguien crea una subasta nueva, aparece acá como pendiente.
-          Aprobala para que se vea en el home; pausala o eliminá la solicitud si no corresponde.
-        </Text>
-      </Card>
+      <Text style={{ color: colors.muted, fontSize: 13, lineHeight: 20 }}>
+        Las subastas nuevas aparecen acá hasta que las apruebes. Solo las aprobadas se muestran en el home.
+      </Text>
 
       <View style={{ flexDirection: 'row', justifyContent: 'flex-end' }}>
         <TouchableOpacity onPress={onRefresh} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
@@ -747,7 +442,7 @@ function ConfirmarSection({
 
       {!loading && revisiones.length === 0 && (
         <Text style={{ color: colors.muted, fontSize: 13, textAlign: 'center', paddingVertical: 28 }}>
-          No hay subastas pendientes ni pausadas.
+          No hay solicitudes pendientes ni pausadas.
         </Text>
       )}
 
@@ -770,9 +465,9 @@ function ConfirmarSection({
               Solicitante #{rev.solicitante} · {formatFechaSubasta(sub?.fecha)} · {sub?.categoria}
             </Text>
             <Text style={{ color: colors.muted, fontSize: 11.5 }}>
-              {sub?.totalItems ?? 0} ítems · subasta {sub?.estado === 'abierta' ? 'abierta' : 'cerrada'}
+              {sub?.totalItems ?? 0} ítems
             </Text>
-            <Btn title="Ver detalle → Estado" kind="ghost" onPress={() => onVer(sid)} />
+            <Btn title="Ver subasta" kind="ghost" onPress={() => onVer(sid)} />
             <View style={{ flexDirection: 'row', gap: 8 }}>
               <Btn title="Aprobar" kind="primary" style={{ flex: 1 }} onPress={() => onAprobar(sid)} disabled={ctrl} />
               <Btn title="Pausar" kind="ghost" style={{ flex: 1 }} onPress={() => onPausar(sid)} disabled={ctrl} />
@@ -785,37 +480,41 @@ function ConfirmarSection({
   );
 }
 
-// ─── Sección Estado ───────────────────────────────────────────────────────────
 function EstadoSection({
-  subasta, items, asistentes, pujas, activeIdx, onSelectItem,
+  subasta, items, asistentes, pujas, activeIdx, onBack, onSelectItem,
   onAbrir, onCerrar, onRefresh, onAdjudicar, onNext, ctrl, lastRefresh,
 }) {
   const isOpen = subasta?.estado === 'abierta';
   const allAdjudicados = items.length > 0 && items.every(i => i.subastado === 'si');
   const datosInconsistentes = isOpen && allAdjudicados;
+
   return (
     <View style={{ gap: 12, paddingTop: 14 }}>
+      <TouchableOpacity onPress={onBack} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 4 }}>
+        <Ionicons name="chevron-back" size={20} color={colors.blue} />
+        <Text style={{ color: colors.blue, fontSize: 14, fontWeight: '700' }}>Volver al listado</Text>
+      </TouchableOpacity>
 
       {datosInconsistentes && (
         <View style={s.warn}>
           <Ionicons name="alert-circle-outline" size={14} color={colors.gold} />
           <Text style={{ color: colors.gold, fontSize: 12.5, flex: 1 }}>
-            Todos los ítems están adjudicados pero la subasta sigue abierta. Cerrala con el botón de abajo.
+            Todos los ítems están adjudicados pero la subasta sigue abierta. Cerrala abajo.
           </Text>
         </View>
       )}
 
-      {/* Info subasta */}
       <Card>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
           <Display style={{ fontSize: 15 }} numberOfLines={2}>{tituloSubasta(subasta, items)}</Display>
           {isOpen ? <LiveBadge /> : <Tag label="CERRADA" color={colors.muted} />}
         </View>
+        <Row k="ID" v={`#${subasta?.identificador ?? '—'}`} />
         <Row k="Categoría" v={subasta?.categoria ?? '—'} />
         <Row k="Moneda" v={subasta?.moneda ?? '—'} />
         <Row k="Fecha" v={subasta?.fecha ?? '—'} />
         {subasta?.revisionEstado ? (
-          <Row k="Revisión admin" v={subasta.revisionEstado} vc={
+          <Row k="Aprobación" v={subasta.revisionEstado} vc={
             subasta.revisionEstado === 'aprobada' ? colors.green
               : subasta.revisionEstado === 'pendiente' ? colors.gold
               : colors.red
@@ -825,7 +524,6 @@ function EstadoSection({
         <Row k="Último refresh" v={lastRefresh} />
       </Card>
 
-      {/* Catálogo */}
       <SectionLabel>Catálogo ({items.length} ítems)</SectionLabel>
       {items.length === 0 && (
         <Text style={{ color: colors.muted, fontSize: 13 }}>Sin ítems en catálogo</Text>
@@ -854,7 +552,6 @@ function EstadoSection({
         );
       })}
 
-      {/* Pujas del ítem activo */}
       <SectionLabel>Pujas del ítem activo</SectionLabel>
       {pujas.length === 0 && (
         <Text style={{ color: colors.muted, fontSize: 13 }}>Sin pujas en este ítem</Text>
@@ -874,13 +571,12 @@ function EstadoSection({
         </View>
       ))}
 
-      {/* Control */}
-      <SectionLabel>Control de subasta</SectionLabel>
+      <SectionLabel>Control</SectionLabel>
       <View style={{ flexDirection: 'row', gap: 10 }}>
         <Btn title="Abrir" kind="primary" style={{ flex: 1 }} onPress={onAbrir} disabled={ctrl || isOpen} />
         <Btn title="Cerrar" kind="danger" style={{ flex: 1 }} onPress={onCerrar} disabled={ctrl || !isOpen} />
       </View>
-      <Btn title="Refrescar datos" kind="ghost" onPress={onRefresh} disabled={ctrl} style={{ marginTop: 4 }} />
+      <Btn title="Refrescar" kind="ghost" onPress={onRefresh} disabled={ctrl} style={{ marginTop: 4 }} />
       <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
         <Btn
           title="Adjudicar ítem"
@@ -889,163 +585,21 @@ function EstadoSection({
           onPress={onAdjudicar}
           disabled={ctrl || !items[activeIdx] || items[activeIdx]?.subastado === 'si'}
         />
-        <Btn
-          title="Siguiente →"
-          kind="ghost"
-          style={{ flex: 1 }}
-          onPress={onNext}
-          disabled={ctrl}
-        />
+        <Btn title="Siguiente →" kind="ghost" style={{ flex: 1 }} onPress={onNext} disabled={ctrl} />
       </View>
     </View>
   );
 }
 
-// ─── Sección Escenarios ───────────────────────────────────────────────────────
-function EscenariosSection({ subasta, activeItem, asisId, minBid, results, running, onRun }) {
-  return (
-    <View style={{ gap: 10, paddingTop: 14 }}>
-
-      {/* Contexto actual */}
-      <Card el>
-        <Row k="Subasta" v={subasta ? `#${subasta.identificador} (${subasta.estado})` : '—'} />
-        <Row k="Ítem activo" v={activeItem ? `#${activeItem.identificador}` : '—'} />
-        <Row
-          k="Mi asistente"
-          v={asisId ? `#${asisId}` : 'no inscripto'}
-          vc={asisId ? colors.green : colors.red}
-        />
-        <Row
-          k="Puja mínima"
-          v={activeItem ? `$${(Math.ceil(minBid) + 1).toLocaleString('es-AR')}` : '—'}
-          vc={colors.green}
-        />
-      </Card>
-
-      {!asisId && (
-        <View style={s.warn}>
-          <Ionicons name="alert-circle-outline" size={14} color={colors.gold} />
-          <Text style={{ color: colors.gold, fontSize: 12.5, flex: 1 }}>
-            Sin asistente — la auto-inscripción falló. Probá con otra subasta.
-          </Text>
-        </View>
-      )}
-
-      {SCENARIOS.map(sc => {
-        const res = results[sc.key];
-        const isRunning = running === sc.key;
-        return (
-          <Card key={sc.key} el style={{ gap: 6 }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Text style={{ color: '#fff', fontWeight: '700', fontSize: 14, flex: 1 }}>{sc.label}</Text>
-              {res && (
-                <View style={[
-                  s.resBadge,
-                  { backgroundColor: res.ok ? colors.green + '33' : colors.red + '33',
-                    borderColor: res.ok ? colors.green : colors.red },
-                ]}>
-                  <Text style={{ color: res.ok ? colors.green : colors.red, fontSize: 12, fontWeight: '800' }}>
-                    {res.ok ? '✅' : '❌'}
-                  </Text>
-                </View>
-              )}
-            </View>
-            <Text style={{ color: colors.muted, fontSize: 12 }}>Esperado: {sc.exp} · {sc.note}</Text>
-            {res && (
-              <Text style={{ color: res.ok ? colors.green : colors.red, fontSize: 12, fontWeight: '600' }}>
-                Obtenido: {res.msg}
-              </Text>
-            )}
-            <Btn
-              title={isRunning ? 'Ejecutando…' : res ? 'Re-ejecutar' : 'Ejecutar'}
-              kind={res ? (res.ok ? 'ghost' : 'danger') : 'primary'}
-              style={{ marginTop: 2 }}
-              onPress={() => onRun(sc.key)}
-              disabled={isRunning || !!running}
-            />
-          </Card>
-        );
-      })}
-    </View>
-  );
-}
-
-// ─── Sección Inspector ────────────────────────────────────────────────────────
-function InspectorSection({ log, onClear }) {
-  if (log.length === 0) {
-    return (
-      <View style={{ paddingTop: 32, alignItems: 'center', gap: 8 }}>
-        <Ionicons name="receipt-outline" size={36} color={colors.muted} />
-        <Text style={{ color: colors.muted, fontSize: 13, textAlign: 'center' }}>
-          Sin requests aún.{'\n'}Ejecutá escenarios o acciones de control.
-        </Text>
-      </View>
-    );
-  }
-  return (
-    <View style={{ paddingTop: 14, gap: 6 }}>
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-        <SectionLabel style={{ marginTop: 0, marginBottom: 0 }}>
-          Últimas {log.length} llamadas
-        </SectionLabel>
-        <TouchableOpacity onPress={onClear} hitSlop={10}>
-          <Text style={{ color: colors.red, fontSize: 13, fontWeight: '700' }}>Limpiar</Text>
-        </TouchableOpacity>
-      </View>
-      {log.map(entry => (
-        <View
-          key={entry.entryId}
-          style={[s.logRow, {
-            borderLeftColor: entry.ok === null
-              ? colors.muted
-              : entry.ok ? colors.green : colors.red,
-          }]}
-        >
-          <View style={{ flex: 1 }}>
-            <Text style={{ color: '#fff', fontWeight: '700', fontSize: 12.5 }}>{entry.label}</Text>
-            <Text style={{ color: colors.muted, fontSize: 11.5 }}>{entry.method} {entry.path}</Text>
-          </View>
-          <View style={{ alignItems: 'flex-end', gap: 2 }}>
-            <Text style={{
-              color: entry.ok === null ? colors.muted : entry.ok ? colors.green : colors.red,
-              fontWeight: '800', fontSize: 13,
-            }}>
-              {entry.ok === null ? '…' : entry.ok ? '✅' : '❌'} {entry.status}
-            </Text>
-            <Text style={{ color: colors.muted, fontSize: 11 }}>
-              {entry.code || ''}{entry.code ? ' · ' : ''}{entry.time}
-            </Text>
-            <Text style={{ color: colors.muted, fontSize: 10.5 }}>
-              esp: {entry.expStatus}{entry.expCode ? ` ${entry.expCode}` : ''}
-            </Text>
-          </View>
-        </View>
-      ))}
-    </View>
-  );
-}
-
-// ─── Estilos ──────────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
   topbar: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 20, height: 52,
   },
-  banner: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: colors.gold + '22', paddingVertical: 7, paddingHorizontal: 16,
-  },
-  bannerTxt: { color: colors.gold, fontSize: 11, fontWeight: '700', letterSpacing: 0.4, flex: 1 },
   tabRow: { flexDirection: 'row', borderBottomWidth: 1, borderColor: colors.border },
-  tabBtn: { flex: 1, paddingVertical: 11, alignItems: 'center', paddingHorizontal: 2 },
+  tabBtn: { flex: 1, paddingVertical: 12, alignItems: 'center', paddingHorizontal: 8 },
   tabActive: { borderBottomWidth: 2, borderBottomColor: colors.blue },
-  tabTxt: { color: colors.muted, fontSize: 11.5, fontWeight: '600' },
-  selBar: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    paddingHorizontal: 16, paddingVertical: 10,
-    borderBottomWidth: 1, borderColor: colors.border,
-    backgroundColor: colors.cardEl,
-  },
+  tabTxt: { color: colors.muted, fontSize: 13, fontWeight: '600' },
   itemRow: {
     backgroundColor: colors.card, borderRadius: 10, borderWidth: 1, borderColor: colors.border,
     padding: 12, flexDirection: 'row', alignItems: 'center', gap: 10,
@@ -1057,10 +611,5 @@ const s = StyleSheet.create({
   warn: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     backgroundColor: colors.gold + '22', borderRadius: 8, padding: 10,
-  },
-  resBadge: { borderWidth: 1, borderRadius: 6, paddingVertical: 3, paddingHorizontal: 8 },
-  logRow: {
-    backgroundColor: colors.card, borderRadius: 10, borderWidth: 1, borderColor: colors.border,
-    borderLeftWidth: 3, padding: 12, flexDirection: 'row', gap: 10,
   },
 });

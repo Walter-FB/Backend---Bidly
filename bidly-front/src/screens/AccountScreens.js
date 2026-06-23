@@ -108,8 +108,8 @@ export function PerfilScreen({ navigation }) {
         ))}
         {isAdmin && (
           <TouchableOpacity style={s.listItem} onPress={() => navigation.navigate('DashboardAdmin')}>
-            <Text style={{ color: '#fff', fontSize: 14.5, fontWeight: '600' }}>Panel de administración</Text>
-            <Tag label="ADMIN" color={colors.red} />
+            <Text style={{ color: '#fff', fontSize: 14.5, fontWeight: '600' }}>Administración</Text>
+            <Tag label="ADMIN" color={colors.blue} />
           </TouchableOpacity>
         )}
         <TouchableOpacity onPress={logout} style={{ marginTop: 6, padding: 12, alignItems: 'center' }}>

@@ -61,10 +61,8 @@ export function AuthProvider({ children }) {
     setUser({ isGuest: true, nombre: 'Invitado', clienteId: null });
   }, []);
 
-  // DEV_QA: habilita DashboardAdmin (QA Console) sin rol real en el backend.
-  // Poner en false antes de entregar a producción.
-  const DEV_QA = true;
-  const isAdmin = DEV_QA;
+  // Acceso al panel de administración (subastas + solicitudes a confirmar).
+  const isAdmin = true;
 
   return (
     <AuthContext.Provider value={{ user, setUser, booting, login, register, logout, loginAsGuest, isAdmin }}>
