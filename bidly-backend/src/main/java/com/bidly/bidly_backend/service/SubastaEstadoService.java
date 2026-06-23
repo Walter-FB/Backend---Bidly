@@ -32,7 +32,7 @@ public class SubastaEstadoService {
                     return n;
                 });
         rec.setEstado(estado);
-        if ("abierta".equals(estado)) {
+        if ("abierta".equals(estado) || "cerrada".equals(estado)) {
             rec.setAlgunaVezAbierta(true);
         }
         estadoAdminRepository.save(rec);
