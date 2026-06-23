@@ -255,20 +255,42 @@ export function HistorialScreen({ navigation }) {
 }
 
 // ─── MIS SUBASTAS ─────────────────────────────────────────────────────────────
+function irAGanaste(navigation, g) {
+  navigation.navigate('Ganaste', {
+    titulo: g.title,
+    moneda: g.moneda,
+    importe: g.importe,
+    comision: g.comision,
+    subastaId: g.subastaId,
+    itemId: g.productoId,
+    registroId: g.registroId,
+  });
+}
+
 export function MisSubastasScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const [tab, setTab] = useState('curso');
   const [subastas, setSubastas] = useState([]);
+  const [ganadas, setGanadas] = useState([]);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState(null);
 
   const cargar = () => {
     if (!user?.clienteId) { setLoading(false); return; }
     setLoading(true);
-    Subastas.porSubastador(user.clienteId)
-      .then((data) => setSubastas(data || []))
-      .catch(() => setSubastas([]))
+    Promise.all([
+      Subastas.porSubastador(user.clienteId),
+      RegistroSubasta.porCliente(user.clienteId),
+    ])
+      .then(([subs, regs]) => {
+        setSubastas(subs || []);
+        setGanadas((regs || []).map(mapRegistro));
+      })
+      .catch(() => {
+        setSubastas([]);
+        setGanadas([]);
+      })
       .finally(() => setLoading(false));
   };
 
@@ -289,8 +311,9 @@ export function MisSubastasScreen({ navigation, route }) {
   }, [route.params?.creada]);
 
   const mias = subastas.filter((a) => esMiSubasta(a, user?.clienteId));
+  const ganadasActivas = ganadas.filter((g) => g.reembolsada !== 'si');
 
-  const filtradas = mias.filter((a) => {
+  const filtradas = tab === 'ganadas' ? [] : mias.filter((a) => {
     if (tab === 'curso') return esSubastaEnCursoVendedor(a);
     if (tab === 'fin') return esSubastaFinalizada(a);
     return true;
@@ -316,11 +339,17 @@ export function MisSubastasScreen({ navigation, route }) {
           <View style={{ flexDirection: 'row', gap: 9 }}>
             <Chip label={`En curso · ${mias.filter(esSubastaEnCursoVendedor).length}`} active={tab === 'curso'} dot={tab === 'curso'} onPress={() => setTab('curso')} />
             <Chip label="Finalizadas" active={tab === 'fin'} onPress={() => setTab('fin')} />
+            <Chip label={`Ganadas · ${ganadasActivas.length}`} active={tab === 'ganadas'} dot={tab === 'ganadas'} onPress={() => setTab('ganadas')} />
             <Chip label={`Todas · ${mias.length}`} active={tab === 'todas'} onPress={() => setTab('todas')} />
           </View>
         </ScrollView>
         {loading && <ActivityIndicator color={colors.blue} style={{ marginTop: 20 }} />}
-        {!loading && filtradas.length === 0 && (
+        {!loading && tab === 'ganadas' && ganadas.length === 0 && (
+          <Text style={{ color: colors.muted, textAlign: 'center', marginTop: 20 }}>
+            Todavía no ganaste ninguna subasta.{'\n'}Cuando ganes, aparecerá acá para pagar.
+          </Text>
+        )}
+        {!loading && tab !== 'ganadas' && filtradas.length === 0 && (
           <Text style={{ color: colors.muted, textAlign: 'center', marginTop: 20 }}>
             {tab === 'curso'
               ? 'No tenés subastas en vivo.\nLa puja la inicia un administrador cuando aprueba tu solicitud.'
@@ -329,6 +358,50 @@ export function MisSubastasScreen({ navigation, route }) {
                 : 'Aún no tenés subastas.\nPresioná "Nueva subasta" para comenzar.'}
           </Text>
         )}
+        {tab === 'ganadas' && (
+          <View style={{ gap: 14 }}>
+            {ganadas.map((g) => (
+              <TouchableOpacity
+                key={g.registroId}
+                activeOpacity={0.85}
+                onPress={() => (g.reembolsada === 'si'
+                  ? navigation.navigate('CompraDetalle', g)
+                  : irAGanaste(navigation, g))}
+              >
+                <Card el style={{ gap: 6 }}>
+                  <View style={{ flexDirection: 'row', gap: 12 }}>
+                    <ImgBox
+                      style={{ width: 64, height: 64, borderRadius: 10 }}
+                      size={22}
+                      src={g.subastaId ? `${BASE_URL}/subastas/${g.subastaId}/portada` : undefined}
+                    />
+                    <View style={{ flex: 1, gap: 4 }}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <Display style={{ fontSize: 15, flex: 1, paddingRight: 8 }} numberOfLines={2}>
+                          {g.title}
+                        </Display>
+                        <Tag
+                          label={g.reembolsada === 'si' ? 'Reembolsada' : '¡Ganaste!'}
+                          color={g.reembolsada === 'si' ? colors.red : colors.green}
+                        />
+                      </View>
+                      <Text style={{ color: colors.muted, fontSize: 13 }}>
+                        {g.sub} · {g.date}
+                      </Text>
+                      <Text style={{ color: colors.green, fontSize: 14, fontWeight: '800' }}>
+                        $ {g.price}
+                      </Text>
+                      <Text style={{ color: colors.blue, fontSize: 13, fontWeight: '700', marginTop: 2 }}>
+                        {g.reembolsada === 'si' ? 'Ver detalle →' : 'Continuar al pago →'}
+                      </Text>
+                    </View>
+                  </View>
+                </Card>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+        {tab !== 'ganadas' && (
         <View style={{ gap: 14 }}>
           {filtradas.map((a) => {
             const tag = tagEstadoSubasta(a);
@@ -370,6 +443,7 @@ export function MisSubastasScreen({ navigation, route }) {
             );
           })}
         </View>
+        )}
       </ScrollView>
       <BottomBar>
         <Btn title="+ Nueva subasta" onPress={() => navigation.navigate('CrearSubasta')} />
