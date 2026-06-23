@@ -24,26 +24,33 @@ public class SubastaEstadoService {
 
     @Transactional
     public void aplicarEstado(Long subastaId, String estado) {
-        int actualizadas = subastaRepository.updateEstadoSiFechaValida(subastaId, estado);
-        if (actualizadas > 0) {
-            estadoAdminRepository.findById(subastaId).ifPresent(estadoAdminRepository::delete);
-            return;
+        SubastaEstadoAdmin rec = estadoAdminRepository.findById(subastaId)
+                .orElseGet(() -> {
+                    SubastaEstadoAdmin n = new SubastaEstadoAdmin();
+                    n.setSubasta(subastaId);
+                    n.setAlgunaVezAbierta(false);
+                    return n;
+                });
+        rec.setEstado(estado);
+        if ("abierta".equals(estado)) {
+            rec.setAlgunaVezAbierta(true);
         }
-        SubastaEstadoAdmin override = estadoAdminRepository.findById(subastaId)
-                .orElseGet(SubastaEstadoAdmin::new);
-        override.setSubasta(subastaId);
-        override.setEstado(estado);
-        estadoAdminRepository.save(override);
+        estadoAdminRepository.save(rec);
+        subastaRepository.updateEstadoSiFechaValida(subastaId, estado);
     }
 
     public void aplicarOverrides(Collection<Subasta> subastas) {
         if (subastas == null || subastas.isEmpty()) return;
         List<Long> ids = subastas.stream().map(Subasta::getIdentificador).toList();
-        Map<Long, String> overrides = estadoAdminRepository.findBySubastaIn(ids).stream()
-                .collect(Collectors.toMap(SubastaEstadoAdmin::getSubasta, SubastaEstadoAdmin::getEstado));
+        Map<Long, SubastaEstadoAdmin> overrides = estadoAdminRepository.findBySubastaIn(ids).stream()
+                .collect(Collectors.toMap(SubastaEstadoAdmin::getSubasta, r -> r, (a, b) -> a));
         subastas.forEach(s -> {
-            String estado = overrides.get(s.getIdentificador());
-            if (estado != null) s.setEstado(estado);
+            SubastaEstadoAdmin r = overrides.get(s.getIdentificador());
+            if (r == null) return;
+            if (r.getEstado() != null) s.setEstado(r.getEstado());
+            if (Boolean.TRUE.equals(r.getAlgunaVezAbierta())) {
+                s.setAlgunaVezAbierta(true);
+            }
         });
     }
 }

@@ -88,13 +88,10 @@ export function formatFechaSubasta(fecha) {
   }
 }
 
-/** Solo finalizada de verdad: catálogo agotado (no confundir con cerrada = sin abrir). */
+/** Finalizada: catálogo agotado o cerrada tras haberse iniciado. */
 export function esSubastaFinalizada(subasta) {
-  if (!subasta || subasta.fase !== 'finalizada') return false;
-  const total = subasta.totalItems ?? 0;
-  if (total === 0) return false;
-  const pend = subasta.itemsPendientes;
-  return pend == null || pend === 0;
+  if (!subasta) return false;
+  return subasta.fase === 'finalizada';
 }
 
 export function tagEstadoSubasta(subasta) {

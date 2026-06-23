@@ -43,4 +43,6 @@ public class Subasta {
     private Long segundosRestantes;
     @Transient
     private Integer itemsPendientes;
+    @Transient
+    private Boolean algunaVezAbierta;
 }

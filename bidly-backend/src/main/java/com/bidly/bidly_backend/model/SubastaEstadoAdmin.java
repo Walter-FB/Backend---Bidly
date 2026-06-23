@@ -16,4 +16,7 @@ public class SubastaEstadoAdmin {
     private Long subasta;
 
     private String estado;
+
+    @Column(name = "alguna_vez_abierta")
+    private Boolean algunaVezAbierta = false;
 }

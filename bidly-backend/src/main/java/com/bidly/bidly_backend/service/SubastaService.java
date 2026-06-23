@@ -114,16 +114,32 @@ public class SubastaService {
             return;
         }
 
+        if ("cerrada".equals(s.getEstado())) {
+            boolean huboPuja = pujoFechaRepository.findUltimaFechaBySubastaId(s.getIdentificador()).isPresent();
+            boolean vendioAlgo = pendientes < items.size();
+            boolean nuncaAbierta = !Boolean.TRUE.equals(s.getAlgunaVezAbierta())
+                    && !huboPuja
+                    && !vendioAlgo
+                    && inicio != null
+                    && inicio.isAfter(ahora);
+            if (nuncaAbierta) {
+                s.setFase(FASE_PROGRAMADA);
+                s.setSegundosRestantes(ChronoUnit.SECONDS.between(ahora, inicio));
+            } else {
+                s.setFase(FASE_FINALIZADA);
+                s.setSegundosRestantes(0L);
+            }
+            return;
+        }
+
         if (inicio != null && inicio.isAfter(ahora)) {
             s.setFase(FASE_PROGRAMADA);
             s.setSegundosRestantes(ChronoUnit.SECONDS.between(ahora, inicio));
             return;
         }
 
-        // cerrada en BD = aún no iniciada por el dueño/admin
         s.setFase(FASE_PROGRAMADA);
-        s.setSegundosRestantes(inicio != null && inicio.isAfter(ahora)
-                ? ChronoUnit.SECONDS.between(ahora, inicio) : 0L);
+        s.setSegundosRestantes(0L);
     }
 
     private LocalDateTime inicioSubasta(Subasta s) {
