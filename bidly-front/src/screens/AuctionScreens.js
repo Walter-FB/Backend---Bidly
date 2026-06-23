@@ -668,39 +668,24 @@ export function SubastaAdminScreen({ navigation, route }) {
   }, [cargarPujas]);
 
   const onToggleEstado = async () => {
-    if (!subasta) return;
+    if (!subasta || cambiandoEstado) return;
     const nuevoEstado = subasta.estado === 'abierta' ? 'cerrada' : 'abierta';
     const esInicio = nuevoEstado === 'abierta';
-    Alert.alert(
-      esInicio ? 'Iniciar puja' : 'Cerrar subasta',
-      esInicio
-        ? '¿Iniciar la puja ahora? El timer de 30 minutos arranca ya.'
-        : '¿Cerrar la subasta?',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Confirmar',
-          style: nuevoEstado === 'cerrada' ? 'destructive' : 'default',
-          onPress: async () => {
-            setCambiandoEstado(true);
-            try {
-              const updated = await Subastas.actualizarEstado(subastaId, nuevoEstado);
-              if (mounted.current) {
-                setSubasta(updated);
-                setSuccessMsg(esInicio ? 'Puja iniciada — en vivo' : 'Subasta cerrada');
-              }
-            } catch (e) {
-              const msg = e.data?.code === 'NOT_APPROVED'
-                ? 'Tu subasta aún no fue aprobada por un administrador.'
-                : (e.message || (esInicio ? 'No se pudo iniciar la puja.' : 'No se pudo cerrar la subasta.'));
-              Alert.alert('Error', msg);
-            } finally {
-              if (mounted.current) setCambiandoEstado(false);
-            }
-          },
-        },
-      ]
-    );
+    setCambiandoEstado(true);
+    try {
+      const updated = await Subastas.actualizarEstado(subastaId, nuevoEstado);
+      if (mounted.current) {
+        setSubasta(updated);
+        setSuccessMsg(esInicio ? 'Puja iniciada — en vivo' : 'Subasta cerrada');
+      }
+    } catch (e) {
+      const msg = e.data?.code === 'NOT_APPROVED'
+        ? 'Tu subasta aún no fue aprobada por un administrador.'
+        : (e.message || (esInicio ? 'No se pudo iniciar la puja.' : 'No se pudo cerrar la subasta.'));
+      Alert.alert('Error', msg);
+    } finally {
+      if (mounted.current) setCambiandoEstado(false);
+    }
   };
 
   if (loading) {

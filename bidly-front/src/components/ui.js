@@ -126,6 +126,17 @@ export function SuccessBanner({ message, onDismiss }) {
   );
 }
 
+export function ErrorBanner({ message, onDismiss }) {
+  if (!message) return null;
+  return (
+    <TouchableOpacity activeOpacity={0.9} onPress={onDismiss} style={s.errorBanner}>
+      <Ionicons name="alert-circle" size={20} color={colors.red} />
+      <Text style={s.errorBannerTxt}>{message}</Text>
+      <Ionicons name="close" size={18} color={colors.muted} />
+    </TouchableOpacity>
+  );
+}
+
 export function Tag({ label, color = colors.blue, fill }) {
   return (
     <View style={{ borderWidth: 1.4, borderColor: color, backgroundColor: fill || 'transparent',
@@ -287,6 +298,12 @@ const s = StyleSheet.create({
     paddingVertical: 12, paddingHorizontal: 14,
   },
   successBannerTxt: { color: colors.green, fontSize: 14, fontWeight: '700', flex: 1 },
+  errorBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: colors.red + '22', borderRadius: 10, borderWidth: 1, borderColor: colors.red + '55',
+    paddingVertical: 12, paddingHorizontal: 14, marginHorizontal: 16, marginTop: 8,
+  },
+  errorBannerTxt: { color: '#ffb4b4', fontSize: 13, fontWeight: '600', flex: 1, lineHeight: 18 },
 });
 
-export default { Screen, Header, Title, Sub, SectionLabel, Btn, Chip, Card, Field, LiveBadge, SuccessBanner, Tag, ImgBox, ImageLightbox, BottomBar, Row, Display };
+export default { Screen, Header, Title, Sub, SectionLabel, Btn, Chip, Card, Field, LiveBadge, SuccessBanner, ErrorBanner, Tag, ImgBox, ImageLightbox, BottomBar, Row, Display };

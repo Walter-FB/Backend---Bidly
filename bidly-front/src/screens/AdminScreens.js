@@ -1,13 +1,21 @@
 // BIDLY — Panel de administración: subastas + solicitudes a confirmar.
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { Display, Tag, Chip, Card, SectionLabel, Row, Btn, LiveBadge, SuccessBanner } from '../components/ui';
+import { Display, Tag, Chip, Card, SectionLabel, Row, Btn, LiveBadge, SuccessBanner, ErrorBanner } from '../components/ui';
 import { colors } from '../theme/theme';
 import { Subastas, Pujas, SubastaRevision } from '../api/endpoints';
+import { BASE_URL } from '../api/client';
 import { tituloSubasta, formatFechaSubasta, tagEstadoSubasta } from '../utils/subasta';
+
+function formatAdminError(e) {
+  if (e?.status === 301) return 'Error HTTP→HTTPS. Usá https en app.json o recargá la app.';
+  if (e?.data?.code === 'NOT_APPROVED') return 'La subasta debe estar aprobada antes de iniciar la puja.';
+  if (e?.status === 0) return e.message || 'Sin conexión al backend.';
+  return e?.data?.error || e?.message || 'Error desconocido';
+}
 
 const FILTROS_SUBASTA = [
   ['todas', 'Todas'],
@@ -35,6 +43,7 @@ export function DashboardAdminScreen() {
   const [loadingRevisiones, setLoadingRevisiones] = useState(false);
   const [pendientesCount, setPendientesCount] = useState(0);
   const [successMsg, setSuccessMsg] = useState(null);
+  const [errorMsg, setErrorMsg] = useState(null);
   const mounted = useRef(true);
 
   useEffect(() => () => { mounted.current = false; }, []);
@@ -59,9 +68,7 @@ export function DashboardAdminScreen() {
       const data = await Subastas.listar(params);
       if (mounted.current) setSubastas(Array.isArray(data) ? data : []);
     } catch (e) {
-      if (mounted.current) {
-        Alert.alert('Error al cargar', e.message || 'No se pudo obtener el listado de subastas.');
-      }
+      if (mounted.current) setErrorMsg(formatAdminError(e));
     } finally {
       if (mounted.current) setLoadingSubastas(false);
     }
@@ -80,9 +87,7 @@ export function DashboardAdminScreen() {
       setRevisiones(Array.isArray(lista) ? lista : []);
       setPendientesCount(Number(countData?.pendientes ?? 0));
     } catch (e) {
-      if (mounted.current) {
-        Alert.alert('Error', e.message || 'No se pudieron cargar las solicitudes.');
-      }
+      if (mounted.current) setErrorMsg(formatAdminError(e));
     } finally {
       if (mounted.current) setLoadingRevisiones(false);
     }
@@ -104,13 +109,36 @@ export function DashboardAdminScreen() {
       setItems(list);
       setAsistentes(Array.isArray(asis) ? asis : []);
       setLastRefresh(new Date().toLocaleTimeString('es-AR', { hour12: false }));
-    } catch {}
+    } catch (e) {
+      if (mounted.current) setErrorMsg(formatAdminError(e));
+    }
   }, [selId]);
 
   const abrirSubasta = useCallback((id) => {
     setSelId(id);
     setTab('subastas');
   }, []);
+
+  const verComoUsuario = useCallback((item) => {
+    if (!selSubasta || !item) return;
+    const titulo = tituloSubasta(selSubasta, items);
+    if (selSubasta.fase === 'en_curso') {
+      nav.navigate('SubastaEnVivo', {
+        subastaId: selSubasta.identificador,
+        itemId: item.identificador,
+        productoId: item.producto?.identificador,
+        precioBase: item.precioBase,
+        titulo,
+        moneda: selSubasta.moneda,
+        comision: item.comision,
+        fecha: selSubasta.fecha,
+        hora: selSubasta.hora,
+        categoriaSubasta: selSubasta.categoria,
+      });
+    } else {
+      nav.navigate('Producto', { subastaId: selSubasta.identificador, subasta: selSubasta });
+    }
+  }, [selSubasta, items, nav]);
 
   useEffect(() => {
     if (!selId) {
@@ -137,9 +165,7 @@ export function DashboardAdminScreen() {
         const firstFree = list.findIndex(i => i.subastado !== 'si');
         setActiveIdx(firstFree >= 0 ? firstFree : 0);
       } catch (e) {
-        if (!cancelled) {
-          Alert.alert('Error', e.message || 'No se pudo cargar la subasta.');
-        }
+        if (!cancelled && mounted.current) setErrorMsg(formatAdminError(e));
       }
     })();
     return () => { cancelled = true; };
@@ -167,88 +193,60 @@ export function DashboardAdminScreen() {
     return () => clearInterval(id);
   }, [activeItem?.identificador]);
 
-  const actuarRevision = (subastaId, accion) => {
-    const cfg = {
-      aprobar: {
-        title: 'Aprobar subasta',
-        msg: 'La subasta será visible en el home. El subastador podrá abrirla cuando quiera.',
-        fn: () => SubastaRevision.aprobar(subastaId),
-      },
-      pausar: {
-        title: 'Pausar subasta',
-        msg: 'Quedará oculta del público y se cerrará hasta que la apruebes de nuevo.',
-        fn: () => SubastaRevision.pausar(subastaId),
-      },
-      rechazar: {
-        title: 'Eliminar solicitud',
-        msg: 'Se rechaza la subasta y queda cerrada.',
-        fn: () => SubastaRevision.rechazar(subastaId, 'Rechazada por administrador'),
-      },
-    }[accion];
-    if (!cfg) return;
+  const runAdminAction = useCallback(async (action, okMessage) => {
+    if (ctrl) return;
+    setCtrl(true);
+    setErrorMsg(null);
+    try {
+      await action();
+      if (mounted.current && okMessage) setSuccessMsg(okMessage);
+    } catch (e) {
+      if (mounted.current) setErrorMsg(formatAdminError(e));
+    } finally {
+      if (mounted.current) setCtrl(false);
+    }
+  }, [ctrl]);
 
-    Alert.alert(cfg.title, cfg.msg, [
-      { text: 'Cancelar', style: 'cancel' },
-      {
-        text: 'Confirmar',
-        style: accion === 'rechazar' ? 'destructive' : 'default',
-        onPress: async () => {
-          setCtrl(true);
-          try {
-            await cfg.fn();
-            await Promise.all([loadRevisiones(), loadSubastas()]);
-            if (selId === subastaId && accion !== 'aprobar') await refreshContexto();
-            if (mounted.current && accion === 'aprobar') {
-              Alert.alert('Listo', 'Subasta aprobada. Ya es visible en el home.');
-            }
-          } catch (e) {
-            const msg = e.status === 301
-              ? 'Error de conexión (HTTP→HTTPS). Recargá la app con la última versión.'
-              : (e.message || 'No se pudo completar la acción.');
-            Alert.alert('Error', msg);
-          } finally {
-            if (mounted.current) setCtrl(false);
-          }
-        },
-      },
-    ]);
-  };
+  const aprobarRevision = useCallback(async (subastaId) => {
+    await runAdminAction(async () => {
+      await SubastaRevision.aprobar(subastaId);
+      await Promise.all([loadRevisiones(), loadSubastas()]);
+    }, 'Subasta aprobada');
+  }, [runAdminAction, loadRevisiones, loadSubastas]);
 
-  const aplicarEstado = (next) => {
-    if (ctrl || !selId) return;
-    const esInicio = next === 'abierta';
-    Alert.alert(
-      esInicio ? 'Iniciar puja' : 'Cerrar subasta',
-      esInicio
-        ? `¿Iniciar la puja de la subasta #${selId} ahora? El timer de 30 min arranca ya.`
-        : `¿Cerrar la subasta #${selId}?`,
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Confirmar',
-          style: next === 'cerrada' ? 'destructive' : 'default',
-          onPress: async () => {
-            setCtrl(true);
-            try {
-              await Subastas.actualizarEstado(selId, next);
-              await refreshContexto();
-              await loadSubastas();
-              if (mounted.current) {
-                setSuccessMsg(esInicio ? 'Puja iniciada — en vivo' : 'Subasta cerrada');
-              }
-            } catch (e) {
-              const msg = e.data?.code === 'NOT_APPROVED'
-                ? 'La subasta debe estar aprobada antes de iniciar la puja.'
-                : (e.message || (esInicio ? 'No se pudo iniciar la puja.' : 'No se pudo cerrar la subasta.'));
-              Alert.alert('Error', msg);
-            } finally {
-              if (mounted.current) setCtrl(false);
-            }
-          },
-        },
-      ],
-    );
-  };
+  const pausarRevision = useCallback(async (subastaId) => {
+    await runAdminAction(async () => {
+      await SubastaRevision.pausar(subastaId);
+      await Promise.all([loadRevisiones(), loadSubastas()]);
+      if (selId === subastaId) await refreshContexto();
+    }, 'Subasta pausada');
+  }, [runAdminAction, loadRevisiones, loadSubastas, selId, refreshContexto]);
+
+  const rechazarRevision = useCallback(async (subastaId) => {
+    await runAdminAction(async () => {
+      await SubastaRevision.rechazar(subastaId, 'Rechazada por administrador');
+      await Promise.all([loadRevisiones(), loadSubastas()]);
+      if (selId === subastaId) await refreshContexto();
+    }, 'Solicitud eliminada');
+  }, [runAdminAction, loadRevisiones, loadSubastas, selId, refreshContexto]);
+
+  const iniciarPuja = useCallback(async () => {
+    if (!selId) return;
+    await runAdminAction(async () => {
+      await Subastas.actualizarEstado(selId, 'abierta');
+      await refreshContexto();
+      await loadSubastas();
+    }, 'Puja iniciada — en vivo');
+  }, [selId, runAdminAction, refreshContexto, loadSubastas]);
+
+  const cerrarSubasta = useCallback(async () => {
+    if (!selId) return;
+    await runAdminAction(async () => {
+      await Subastas.actualizarEstado(selId, 'cerrada');
+      await refreshContexto();
+      await loadSubastas();
+    }, 'Subasta cerrada');
+  }, [selId, runAdminAction, refreshContexto, loadSubastas]);
 
   const solicitudesLabel = pendientesCount > 0
     ? `Solicitudes (${pendientesCount})`
@@ -278,6 +276,16 @@ export function DashboardAdminScreen() {
       </View>
 
       <SuccessBanner message={successMsg} onDismiss={() => setSuccessMsg(null)} />
+      <ErrorBanner message={errorMsg} onDismiss={() => setErrorMsg(null)} />
+      {ctrl && (
+        <View style={{ paddingVertical: 8, alignItems: 'center' }}>
+          <ActivityIndicator color={colors.blue} />
+          <Text style={{ color: colors.muted, fontSize: 12, marginTop: 6 }}>Procesando…</Text>
+        </View>
+      )}
+      <Text style={{ color: colors.muted, fontSize: 10, textAlign: 'center', marginBottom: 4 }} numberOfLines={1}>
+        API: {BASE_URL}
+      </Text>
 
       <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 48 }} showsVerticalScrollIndicator={false}>
         {tab === 'solicitudes' ? (
@@ -286,9 +294,9 @@ export function DashboardAdminScreen() {
             loading={loadingRevisiones}
             ctrl={ctrl}
             onRefresh={loadRevisiones}
-            onAprobar={(id) => actuarRevision(id, 'aprobar')}
-            onPausar={(id) => actuarRevision(id, 'pausar')}
-            onRechazar={(id) => actuarRevision(id, 'rechazar')}
+            onAprobar={aprobarRevision}
+            onPausar={pausarRevision}
+            onRechazar={rechazarRevision}
             onVer={abrirSubasta}
           />
         ) : selId ? (
@@ -300,8 +308,9 @@ export function DashboardAdminScreen() {
             activeIdx={activeIdx}
             onBack={() => setSelId(null)}
             onSelectItem={setActiveIdx}
-            onAbrir={() => aplicarEstado('abierta')}
-            onCerrar={() => aplicarEstado('cerrada')}
+            onVerComoUsuario={verComoUsuario}
+            onAbrir={iniciarPuja}
+            onCerrar={cerrarSubasta}
             onRefresh={refreshContexto}
             ctrl={ctrl}
             lastRefresh={lastRefresh}
@@ -437,9 +446,9 @@ function SolicitudesSection({
             </Text>
             <Btn title="Ver subasta" kind="ghost" onPress={() => onVer(sid)} />
             <View style={{ flexDirection: 'row', gap: 8 }}>
-              <Btn title="Aprobar" kind="primary" style={{ flex: 1 }} onPress={() => onAprobar(sid)} disabled={ctrl} />
-              <Btn title="Pausar" kind="ghost" style={{ flex: 1 }} onPress={() => onPausar(sid)} disabled={ctrl} />
-              <Btn title="Eliminar" kind="danger" style={{ flex: 1 }} onPress={() => onRechazar(sid)} disabled={ctrl} />
+              <Btn title={ctrl ? 'Procesando…' : 'Aprobar'} kind="primary" style={{ flex: 1 }} onPress={() => onAprobar(sid)} disabled={ctrl || !sid} />
+              <Btn title="Pausar" kind="ghost" style={{ flex: 1 }} onPress={() => onPausar(sid)} disabled={ctrl || !sid} />
+              <Btn title="Eliminar" kind="danger" style={{ flex: 1 }} onPress={() => onRechazar(sid)} disabled={ctrl || !sid} />
             </View>
           </Card>
         );
@@ -449,7 +458,7 @@ function SolicitudesSection({
 }
 
 function EstadoSection({
-  subasta, items, asistentes, pujas, activeIdx, onBack, onSelectItem,
+  subasta, items, asistentes, pujas, activeIdx, onBack, onSelectItem, onVerComoUsuario,
   onAbrir, onCerrar, onRefresh, ctrl, lastRefresh,
 }) {
   const tag = tagEstadoSubasta(subasta || {});
@@ -506,7 +515,8 @@ function EstadoSection({
         return (
           <TouchableOpacity
             key={item.identificador}
-            onPress={() => onSelectItem(idx)}
+            onPress={() => (active ? onVerComoUsuario(item) : onSelectItem(idx))}
+            activeOpacity={active ? 0.75 : 0.85}
             style={[s.itemRow, active && { borderColor: colors.blue, borderWidth: 1.5 }, adj && { opacity: 0.5 }]}
           >
             <View style={{ flex: 1 }}>
@@ -516,6 +526,11 @@ function EstadoSection({
               <Text style={{ color: colors.muted, fontSize: 11.5, marginTop: 2 }}>
                 Base: {Number(item.precioBase).toLocaleString('es-AR')} · Comisión: {item.comision}
               </Text>
+              {active && (
+                <Text style={{ color: colors.blue, fontSize: 11, marginTop: 4, fontWeight: '700' }}>
+                  Tocá para ver la subasta como usuario →
+                </Text>
+              )}
             </View>
             {adj
               ? <Tag label="ADJUDICADO" color={colors.green} />
@@ -545,8 +560,12 @@ function EstadoSection({
 
       <SectionLabel>Control</SectionLabel>
       <View style={{ flexDirection: 'row', gap: 10 }}>
-        <Btn title="Iniciar puja" kind="primary" style={{ flex: 1 }} onPress={onAbrir} disabled={ctrl || isOpen} />
-        <Btn title="Cerrar" kind="danger" style={{ flex: 1 }} onPress={onCerrar} disabled={ctrl || !isOpen} />
+        {isOpen ? (
+          <Btn title="Puja iniciada" kind="ghost" style={{ flex: 1 }} disabled />
+        ) : (
+          <Btn title={ctrl ? 'Procesando…' : 'Iniciar puja'} kind="primary" style={{ flex: 1 }} onPress={onAbrir} disabled={ctrl} />
+        )}
+        <Btn title={ctrl ? '…' : 'Cerrar'} kind="danger" style={{ flex: 1 }} onPress={onCerrar} disabled={ctrl || !isOpen} />
       </View>
       <Btn title="Refrescar" kind="ghost" onPress={onRefresh} disabled={ctrl} style={{ marginTop: 4 }} />
     </View>
