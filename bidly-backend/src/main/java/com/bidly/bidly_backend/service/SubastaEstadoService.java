@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -32,11 +33,35 @@ public class SubastaEstadoService {
                     return n;
                 });
         rec.setEstado(estado);
-        if ("abierta".equals(estado) || "cerrada".equals(estado)) {
+        if ("abierta".equals(estado)) {
             rec.setAlgunaVezAbierta(true);
+            if (rec.getFechaApertura() == null) {
+                rec.setFechaApertura(LocalDateTime.now());
+            }
         }
         estadoAdminRepository.save(rec);
         subastaRepository.updateEstadoSiFechaValida(subastaId, estado);
+    }
+
+    @Transactional
+    public LocalDateTime asegurarFechaApertura(Long subastaId, LocalDateTime candidata) {
+        SubastaEstadoAdmin rec = estadoAdminRepository.findById(subastaId)
+                .orElseGet(() -> {
+                    SubastaEstadoAdmin n = new SubastaEstadoAdmin();
+                    n.setSubasta(subastaId);
+                    n.setEstado("abierta");
+                    n.setAlgunaVezAbierta(true);
+                    return n;
+                });
+        if (rec.getFechaApertura() != null) {
+            return rec.getFechaApertura();
+        }
+        rec.setFechaApertura(candidata);
+        if ("abierta".equals(rec.getEstado())) {
+            rec.setAlgunaVezAbierta(true);
+        }
+        estadoAdminRepository.save(rec);
+        return candidata;
     }
 
     public void aplicarOverrides(Collection<Subasta> subastas) {
@@ -50,6 +75,9 @@ public class SubastaEstadoService {
             if (r.getEstado() != null) s.setEstado(r.getEstado());
             if (Boolean.TRUE.equals(r.getAlgunaVezAbierta())) {
                 s.setAlgunaVezAbierta(true);
+            }
+            if (r.getFechaApertura() != null) {
+                s.setFechaApertura(r.getFechaApertura());
             }
         });
     }

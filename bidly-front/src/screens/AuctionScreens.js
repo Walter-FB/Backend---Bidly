@@ -2,13 +2,13 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { View, Text, ScrollView, StyleSheet, ActivityIndicator, Alert, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Screen, Header, Title, SectionLabel, Btn, Card, LiveBadge, Tag, ImgBox, ImageLightbox, BottomBar, Row, Display, SuccessBanner } from '../components/ui';
+import { Screen, Header, Title, SectionLabel, Btn, Card, LiveBadge, Tag, ImgBox, ImageLightbox, BottomBar, Row, Display, SuccessBanner, Field } from '../components/ui';
 import { colors } from '../theme/theme';
-import { Subastas, Pujas, Asistentes, Productos } from '../api/endpoints';
+import { Subastas, Pujas, Asistentes, Productos, RegistroSubasta } from '../api/endpoints';
 import { BASE_URL } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { tituloSubasta, tagEstadoSubasta } from '../utils/subasta';
-import { etiquetaTiempoSubasta, esSubastaEnVivo, segundosHastaCierrePujas } from '../utils/tiempo';
+import { etiquetaTiempoSubasta, esSubastaEnVivo } from '../utils/tiempo';
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
@@ -29,6 +29,21 @@ function formatCountdown(seconds) {
 }
 
 const ORDEN_CATEGORIA = { comun: 0, especial: 1, plata: 2, oro: 3, platino: 4 };
+
+async function buscarRegistroId(clienteId, subastaId, productoId) {
+  if (!clienteId || !subastaId) return null;
+  try {
+    const registros = await RegistroSubasta.porCliente(clienteId);
+    const match = (registros || []).find((r) => {
+      if (Number(r.subasta?.identificador) !== Number(subastaId)) return false;
+      if (productoId != null) return Number(r.producto) === Number(productoId);
+      return true;
+    });
+    return match?.identificador ?? null;
+  } catch {
+    return null;
+  }
+}
 
 function mensajeError(e, proximaPuja, maxPuja, moneda) {
   const code = e?.data?.code;
@@ -265,9 +280,12 @@ export function SubastaEnVivoScreen({ navigation, route }) {
   const [pollingError, setPollingError] = useState(false);
   const [timeLeft, setTimeLeft] = useState(null);
   const [fotoAmpliada, setFotoAmpliada] = useState(false);
+  const [montoIngresado, setMontoIngresado] = useState('');
   const mounted = useRef(true);
   const asistenteIdRef = useRef(null);
   const navegado = useRef(false);
+  const baselineRef = useRef(null); // { fetchedAt: ms, segundos: number } — baseline del backend al entrar
+  const ultimaPujaTopRef = useRef(null);
 
   useEffect(() => {
     return () => { mounted.current = false; };
@@ -276,15 +294,40 @@ export function SubastaEnVivoScreen({ navigation, route }) {
   // Mantener ref actualizada para usarla en callbacks sin crear dependencias.
   useEffect(() => { asistenteIdRef.current = asistenteId; }, [asistenteId]);
 
-  // Countdown por inactividad de pujas (30 min) o hasta apertura programada.
+  // Obtener baseline de tiempo desde el backend al entrar a la pantalla.
   useEffect(() => {
+    if (!subastaId) return;
+    Subastas.obtener(subastaId)
+      .then((s) => {
+        if (mounted.current && s?.segundosRestantes != null) {
+          baselineRef.current = { fetchedAt: Date.now(), segundos: Number(s.segundosRestantes) };
+        }
+      })
+      .catch(() => {});
+  }, [subastaId]);
+
+  // Countdown: 30 min desde la última puja, o desde la apertura real (baseline del backend).
+  useEffect(() => {
+    const INACTIVIDAD_MS = 30 * 60 * 1000;
     const tick = () => {
-      setTimeLeft(segundosHastaCierrePujas(pujas, fecha, hora));
+      if (pujas.length > 0 && pujas[0]?.fechaHora) {
+        const ultima = new Date(pujas[0].fechaHora).getTime();
+        if (!Number.isNaN(ultima)) {
+          setTimeLeft(Math.max(0, Math.floor((ultima + INACTIVIDAD_MS - Date.now()) / 1000)));
+          return;
+        }
+      }
+      const b = baselineRef.current;
+      if (b) {
+        setTimeLeft(Math.max(0, Math.floor(b.segundos - (Date.now() - b.fetchedAt) / 1000)));
+        return;
+      }
+      setTimeLeft(null);
     };
     tick();
     const interval = setInterval(tick, 1000);
     return () => clearInterval(interval);
-  }, [pujas, fecha, hora]);
+  }, [pujas]);
 
   // Inscribir al usuario como asistente.
   useEffect(() => {
@@ -315,14 +358,19 @@ export function SubastaEnVivoScreen({ navigation, route }) {
           ganadora.asistente?.identificador === asistenteIdRef.current;
 
         if (yoGane) {
-          navigation.replace('Ganaste', {
-            titulo,
-            moneda,
-            importe: ganadora.importe,
-            subastaId,
-            itemId,
-            comision,
-          });
+          buscarRegistroId(user.clienteId, subastaId, productoId)
+            .then((registroId) => {
+              if (!mounted.current) return;
+              navigation.replace('Ganaste', {
+                titulo,
+                moneda,
+                importe: ganadora.importe,
+                subastaId,
+                itemId,
+                comision,
+                registroId,
+              });
+            });
         } else {
           navigation.replace('SubastaFinalizada', {
             titulo,
@@ -335,7 +383,7 @@ export function SubastaEnVivoScreen({ navigation, route }) {
       })
       .catch(() => { if (mounted.current) setPollingError(true); })
       .finally(() => { if (mounted.current) setLoadingPujas(false); });
-  }, [itemId, user, navigation, titulo, moneda, subastaId, comision]);
+  }, [itemId, user, navigation, titulo, moneda, subastaId, comision, productoId]);
 
   useEffect(() => {
     cargarPujas();
@@ -361,6 +409,28 @@ export function SubastaEnVivoScreen({ navigation, route }) {
       ? Number(pujaActual) + maxIncremento
       : null;
 
+  // Sincronizar el input solo cuando cambia la puja líder (no en cada poll).
+  useEffect(() => {
+    const top = pujas[0];
+    const firma = top
+      ? `${top.identificador ?? 'p'}-${Number(top.importe)}`
+      : `base-${Number(precioBase)}`;
+    if (ultimaPujaTopRef.current === firma) return;
+    ultimaPujaTopRef.current = firma;
+
+    setMontoIngresado((prev) => {
+      const num = parseFloat(prev.replace(',', '.'));
+      return Number.isNaN(num) || num < proximaPuja - 0.001 ? String(proximaPuja) : prev;
+    });
+  }, [pujas, proximaPuja, precioBase]);
+
+  // Validación del monto ingresado.
+  const montoNum = parseFloat(montoIngresado.replace(',', '.'));
+  const montoValido = !Number.isNaN(montoNum) && montoNum > 0;
+  const montoMenorQueMin = montoValido && montoNum < proximaPuja - 0.001;
+  const montoMayorQueMax = maxPuja != null && montoValido && montoNum > maxPuja + 0.001;
+  const montoInvalido = !montoValido || montoMenorQueMin || montoMayorQueMax;
+
   const onPujar = async () => {
     // Invitado: mostrar aviso y redirigir al login.
     if (user?.isGuest) {
@@ -385,7 +455,7 @@ export function SubastaEnVivoScreen({ navigation, route }) {
     }
     setPujando(true);
     try {
-      await Pujas.pujar(asistenteId, itemId, proximaPuja);
+      await Pujas.pujar(asistenteId, itemId, montoNum);
       cargarPujas();
     } catch (e) {
       Alert.alert('No se pudo pujar', mensajeError(e, proximaPuja, maxPuja, moneda));
@@ -458,6 +528,29 @@ export function SubastaEnVivoScreen({ navigation, route }) {
           )}
         </Card>
 
+        {!user?.isGuest && asistenteId && !esLidero && (
+          <Card el style={{ marginTop: 12 }}>
+            <Text style={{ color: colors.muted, fontSize: 11, fontWeight: '800', letterSpacing: 1 }}>TU OFERTA</Text>
+            <Field
+              value={montoIngresado}
+              onChangeText={setMontoIngresado}
+              keyboardType="decimal-pad"
+              style={{ fontSize: 22, fontWeight: '800', color: montoInvalido ? colors.red : '#fff', marginTop: 6 }}
+            />
+            <Text style={{ color: montoMenorQueMin || montoMayorQueMax ? colors.red : colors.muted, fontSize: 12, marginTop: 4 }}>
+              {maxPuja != null
+                ? `Mín: ${formatImporte(proximaPuja, moneda)}  ·  Máx: ${formatImporte(maxPuja, moneda)}`
+                : `Mín: ${formatImporte(proximaPuja, moneda)}  ·  Sin tope`}
+            </Text>
+            {montoMenorQueMin && (
+              <Text style={{ color: colors.red, fontSize: 12, marginTop: 2 }}>El monto está por debajo del mínimo permitido.</Text>
+            )}
+            {montoMayorQueMax && (
+              <Text style={{ color: colors.red, fontSize: 12, marginTop: 2 }}>El monto supera el tope máximo.</Text>
+            )}
+          </Card>
+        )}
+
         {esLidero && (
           <Card el style={{ marginTop: 10, backgroundColor: 'rgba(55,214,111,0.12)', borderColor: colors.green, borderWidth: 1 }}>
             <Text style={{ color: colors.green, fontWeight: '800', textAlign: 'center' }}>✓ Estás liderando la puja</Text>
@@ -517,27 +610,16 @@ export function SubastaEnVivoScreen({ navigation, route }) {
         ) : esLidero ? (
           <Btn title="Ya sos el mayor postor" kind="ghost" disabled />
         ) : (
-          <>
-            {esExento && (
-              <Text style={{ color: colors.gold, fontSize: 11, fontWeight: '700', textAlign: 'center', marginBottom: 6 }}>
-                Subasta {categoriaSubasta?.toUpperCase()} — sin límite máximo de puja
-              </Text>
-            )}
-            {!esExento && maxPuja != null && (
-              <Text style={{ color: colors.muted, fontSize: 11, textAlign: 'center', marginBottom: 6 }}>
-                Máx: {formatImporte(maxPuja, moneda)}
-              </Text>
-            )}
-            <Btn
-              title={
-                user?.isGuest
-                  ? 'Pujar (requiere cuenta)'
-                  : pujando ? 'Pujando…' : `Pujar ${formatImporte(proximaPuja, moneda)}`
-              }
-              onPress={onPujar}
-              disabled={pujando || (!user?.isGuest && !asistenteId)}
-            />
-          </>
+          <Btn
+            title={
+              user?.isGuest
+                ? 'Pujar (requiere cuenta)'
+                : pujando ? 'Pujando…'
+                : `Pujar ${montoValido ? formatImporte(montoNum, moneda) : '—'}`
+            }
+            onPress={onPujar}
+            disabled={pujando || (!user?.isGuest && (!asistenteId || montoInvalido))}
+          />
         )}
       </BottomBar>
 
@@ -552,7 +634,7 @@ export function SubastaEnVivoScreen({ navigation, route }) {
 
 // ─── GANASTE SCREEN ───────────────────────────────────────────────────────────
 export function GanasteScreen({ navigation, route }) {
-  const { titulo, moneda, importe, subastaId, itemId, comision } = route.params || {};
+  const { titulo, moneda, importe, subastaId, itemId, comision, registroId } = route.params || {};
 
   const total = importe != null
     ? Number(importe) + Number(comision || 0)
@@ -591,7 +673,7 @@ export function GanasteScreen({ navigation, route }) {
         <Btn
           title="Continuar al pago"
           onPress={() => navigation.navigate('MedioPago', {
-            registroId: route.params?.registroId,
+            registroId,
             subastaId, itemId, moneda, importe, comision, titulo,
           })}
         />

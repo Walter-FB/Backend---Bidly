@@ -17,7 +17,6 @@ import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
-import java.util.Optional;
 import java.util.Set;
 
 @Service
@@ -106,8 +105,7 @@ public class SubastaService {
 
         if ("abierta".equals(s.getEstado())) {
             s.setFase(FASE_EN_CURSO);
-            LocalDateTime referencia = pujoFechaRepository.findUltimaFechaBySubastaId(s.getIdentificador())
-                .orElse(ahora);
+            LocalDateTime referencia = referenciaInactividad(s, ahora);
             LocalDateTime cierre = referencia.plusMinutes(MINUTOS_INACTIVIDAD);
             long segundos = ChronoUnit.SECONDS.between(ahora, cierre);
             s.setSegundosRestantes(Math.max(0L, segundos));
@@ -140,6 +138,27 @@ public class SubastaService {
 
         s.setFase(FASE_PROGRAMADA);
         s.setSegundosRestantes(0L);
+    }
+
+    public LocalDateTime referenciaInactividad(Subasta s, LocalDateTime ahora) {
+        return pujoFechaRepository.findUltimaFechaBySubastaId(s.getIdentificador())
+                .orElseGet(() -> {
+                    if (s.getFechaApertura() != null) {
+                        return s.getFechaApertura();
+                    }
+                    LocalDateTime inicio = inicioSubasta(s);
+                    LocalDateTime candidata = (inicio != null && !inicio.isAfter(ahora)) ? inicio : ahora;
+                    LocalDateTime persistida = subastaEstadoService.asegurarFechaApertura(
+                            s.getIdentificador(), candidata);
+                    s.setFechaApertura(persistida);
+                    return persistida;
+                });
+    }
+
+    public boolean inactividadVencida(Subasta s, LocalDateTime ahora) {
+        LocalDateTime inicio = inicioSubasta(s);
+        if (inicio != null && inicio.isAfter(ahora)) return false;
+        return !referenciaInactividad(s, ahora).plusMinutes(MINUTOS_INACTIVIDAD).isAfter(ahora);
     }
 
     private LocalDateTime inicioSubasta(Subasta s) {

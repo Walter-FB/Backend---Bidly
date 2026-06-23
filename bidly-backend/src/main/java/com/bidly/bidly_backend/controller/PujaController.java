@@ -11,6 +11,8 @@ import com.bidly.bidly_backend.repository.PujaRepository;
 import com.bidly.bidly_backend.repository.PujoFechaRepository;
 import com.bidly.bidly_backend.service.NotificacionService;
 import jakarta.transaction.Transactional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -22,11 +24,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/pujos")
 public class PujaController {
 
+    private static final Logger log = LoggerFactory.getLogger(PujaController.class);
     private static final Set<String> CATEGORIAS_SIN_LIMITE = Set.of("oro", "platino");
 
     @Autowired
@@ -44,15 +48,20 @@ public class PujaController {
     @Autowired
     private NotificacionService notificacionService;
 
+    @Transactional
     @GetMapping
     public ResponseEntity<?> listar(
             @RequestParam(required = false) Long item,
             @RequestParam(required = false) Long asistente) {
         if (item != null) {
-            return ResponseEntity.ok(pujaRepository.findByItemIdentificadorOrderByImporteDesc(item));
+            List<Puja> pujas = pujaRepository.findByItemIdentificadorOrderByImporteDesc(item);
+            inyectarFechaHora(pujas);
+            return ResponseEntity.ok(pujas);
         }
         if (asistente != null) {
-            return ResponseEntity.ok(pujaRepository.findByAsistenteIdentificadorOrderByImporteDesc(asistente));
+            List<Puja> pujas = pujaRepository.findByAsistenteIdentificadorOrderByImporteDesc(asistente);
+            inyectarFechaHora(pujas);
+            return ResponseEntity.ok(pujas);
         }
         return ResponseEntity.badRequest().body(Map.of("error", "Debe indicar ?item= o ?asistente=", "code", "BAD_REQUEST"));
     }
@@ -67,6 +76,11 @@ public class PujaController {
                 || puja.getImporte() == null) {
             return ResponseEntity.badRequest()
                     .body(Map.of("error", "Campos obligatorios faltantes (item, asistente, importe)", "code", "BAD_BODY"));
+        }
+
+        if (puja.getImporte().compareTo(BigDecimal.ZERO) <= 0) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("error", "El importe debe ser mayor a cero", "code", "INVALID_BID_AMOUNT"));
         }
 
         // 2. Asistente existe
@@ -197,5 +211,25 @@ public class PujaController {
         return pujaRepository.findByItemIdentificadorAndGanador(itemId, "si")
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.status(404).body(null));
+    }
+
+    private void inyectarFechaHora(List<Puja> pujas) {
+        if (pujas.isEmpty()) return;
+        List<Long> ids = pujas.stream().map(Puja::getIdentificador).toList();
+        Map<Long, LocalDateTime> fechas = pujoFechaRepository.findAllById(ids).stream()
+                .filter(pf -> pf.getFechaHora() != null)
+                .collect(Collectors.toMap(PujoFecha::getPujo, PujoFecha::getFechaHora));
+        for (Puja p : pujas) {
+            LocalDateTime fechaHora = fechas.get(p.getIdentificador());
+            if (fechaHora == null) {
+                log.warn("PUJAS - pujaId={} sin pujo_fecha; reparando registro", p.getIdentificador());
+                fechaHora = LocalDateTime.now();
+                PujoFecha pf = new PujoFecha();
+                pf.setPujo(p.getIdentificador());
+                pf.setFechaHora(fechaHora);
+                pujoFechaRepository.save(pf);
+            }
+            p.setFechaHora(fechaHora);
+        }
     }
 }

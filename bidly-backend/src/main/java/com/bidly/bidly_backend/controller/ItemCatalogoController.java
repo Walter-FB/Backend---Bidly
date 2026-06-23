@@ -1,21 +1,12 @@
 package com.bidly.bidly_backend.controller;
 
 import com.bidly.bidly_backend.model.Catalogo;
-import com.bidly.bidly_backend.model.Cliente;
 import com.bidly.bidly_backend.model.ItemCatalogo;
 import com.bidly.bidly_backend.model.Producto;
-import com.bidly.bidly_backend.model.Puja;
-import com.bidly.bidly_backend.model.RegistroDeSubasta;
-import com.bidly.bidly_backend.model.Subasta;
 import com.bidly.bidly_backend.repository.CatalogoRepository;
 import com.bidly.bidly_backend.repository.ItemCatalogoRepository;
 import com.bidly.bidly_backend.repository.ProductoRepository;
-import com.bidly.bidly_backend.repository.PujaRepository;
-import com.bidly.bidly_backend.repository.RegistroDeSubastaRepository;
-import com.bidly.bidly_backend.repository.SubastaRepository;
-import com.bidly.bidly_backend.service.NotificacionService;
-import com.bidly.bidly_backend.service.SubastaEstadoService;
-import jakarta.transaction.Transactional;
+import com.bidly.bidly_backend.service.ItemAdjudicacionService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -38,19 +29,7 @@ public class ItemCatalogoController {
     private ProductoRepository productoRepository;
 
     @Autowired
-    private PujaRepository pujaRepository;
-
-    @Autowired
-    private RegistroDeSubastaRepository registroRepository;
-
-    @Autowired
-    private SubastaRepository subastaRepository;
-
-    @Autowired
-    private SubastaEstadoService subastaEstadoService;
-
-    @Autowired
-    private NotificacionService notificacionService;
+    private ItemAdjudicacionService itemAdjudicacionService;
 
     @PostMapping("/api/catalogos/{catalogoId}/items")
     public ResponseEntity<?> agregarItem(@PathVariable Long catalogoId,
@@ -80,72 +59,25 @@ public class ItemCatalogoController {
     }
 
     @PatchMapping("/api/items/{id}/adjudicar")
-    @Transactional
     public ResponseEntity<?> adjudicar(@PathVariable Long id) {
-        ItemCatalogo item = itemCatalogoRepository.findByIdForUpdate(id).orElse(null);
-        if (item == null) return ResponseEntity.notFound().build();
+        ItemAdjudicacionService.ManualAdjudicacionResult resultado = itemAdjudicacionService.adjudicarManual(id);
 
-        if ("si".equals(item.getSubastado())) {
-            return ResponseEntity.badRequest().body(Map.of("error", "El ítem ya fue adjudicado"));
-        }
-
-        Puja mejorPuja = pujaRepository.findTopByItemIdentificadorOrderByImporteDesc(id).orElse(null);
-        if (mejorPuja == null) {
-            return ResponseEntity.badRequest().body(Map.of("error", "No hay pujas para este ítem"));
-        }
-
-        // Marcar puja ganadora
-        mejorPuja.setGanador("si");
-        pujaRepository.save(mejorPuja);
-
-        // Marcar ítem como subastado
-        item.setSubastado("si");
-        itemCatalogoRepository.save(item);
-
-        // Crear registro de subasta
-        Cliente ganador = mejorPuja.getAsistente().getCliente();
-        Subasta subasta = item.getCatalogo().getSubasta();
-
-        RegistroDeSubasta registro = new RegistroDeSubasta();
-        registro.setSubasta(subasta);
-        registro.setDuenio(item.getProducto().getDuenio());
-        registro.setProducto(item.getProducto().getIdentificador());
-        registro.setCliente(ganador);
-        registro.setImporte(mejorPuja.getImporte());
-        registro.setComision(item.getComision());
-        registroRepository.save(registro);
-
-        boolean todosFinalizados = itemCatalogoRepository
-                .findByCatalogoSubastaIdentificador(subasta.getIdentificador())
-                .stream()
-                .allMatch(i -> "si".equals(i.getSubastado()));
-        if (todosFinalizados) {
-            subastaEstadoService.aplicarEstado(subasta.getIdentificador(), "cerrada");
-            subasta.setEstado("cerrada");
-        }
-
-        String producto = item.getProducto().getDescripcionCatalogo();
-        notificacionService.crear(ganador.getIdentificador(), "ganaste",
-                "Ganaste " + producto + " por $" + mejorPuja.getImporte());
-
-        long pendientes = itemCatalogoRepository
-                .findByCatalogoSubastaIdentificador(subasta.getIdentificador())
-                .stream()
-                .filter(i -> !"si".equals(i.getSubastado()))
-                .count();
-        if (pendientes == 1) {
-            notificacionService.notificarAsistentesSubasta(subasta.getIdentificador(), "subasta_por_cerrar",
-                    "Queda 1 ítem en la subasta #" + subasta.getIdentificador() + ". Pronto finalizará.");
-        } else if (todosFinalizados) {
-            notificacionService.notificarAsistentesSubasta(subasta.getIdentificador(), "subasta_por_cerrar",
-                    "La subasta #" + subasta.getIdentificador() + " finalizó.");
-        }
-
-        return ResponseEntity.ok(Map.of(
-                "ganadorClienteId", ganador.getIdentificador(),
-                "importeFinal", mejorPuja.getImporte(),
-                "comision", item.getComision(),
-                "itemId", item.getIdentificador()
-        ));
+        return switch (resultado.estado()) {
+            case NOT_FOUND -> ResponseEntity.notFound().build();
+            case YA_ADJUDICADO -> ResponseEntity.badRequest()
+                    .body(Map.of("error", "El ítem ya fue adjudicado"));
+            case SIN_PUJAS -> ResponseEntity.badRequest()
+                    .body(Map.of("error", "No hay pujas para este ítem"));
+            case OK -> {
+                ItemAdjudicacionService.AdjudicacionExitosa adj = resultado.datos();
+                itemAdjudicacionService.cerrarSubastaSiCorresponde(adj.subastaId());
+                yield ResponseEntity.ok(Map.of(
+                        "ganadorClienteId", adj.ganadorClienteId(),
+                        "importeFinal", adj.importeFinal(),
+                        "comision", adj.comision(),
+                        "itemId", adj.itemId()
+                ));
+            }
+        };
     }
 }

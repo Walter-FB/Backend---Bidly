@@ -7,4 +7,5 @@ import java.util.List;
 public interface RegistroDeSubastaRepository extends JpaRepository<RegistroDeSubasta, Long> {
     List<RegistroDeSubasta> findByClienteIdentificador(Long clienteId);
     List<RegistroDeSubasta> findBySubastaIdentificador(Long subastaId);
+    boolean existsBySubastaIdentificadorAndProducto(Long subastaIdentificador, Long producto);
 }

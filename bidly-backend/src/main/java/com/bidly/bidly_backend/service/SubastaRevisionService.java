@@ -28,6 +28,9 @@ public class SubastaRevisionService {
     @Autowired
     private SubastaEstadoService subastaEstadoService;
 
+    @Autowired
+    private NotificacionService notificacionService;
+
     @Transactional
     public SubastaRevision registrarNueva(Subasta subasta) {
         SubastaRevision revision = new SubastaRevision();
@@ -91,10 +94,27 @@ public class SubastaRevisionService {
                         revision.setObservacion(observacion.trim());
                     }
                     Subasta subasta = revision.getSubasta();
-                    subastaEstadoService.aplicarEstado(subasta.getIdentificador(), "cerrada");
-                    subasta.setEstado("cerrada");
+                    subastaEstadoService.aplicarOverrides(List.of(subasta));
+                    if ("abierta".equals(subasta.getEstado())) {
+                        cerrarSubastaVivaRechazada(subasta, observacion);
+                    } else if (!"cerrada".equals(subasta.getEstado())) {
+                        subastaEstadoService.aplicarEstado(subasta.getIdentificador(), "cerrada");
+                        subasta.setEstado("cerrada");
+                    }
                     return revisionRepository.save(revision);
                 });
+    }
+
+    private void cerrarSubastaVivaRechazada(Subasta subasta, String observacion) {
+        Long id = subasta.getIdentificador();
+        String motivo = observacion != null && !observacion.isBlank()
+                ? observacion.trim()
+                : "Rechazada por moderación";
+        notificacionService.notificarAsistentesSubasta(id, "subasta_rechazada",
+                "La subasta #" + id + " fue cancelada por moderación. Motivo: " + motivo
+                        + ". Las pujas registradas quedan sin efecto.");
+        subastaEstadoService.aplicarEstado(id, "cerrada");
+        subasta.setEstado("cerrada");
     }
 
     private Optional<SubastaRevision> cambiarEstado(Long subastaId, String nuevoEstado, boolean forzarCerrada) {
