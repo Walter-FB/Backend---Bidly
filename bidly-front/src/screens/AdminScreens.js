@@ -65,7 +65,18 @@ export function DashboardAdminScreen() {
 
   // ── Al cambiar subasta seleccionada: cargar ítems, asistentes, inscribir ──
   useEffect(() => {
-    if (!selId) { setItems([]); setAsistentes([]); setPujas([]); setAsisId(null); return; }
+    if (!selId) {
+      setItems([]);
+      setAsistentes([]);
+      setPujas([]);
+      setAsisId(null);
+      setActiveIdx(0);
+      return;
+    }
+    // Limpiar de inmediato para no mostrar datos de la subasta anterior.
+    setItems([]);
+    setPujas([]);
+    setActiveIdx(0);
     let cancelled = false;
     (async () => {
       try {
@@ -113,7 +124,7 @@ export function DashboardAdminScreen() {
   // ── Polling: pujas del ítem activo cada 5s ────────────────────────────────
   useEffect(() => {
     const iid = activeItem?.identificador;
-    if (!iid) return;
+    if (!iid) { setPujas([]); return; }
     const tick = async () => {
       if (!mounted.current) return;
       try {
@@ -316,14 +327,40 @@ export function DashboardAdminScreen() {
       if (!mounted.current) return;
       const list = Array.isArray(data) ? data : [];
       setItems(list);
+      const sub = await Subastas.obtener(selId);
+      if (!mounted.current) return;
+      setSubastas(prev => prev.map(s => s.identificador === selId ? { ...s, ...sub } : s));
       const nextIdx = list.findIndex((i, n) => n > activeIdx && i.subastado !== 'si');
-      if (nextIdx >= 0) setActiveIdx(nextIdx);
+      if (nextIdx >= 0) {
+        setActiveIdx(nextIdx);
+      } else if (list.length > 0 && list.every(i => i.subastado === 'si')) {
+        setActiveIdx(0);
+      }
     } catch {} finally { if (mounted.current) setCtrl(false); }
   };
 
-  const nextItem = () => {
-    const idx = items.findIndex((i, n) => n > activeIdx && i.subastado !== 'si');
-    if (idx >= 0) setActiveIdx(idx);
+  const nextItem = async () => {
+    if (ctrl || !selId) return;
+    setCtrl(true);
+    try {
+      const data = await Subastas.catalogos(selId);
+      if (!mounted.current) return;
+      const list = Array.isArray(data) ? data : [];
+      setItems(list);
+
+      if (list.length === 0) {
+        setPujas([]);
+        Alert.alert('Sin catálogo', 'Esta subasta no tiene ítems cargados.');
+        return;
+      }
+
+      // QA: recorrer todo el catálogo, adjudicados o no.
+      setActiveIdx(prev => (prev + 1) % list.length);
+    } catch {
+      Alert.alert('No se pudo refrescar', 'Revisá la conexión con el backend y volvé a intentar.');
+    } finally {
+      if (mounted.current) setCtrl(false);
+    }
   };
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -423,8 +460,19 @@ export function DashboardAdminScreen() {
 // ─── Sección Estado ───────────────────────────────────────────────────────────
 function EstadoSection({ subasta, items, asistentes, pujas, activeIdx, onSelectItem, onToggle, onAdjudicar, onNext, ctrl, lastRefresh }) {
   const isOpen = subasta?.estado === 'abierta';
+  const allAdjudicados = items.length > 0 && items.every(i => i.subastado === 'si');
+  const datosInconsistentes = isOpen && allAdjudicados;
   return (
     <View style={{ gap: 12, paddingTop: 14 }}>
+
+      {datosInconsistentes && (
+        <View style={s.warn}>
+          <Ionicons name="alert-circle-outline" size={14} color={colors.gold} />
+          <Text style={{ color: colors.gold, fontSize: 12.5, flex: 1 }}>
+            Todos los ítems están adjudicados pero la subasta sigue abierta. Cerrala con el botón de abajo.
+          </Text>
+        </View>
+      )}
 
       {/* Info subasta */}
       <Card>

@@ -12,6 +12,8 @@ import com.bidly.bidly_backend.repository.ItemCatalogoRepository;
 import com.bidly.bidly_backend.repository.ProductoRepository;
 import com.bidly.bidly_backend.repository.PujaRepository;
 import com.bidly.bidly_backend.repository.RegistroDeSubastaRepository;
+import com.bidly.bidly_backend.repository.SubastaRepository;
+import jakarta.transaction.Transactional;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -38,6 +40,9 @@ public class ItemCatalogoController {
 
     @Autowired
     private RegistroDeSubastaRepository registroRepository;
+
+    @Autowired
+    private SubastaRepository subastaRepository;
 
     @PostMapping("/api/catalogos/{catalogoId}/items")
     public ResponseEntity<?> agregarItem(@PathVariable Long catalogoId,
@@ -67,8 +72,9 @@ public class ItemCatalogoController {
     }
 
     @PatchMapping("/api/items/{id}/adjudicar")
+    @Transactional
     public ResponseEntity<?> adjudicar(@PathVariable Long id) {
-        ItemCatalogo item = itemCatalogoRepository.findById(id).orElse(null);
+        ItemCatalogo item = itemCatalogoRepository.findByIdForUpdate(id).orElse(null);
         if (item == null) return ResponseEntity.notFound().build();
 
         if ("si".equals(item.getSubastado())) {
@@ -100,6 +106,15 @@ public class ItemCatalogoController {
         registro.setImporte(mejorPuja.getImporte());
         registro.setComision(item.getComision());
         registroRepository.save(registro);
+
+        boolean todosFinalizados = itemCatalogoRepository
+                .findByCatalogoSubastaIdentificador(subasta.getIdentificador())
+                .stream()
+                .allMatch(i -> "si".equals(i.getSubastado()));
+        if (todosFinalizados) {
+            subasta.setEstado("cerrada");
+            subastaRepository.save(subasta);
+        }
 
         return ResponseEntity.ok(Map.of(
                 "ganadorClienteId", ganador.getIdentificador(),
