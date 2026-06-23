@@ -1,6 +1,6 @@
 // BIDLY — Perfil, MisSubastas, MisCompras, Historial, Publicar, DatosGanador.
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, Image, Modal } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, Image, Modal, Animated } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,8 +10,30 @@ import { AuctionCard } from './HomeScreens';
 import { useAuth } from '../context/AuthContext';
 import { BASE_URL, getToken } from '../api/client';
 import { Clientes, Personas, RegistroSubasta, Subastas, Productos, Subastadores, Catalogos } from '../api/endpoints';
+import { tituloSubasta, subtituloSubasta, formatFechaSubasta, esSubastaFinalizada, esSubastaEnCursoVendedor, esMiSubasta, tagEstadoSubasta } from '../utils/subasta';
 
 const COMISION_BIDLY = 0.10;
+
+function irAMisSubastas(navigation, params = {}) {
+  navigation.reset({
+    index: 0,
+    routes: [
+      {
+        name: 'Main',
+        state: {
+          index: 3,
+          routes: [
+            { name: 'Home' },
+            { name: 'Historial' },
+            { name: 'Publish' },
+            { name: 'Subastas', params },
+            { name: 'Perfil' },
+          ],
+        },
+      },
+    ],
+  });
+}
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
@@ -38,9 +60,9 @@ function mapRegistro(r) {
   const reembolsada = r.reembolsada === 'si';
   return {
     id: r.identificador,
-    title: `Subasta #${r.subasta?.identificador || r.identificador}`,
+    title: tituloSubasta(r.subasta),
     date: fecha,
-    sub: r.subasta?.categoria || '',
+    sub: subtituloSubasta(r.subasta),
     price: r.importe ? Number(r.importe).toLocaleString('es-AR', { maximumFractionDigits: 2 }) : '—',
     tag: reembolsada ? 'Reembolsada' : 'Ganada',
     tagColor: reembolsada ? colors.red : colors.green,
@@ -48,6 +70,9 @@ function mapRegistro(r) {
     importe: r.importe,
     comision: r.comision,
     reembolsada: r.reembolsada,
+    subastaId: r.subasta?.identificador,
+    productoId: r.producto,
+    moneda: r.subasta?.moneda || 'pesos',
   };
 }
 
@@ -107,8 +132,8 @@ export function PerfilScreen({ navigation }) {
         ))}
         {isAdmin && (
           <TouchableOpacity style={s.listItem} onPress={() => navigation.navigate('DashboardAdmin')}>
-            <Text style={{ color: '#fff', fontSize: 14.5, fontWeight: '600' }}>Panel de administración</Text>
-            <Tag label="ADMIN" color={colors.red} />
+            <Text style={{ color: '#fff', fontSize: 14.5, fontWeight: '600' }}>Administración</Text>
+            <Tag label="ADMIN" color={colors.blue} />
           </TouchableOpacity>
         )}
         <TouchableOpacity onPress={logout} style={{ marginTop: 6, padding: 12, alignItems: 'center' }}>
@@ -174,7 +199,7 @@ export function MisComprasScreen({ navigation }) {
         {filtrados.map((r) => (
           <TouchableOpacity
             key={r.id}
-            onPress={() => navigation.navigate('Reembolso', { registroId: r.id, importe: r.importe, titulo: r.title })}
+            onPress={() => navigation.navigate('CompraDetalle', r)}
           >
             <ListRow item={r} />
           </TouchableOpacity>
@@ -219,7 +244,7 @@ export function HistorialScreen({ navigation }) {
           {registros
             .filter((r) => tab === 'reemb' ? r.reembolsada === 'si' : true)
             .map((r) => (
-              <TouchableOpacity key={r.id} onPress={() => navigation.navigate('DatosGanador', { registroId: r.registroId })}>
+              <TouchableOpacity key={r.id} onPress={() => navigation.navigate('CompraDetalle', r)}>
                 <ListRow item={r} />
               </TouchableOpacity>
             ))}
@@ -230,19 +255,42 @@ export function HistorialScreen({ navigation }) {
 }
 
 // ─── MIS SUBASTAS ─────────────────────────────────────────────────────────────
-export function MisSubastasScreen({ navigation }) {
+function irAGanaste(navigation, g) {
+  navigation.navigate('Ganaste', {
+    titulo: g.title,
+    moneda: g.moneda,
+    importe: g.importe,
+    comision: g.comision,
+    subastaId: g.subastaId,
+    itemId: g.productoId,
+    registroId: g.registroId,
+  });
+}
+
+export function MisSubastasScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const [tab, setTab] = useState('curso');
   const [subastas, setSubastas] = useState([]);
+  const [ganadas, setGanadas] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [toast, setToast] = useState(null);
 
   const cargar = () => {
     if (!user?.clienteId) { setLoading(false); return; }
     setLoading(true);
-    Subastas.porSubastador(user.clienteId)
-      .then((data) => setSubastas(data || []))
-      .catch(() => setSubastas([]))
+    Promise.all([
+      Subastas.porSubastador(user.clienteId),
+      RegistroSubasta.porCliente(user.clienteId),
+    ])
+      .then(([subs, regs]) => {
+        setSubastas(subs || []);
+        setGanadas((regs || []).map(mapRegistro));
+      })
+      .catch(() => {
+        setSubastas([]);
+        setGanadas([]);
+      })
       .finally(() => setLoading(false));
   };
 
@@ -251,9 +299,23 @@ export function MisSubastasScreen({ navigation }) {
     return unsubscribe;
   }, [navigation, user]);
 
-  const filtradas = subastas.filter((a) => {
-    if (tab === 'curso') return a.estado === 'abierta';
-    if (tab === 'fin') return a.estado === 'cerrada';
+  useEffect(() => {
+    if (!route.params?.creada) return;
+    const titulo = route.params.tituloCreada || 'Tu subasta';
+    setToast(`"${titulo}" creada correctamente`);
+    setTab('todas');
+    cargar();
+    navigation.setParams({ creada: undefined, tituloCreada: undefined });
+    const t = setTimeout(() => setToast(null), 4500);
+    return () => clearTimeout(t);
+  }, [route.params?.creada]);
+
+  const mias = subastas.filter((a) => esMiSubasta(a, user?.clienteId));
+  const ganadasActivas = ganadas.filter((g) => g.reembolsada !== 'si');
+
+  const filtradas = tab === 'ganadas' ? [] : mias.filter((a) => {
+    if (tab === 'curso') return esSubastaEnCursoVendedor(a);
+    if (tab === 'fin') return esSubastaFinalizada(a);
     return true;
   });
 
@@ -266,48 +328,122 @@ export function MisSubastasScreen({ navigation }) {
         </TouchableOpacity>
       </View>
       <ScrollView contentContainerStyle={{ paddingHorizontal: 22, paddingBottom: 170 }} showsVerticalScrollIndicator={false}>
+        {toast && (
+          <View style={s.toastOk}>
+            <Ionicons name="checkmark-circle" size={20} color={colors.green} />
+            <Text style={{ color: '#fff', fontSize: 13, fontWeight: '600', flex: 1 }}>{toast}</Text>
+          </View>
+        )}
         <Title>Mis subastas</Title>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginVertical: 12 }}>
           <View style={{ flexDirection: 'row', gap: 9 }}>
-            <Chip label={`En curso · ${subastas.filter(a => a.estado === 'abierta').length}`} active={tab === 'curso'} dot={tab === 'curso'} onPress={() => setTab('curso')} />
+            <Chip label={`En curso · ${mias.filter(esSubastaEnCursoVendedor).length}`} active={tab === 'curso'} dot={tab === 'curso'} onPress={() => setTab('curso')} />
             <Chip label="Finalizadas" active={tab === 'fin'} onPress={() => setTab('fin')} />
-            <Chip label={`Todas · ${subastas.length}`} active={tab === 'todas'} onPress={() => setTab('todas')} />
+            <Chip label={`Ganadas · ${ganadasActivas.length}`} active={tab === 'ganadas'} dot={tab === 'ganadas'} onPress={() => setTab('ganadas')} />
+            <Chip label={`Todas · ${mias.length}`} active={tab === 'todas'} onPress={() => setTab('todas')} />
           </View>
         </ScrollView>
         {loading && <ActivityIndicator color={colors.blue} style={{ marginTop: 20 }} />}
-        {!loading && filtradas.length === 0 && (
+        {!loading && tab === 'ganadas' && ganadas.length === 0 && (
           <Text style={{ color: colors.muted, textAlign: 'center', marginTop: 20 }}>
-            Aún no tenés subastas.{'\n'}Presioná "Nueva subasta" para comenzar.
+            Todavía no ganaste ninguna subasta.{'\n'}Cuando ganes, aparecerá acá para pagar.
           </Text>
         )}
+        {!loading && tab !== 'ganadas' && filtradas.length === 0 && (
+          <Text style={{ color: colors.muted, textAlign: 'center', marginTop: 20 }}>
+            {tab === 'curso'
+              ? 'No tenés subastas en vivo.\nLa puja la inicia un administrador cuando aprueba tu solicitud.'
+              : tab === 'fin'
+                ? 'No tenés subastas finalizadas.'
+                : 'Aún no tenés subastas.\nPresioná "Nueva subasta" para comenzar.'}
+          </Text>
+        )}
+        {tab === 'ganadas' && (
+          <View style={{ gap: 14 }}>
+            {ganadas.map((g) => (
+              <TouchableOpacity
+                key={g.registroId}
+                activeOpacity={0.85}
+                onPress={() => (g.reembolsada === 'si'
+                  ? navigation.navigate('CompraDetalle', g)
+                  : irAGanaste(navigation, g))}
+              >
+                <Card el style={{ gap: 6 }}>
+                  <View style={{ flexDirection: 'row', gap: 12 }}>
+                    <ImgBox
+                      style={{ width: 64, height: 64, borderRadius: 10 }}
+                      size={22}
+                      src={g.subastaId ? `${BASE_URL}/subastas/${g.subastaId}/portada` : undefined}
+                    />
+                    <View style={{ flex: 1, gap: 4 }}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <Display style={{ fontSize: 15, flex: 1, paddingRight: 8 }} numberOfLines={2}>
+                          {g.title}
+                        </Display>
+                        <Tag
+                          label={g.reembolsada === 'si' ? 'Reembolsada' : '¡Ganaste!'}
+                          color={g.reembolsada === 'si' ? colors.red : colors.green}
+                        />
+                      </View>
+                      <Text style={{ color: colors.muted, fontSize: 13 }}>
+                        {g.sub} · {g.date}
+                      </Text>
+                      <Text style={{ color: colors.green, fontSize: 14, fontWeight: '800' }}>
+                        $ {g.price}
+                      </Text>
+                      <Text style={{ color: colors.blue, fontSize: 13, fontWeight: '700', marginTop: 2 }}>
+                        {g.reembolsada === 'si' ? 'Ver detalle →' : 'Continuar al pago →'}
+                      </Text>
+                    </View>
+                  </View>
+                </Card>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+        {tab !== 'ganadas' && (
         <View style={{ gap: 14 }}>
-          {filtradas.map((a) => (
+          {filtradas.map((a) => {
+            const tag = tagEstadoSubasta(a);
+            return (
             <TouchableOpacity
               key={a.identificador}
               onPress={() => navigation.navigate('SubastaAdmin', { subastaId: a.identificador, subasta: a })}
               activeOpacity={0.85}
             >
               <Card el style={{ gap: 6 }}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Display style={{ fontSize: 15 }}>Subasta #{a.identificador}</Display>
-                  <Tag
-                    label={a.estado === 'abierta' ? 'EN VIVO' : 'CERRADA'}
-                    color={a.estado === 'abierta' ? colors.green : colors.muted}
+                <View style={{ flexDirection: 'row', gap: 12 }}>
+                  <ImgBox
+                    style={{ width: 64, height: 64, borderRadius: 10 }}
+                    size={22}
+                    src={`${BASE_URL}/subastas/${a.identificador}/portada`}
                   />
+                  <View style={{ flex: 1, gap: 4 }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <Display style={{ fontSize: 15, flex: 1, paddingRight: 8 }} numberOfLines={2}>
+                        {tituloSubasta(a)}
+                      </Display>
+                      <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                        <Tag label={tag.label} color={tag.color} />
+                      </View>
+                    </View>
+                    <Text style={{ color: colors.muted, fontSize: 13 }}>
+                      {subtituloSubasta(a)} · {formatFechaSubasta(a.fecha)}
+                    </Text>
+                    {a.totalItems > 1 ? (
+                      <Text style={{ color: colors.muted, fontSize: 12 }}>{a.totalItems} ítems en catálogo</Text>
+                    ) : null}
+                    <Text style={{ color: colors.blue, fontSize: 13, fontWeight: '700', marginTop: 2 }}>
+                      Gestionar →
+                    </Text>
+                  </View>
                 </View>
-                <Text style={{ color: colors.muted, fontSize: 13 }}>
-                  {a.categoria ? a.categoria.toUpperCase() : '—'} · {a.fecha || '—'}
-                </Text>
-                {a.ubicacion ? (
-                  <Text style={{ color: colors.muted, fontSize: 12 }}>📍 {a.ubicacion}</Text>
-                ) : null}
-                <Text style={{ color: colors.blue, fontSize: 13, fontWeight: '700', marginTop: 4 }}>
-                  Gestionar →
-                </Text>
               </Card>
             </TouchableOpacity>
-          ))}
+            );
+          })}
         </View>
+        )}
       </ScrollView>
       <BottomBar>
         <Btn title="+ Nueva subasta" onPress={() => navigation.navigate('CrearSubasta')} />
@@ -562,6 +698,9 @@ export function CrearSubastaScreen({ navigation, route }) {
     : [];
   const [itemsSeleccionados, setItemsSeleccionados] = useState(productoInicial);
   const [loading, setLoading] = useState(false);
+  const [exito, setExito] = useState(null);
+  const exitoScale = useRef(new Animated.Value(0.6)).current;
+  const exitoOpacity = useRef(new Animated.Value(0)).current;
   const set = (k) => (v) => setF((s) => ({ ...s, [k]: v }));
 
   const setItemField = (productoId, campo, valor) => {
@@ -588,6 +727,19 @@ export function CrearSubastaScreen({ navigation, route }) {
     setPaso(2);
   };
 
+  const animarExitoYRedirigir = (subasta, titulo) => {
+    setExito({ id: subasta.identificador, titulo });
+    exitoScale.setValue(0.6);
+    exitoOpacity.setValue(0);
+    Animated.parallel([
+      Animated.spring(exitoScale, { toValue: 1, friction: 6, tension: 80, useNativeDriver: true }),
+      Animated.timing(exitoOpacity, { toValue: 1, duration: 280, useNativeDriver: true }),
+    ]).start();
+    setTimeout(() => {
+      irAMisSubastas(navigation, { creada: subasta.identificador, tituloCreada: titulo });
+    }, 1600);
+  };
+
   const onCrear = async () => {
     if (itemsSeleccionados.length === 0) {
       return Alert.alert('Sin productos', 'Agregá al menos un producto a la subasta.');
@@ -603,7 +755,7 @@ export function CrearSubastaScreen({ navigation, route }) {
       const subasta = await Subastas.crear({
         fecha: f.fecha,
         hora: f.hora + ':00',
-        estado: 'cerrada',
+        estado: 'cerrada', // aún no abierta; el dueño la abre desde Mis subastas
         subastador: user.clienteId,
         ubicacion: f.ubicacion,
         categoria: f.categoria,
@@ -625,14 +777,11 @@ export function CrearSubastaScreen({ navigation, route }) {
         )
       );
 
-      Alert.alert(
-        '¡Subasta creada!',
-        `Subasta #${subasta.identificador} creada con ${itemsSeleccionados.length} producto(s). Abrila desde "Mis subastas" cuando estés listo.`,
-        [{ text: 'Ir a mis subastas', onPress: () => navigation.navigate('Subastas') }]
-      );
+      const titulo = itemsSeleccionados[0]?.titulo || tituloSubasta(subasta);
+      setLoading(false);
+      animarExitoYRedirigir(subasta, titulo);
     } catch (e) {
       Alert.alert('Error al crear subasta', e.message || 'Revisá los datos e intentá nuevamente.');
-    } finally {
       setLoading(false);
     }
   };
@@ -725,8 +874,9 @@ export function CrearSubastaScreen({ navigation, route }) {
                 <Ionicons name="cube" size={16} color={colors.blue} />
               </View>
               <View>
-                <Display style={{ fontSize: 13 }}>Producto #{item.productoId}</Display>
-                {item.titulo ? <Text style={{ color: colors.muted, fontSize: 11 }}>{item.titulo}</Text> : null}
+                <Display style={{ fontSize: 13 }} numberOfLines={2}>
+                  {item.titulo || `Producto #${item.productoId}`}
+                </Display>
               </View>
             </View>
             <TouchableOpacity onPress={() => setItemsSeleccionados(prev => prev.filter(i => i.productoId !== item.productoId))}>
@@ -774,8 +924,25 @@ export function CrearSubastaScreen({ navigation, route }) {
       </TouchableOpacity>
 
       <View style={{ marginTop: 24 }}>
-        <Btn title={loading ? 'Creando subasta…' : `Crear subasta con ${itemsSeleccionados.length} producto(s)`} onPress={onCrear} disabled={loading || itemsSeleccionados.length === 0} />
+        <Btn title={loading ? 'Creando subasta…' : `Crear subasta con ${itemsSeleccionados.length} producto(s)`} onPress={onCrear} disabled={loading || !!exito || itemsSeleccionados.length === 0} />
       </View>
+
+      <Modal visible={!!exito} transparent animationType="fade">
+        <View style={s.exitoOverlay}>
+          <Animated.View style={[s.exitoCard, { opacity: exitoOpacity, transform: [{ scale: exitoScale }] }]}>
+            <View style={s.exitoIcon}>
+              <Ionicons name="checkmark" size={42} color="#fff" />
+            </View>
+            <Display style={{ fontSize: 22, textAlign: 'center', marginTop: 16 }}>¡Subasta creada!</Display>
+            <Text style={{ color: colors.muted, fontSize: 14, textAlign: 'center', marginTop: 8, lineHeight: 20 }}>
+              {exito?.titulo}
+            </Text>
+            <Text style={{ color: colors.blue, fontSize: 13, fontWeight: '700', marginTop: 18 }}>
+              Yendo a Mis subastas…
+            </Text>
+          </Animated.View>
+        </View>
+      </Modal>
     </Screen>
   );
 }
@@ -834,14 +1001,21 @@ export function PublicarScreen({ navigation }) {
           xhr.onload = () => xhr.status < 300 ? resolve() : reject(new Error(`HTTP ${xhr.status}`));
           xhr.onerror = () => reject(new Error('Error de red al subir foto'));
           const fd = new FormData();
-          fd.append('fotos', { uri: fotos[i].uri, name: `foto_${i}.jpg`, type: fotos[i].mimeType || 'image/jpeg' });
+          const fotoAsset = fotos[i];
+          if (fotoAsset.file) {
+            // Web: expo-image-picker provee un File object real
+            fd.append('fotos', fotoAsset.file, `foto_${i}.jpg`);
+          } else {
+            // Mobile: formato React Native
+            fd.append('fotos', { uri: fotoAsset.uri, name: `foto_${i}.jpg`, type: fotoAsset.mimeType || 'image/jpeg' });
+          }
           xhr.send(fd);
         });
       }
 
       Alert.alert(
         '¡Producto publicado!',
-        `Producto #${producto.identificador} listo. ¿Querés crear una subasta con este producto ahora?`,
+        `¡${producto.descripcionCatalogo || 'Producto'} listo! ¿Querés crear una subasta con este producto ahora?`,
         [
           {
             text: 'Crear subasta',
@@ -912,6 +1086,82 @@ export function PublicarScreen({ navigation }) {
   );
 }
 
+// ─── COMPRA DETALLE (acceso al pago post-subasta) ─────────────────────────────
+export function CompraDetalleScreen({ navigation, route }) {
+  const {
+    registroId, title, date, sub, importe, comision, reembolsada,
+    subastaId, productoId, moneda = 'pesos',
+  } = route.params || {};
+
+  const total = importe != null
+    ? Number(importe) + Number(comision || 0)
+    : null;
+  const simbolo = moneda === 'dolares' ? 'U$D' : '$';
+  const puedePagar = reembolsada !== 'si';
+
+  const irAPago = () => {
+    navigation.navigate('MedioPago', {
+      registroId,
+      subastaId,
+      itemId: productoId,
+      importe,
+      comision,
+      moneda,
+      titulo: title,
+    });
+  };
+
+  return (
+    <Screen>
+      <Header />
+      <ScrollView contentContainerStyle={{ paddingHorizontal: 22, paddingBottom: 110 }} showsVerticalScrollIndicator={false}>
+        <Title>Mi compra</Title>
+        <Sub>Registro #{registroId || '—'}</Sub>
+        <Card el style={{ marginTop: 12, gap: 8 }}>
+          <Display style={{ fontSize: 16, lineHeight: 20 }}>{title || 'Artículo'}</Display>
+          {sub ? <Text style={{ color: colors.muted, fontSize: 13 }}>{sub}</Text> : null}
+          {date ? <Text style={{ color: colors.faint, fontSize: 12 }}>{date}</Text> : null}
+        </Card>
+        <SectionLabel>Importes</SectionLabel>
+        <Card el>
+          {importe != null && (
+            <Row k="Puja ganadora" v={`${simbolo} ${Number(importe).toLocaleString('es-AR')}`} />
+          )}
+          {Number(comision) > 0 && (
+            <Row k="Comisión" v={`${simbolo} ${Number(comision).toLocaleString('es-AR')}`} />
+          )}
+          {total != null && (
+            <View style={{ borderTopWidth: 1, borderTopColor: colors.border, marginTop: 8, paddingTop: 6 }}>
+              <Row k="Total" v={`${simbolo} ${total.toLocaleString('es-AR')}`} vc={colors.green} bold />
+            </View>
+          )}
+        </Card>
+        {reembolsada === 'si' && (
+          <Card el style={{ marginTop: 12, borderColor: colors.red, borderWidth: 1 }}>
+            <Text style={{ color: colors.red, fontWeight: '700', textAlign: 'center' }}>
+              Esta compra fue reembolsada
+            </Text>
+          </Card>
+        )}
+      </ScrollView>
+      <View style={{ gap: 10, paddingHorizontal: 22, paddingBottom: 28, paddingTop: 14 }}>
+        {puedePagar && (
+          <Btn title="Continuar al pago" onPress={irAPago} />
+        )}
+        <Btn
+          title="Solicitar reembolso"
+          kind={puedePagar ? 'ghost' : 'primary'}
+          onPress={() => navigation.navigate('Reembolso', {
+            registroId,
+            importe: total ?? importe,
+            titulo: title,
+          })}
+        />
+      </View>
+    </Screen>
+  );
+}
+
 // ─── DATOS GANADOR ────────────────────────────────────────────────────────────
 export function DatosGanadorScreen({ navigation, route }) {
   const { registroId } = route.params || {};
@@ -944,7 +1194,7 @@ export function DatosGanadorScreen({ navigation, route }) {
             <View>
               <Display style={{ fontSize: 16 }}>{nombre}</Display>
               <Text style={{ color: colors.muted, fontSize: 12.5, marginTop: 3 }}>
-                {registro ? `Subasta #${registro.subasta?.identificador}` : '—'}
+                {registro ? tituloSubasta(registro.subasta) : '—'}
               </Text>
             </View>
           </Card>
@@ -1165,6 +1415,23 @@ const s = StyleSheet.create({
   photoEmpty: { borderWidth: 1.5, borderStyle: 'dashed', borderColor: colors.border, backgroundColor: colors.card, borderRadius: 12 },
   winnerAvatar: { width: 46, height: 46, borderRadius: 23, backgroundColor: colors.cardEl, alignItems: 'center', justifyContent: 'center' },
   dpIcon: { width: 40, height: 40, borderRadius: 10, backgroundColor: 'rgba(59,130,246,0.12)', alignItems: 'center', justifyContent: 'center' },
+  toastOk: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: 'rgba(55,214,111,0.12)', borderWidth: 1, borderColor: colors.green,
+    borderRadius: 12, padding: 14, marginBottom: 12,
+  },
+  exitoOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.88)',
+    alignItems: 'center', justifyContent: 'center', padding: 28,
+  },
+  exitoCard: {
+    width: '100%', backgroundColor: colors.card, borderRadius: 20,
+    borderWidth: 1, borderColor: colors.borderHi, padding: 28, alignItems: 'center',
+  },
+  exitoIcon: {
+    width: 80, height: 80, borderRadius: 40, backgroundColor: colors.green,
+    alignItems: 'center', justifyContent: 'center',
+  },
 });
 
 // Estilos del calendar picker y time selector

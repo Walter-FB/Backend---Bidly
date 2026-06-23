@@ -10,6 +10,10 @@ import com.bidly.bidly_backend.repository.FotoRepository;
 import com.bidly.bidly_backend.repository.ItemCatalogoRepository;
 import com.bidly.bidly_backend.repository.SubastaMonedaRepository;
 import com.bidly.bidly_backend.repository.SubastaRepository;
+import com.bidly.bidly_backend.repository.SubastaRevisionRepository;
+import com.bidly.bidly_backend.service.SubastaEstadoService;
+import com.bidly.bidly_backend.service.SubastaRevisionService;
+import com.bidly.bidly_backend.service.SubastaService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -37,16 +41,29 @@ public class SubastaController {
     @Autowired
     private FotoRepository fotoRepository;
 
+    @Autowired
+    private SubastaService subastaService;
+
+    @Autowired
+    private SubastaEstadoService subastaEstadoService;
+
+    @Autowired
+    private SubastaRevisionService revisionService;
+
+    @Autowired
+    private SubastaRevisionRepository revisionRepository;
+
     @GetMapping
     public List<Subasta> listar(
             @RequestParam(required = false) String estado,
             @RequestParam(required = false) String categoria,
-            @RequestParam(required = false) String moneda) {
+            @RequestParam(required = false) String moneda,
+            @RequestParam(required = false, defaultValue = "true") boolean publico) {
         List<Subasta> lista = subastaRepository.findByFiltros(estado, categoria, moneda);
-        lista.forEach(s ->
-            subastaMonedaRepository.findById(s.getIdentificador())
-                .ifPresent(m -> s.setMoneda(m.getMoneda()))
-        );
+        if (publico) {
+            lista = revisionService.filtrarVisiblesPublico(lista);
+        }
+        subastaService.enrichAll(lista);
         return lista;
     }
 
@@ -54,8 +71,7 @@ public class SubastaController {
     public ResponseEntity<Subasta> detalle(@PathVariable Long id) {
         return subastaRepository.findById(id)
             .map(s -> {
-                subastaMonedaRepository.findById(id)
-                    .ifPresent(m -> s.setMoneda(m.getMoneda()));
+                subastaService.enrich(s);
                 return ResponseEntity.ok(s);
             })
             .orElse(ResponseEntity.notFound().build());
@@ -71,6 +87,8 @@ public class SubastaController {
             subastaMonedaRepository.save(sm);
             guardada.setMoneda(subasta.getMoneda());
         }
+        revisionService.registrarNueva(guardada);
+        subastaService.enrich(guardada);
         return ResponseEntity.status(201).body(guardada);
     }
 
@@ -123,10 +141,21 @@ public class SubastaController {
             return ResponseEntity.badRequest()
                     .body(Map.of("error", "El estado debe ser 'abierta' o 'cerrada'"));
         }
+        if ("abierta".equals(nuevoEstado)) {
+            var revision = revisionRepository.findBySubastaIdentificador(id);
+            if (revision.isPresent() && !SubastaRevisionService.APROBADA.equals(revision.get().getEstado())) {
+                return ResponseEntity.status(409).body(Map.of(
+                        "error", "La subasta debe estar aprobada por un administrador antes de abrirse",
+                        "code", "NOT_APPROVED",
+                        "revisionEstado", revision.get().getEstado()));
+            }
+        }
         return subastaRepository.findById(id)
                 .map(s -> {
+                    subastaEstadoService.aplicarEstado(id, nuevoEstado);
                     s.setEstado(nuevoEstado);
-                    return ResponseEntity.ok((Object) subastaRepository.save(s));
+                    subastaService.enrich(s);
+                    return ResponseEntity.ok((Object) s);
                 })
                 .orElse(ResponseEntity.notFound().build());
     }

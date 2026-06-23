@@ -2,11 +2,13 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { View, Text, ScrollView, StyleSheet, ActivityIndicator, Alert, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Screen, Header, Title, SectionLabel, Btn, Card, LiveBadge, Tag, ImgBox, BottomBar, Row, Display } from '../components/ui';
+import { Screen, Header, Title, SectionLabel, Btn, Card, LiveBadge, Tag, ImgBox, ImageLightbox, BottomBar, Row, Display, SuccessBanner } from '../components/ui';
 import { colors } from '../theme/theme';
-import { Subastas, Pujas, Asistentes, Productos, Items } from '../api/endpoints';
+import { Subastas, Pujas, Asistentes, Productos } from '../api/endpoints';
 import { BASE_URL } from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import { tituloSubasta, tagEstadoSubasta } from '../utils/subasta';
+import { etiquetaTiempoSubasta, esSubastaEnVivo, segundosHastaCierrePujas } from '../utils/tiempo';
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
@@ -14,32 +16,6 @@ function formatImporte(importe, moneda) {
   if (importe == null) return '—';
   const simbolo = moneda === 'dolares' ? 'U$D' : '$';
   return `${simbolo} ${Number(importe).toLocaleString('es-AR', { maximumFractionDigits: 2 })}`;
-}
-
-function formatTimer(fechaStr, horaStr) {
-  if (!fechaStr) return '—';
-  try {
-    const dt = new Date(`${fechaStr}T${horaStr || '00:00'}`);
-    const now = new Date();
-    const diffMs = dt - now;
-    if (diffMs <= 0) return 'Finalizada';
-    const diffH = Math.floor(diffMs / 3600000);
-    const diffM = Math.floor((diffMs % 3600000) / 60000);
-    if (diffH > 0) return `${diffH}h ${diffM}m`;
-    return `${diffM}m`;
-  } catch {
-    return fechaStr;
-  }
-}
-
-function calcSecondsLeft(fechaStr, horaStr) {
-  if (!fechaStr) return null;
-  try {
-    const dt = new Date(`${fechaStr}T${horaStr || '00:00'}`);
-    return Math.max(0, Math.floor((dt - new Date()) / 1000));
-  } catch {
-    return null;
-  }
 }
 
 function formatCountdown(seconds) {
@@ -54,6 +30,23 @@ function formatCountdown(seconds) {
 
 const ORDEN_CATEGORIA = { comun: 0, especial: 1, plata: 2, oro: 3, platino: 4 };
 
+function mensajeError(e, proximaPuja, maxPuja, moneda) {
+  const code = e?.data?.code;
+  const min = e?.data?.minimoAceptable ?? proximaPuja;
+  const max = e?.data?.maximoAceptable ?? maxPuja;
+  switch (code) {
+    case 'MIN_BID':      return `La oferta mínima es ${formatImporte(min, moneda)}.`;
+    case 'MAX_BID':      return `El tope para esta subasta es ${formatImporte(max, moneda)}.`;
+    case 'NO_PAYMENT':   return 'Registrá un medio de pago en tu perfil para pujar.';
+    case 'CATEGORY':     return 'Tu categoría no permite esta subasta.';
+    case 'FORBIDDEN':    return 'No estás inscripto en esta subasta.';
+    case 'AUCTION_CLOSED':
+    case 'ITEM_SOLD':    return 'La subasta ya cerró.';
+    case 'RACE':         return 'Alguien pujó más rápido. Mirá el nuevo monto.';
+    default:             return e?.data?.error || e?.message || 'Error al registrar la puja.';
+  }
+}
+
 // ─── PRODUCTO SCREEN ──────────────────────────────────────────────────────────
 export function ProductoScreen({ navigation, route }) {
   const { user } = useAuth();
@@ -63,6 +56,7 @@ export function ProductoScreen({ navigation, route }) {
   const [subasta, setSubasta] = useState(null);
   const [items, setItems] = useState([]);
   const [fotoIds, setFotoIds] = useState([]);
+  const [lightboxIdx, setLightboxIdx] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -108,10 +102,11 @@ export function ProductoScreen({ navigation, route }) {
   }
 
   const primerItem = items[0];
-  const titulo = primerItem?.producto?.descripcionCatalogo || `Subasta #${subasta.identificador}`;
+  const titulo = tituloSubasta(subasta, items);
   const categoria = `${subasta.categoria || 'General'} · ${subasta.ubicacion || ''}`.replace(/·\s*$/, '').trim();
   const precioBase = primerItem?.precioBase;
-  const viva = subasta.estado === 'abierta';
+  const viva = esSubastaEnVivo(subasta);
+  const fotoUrls = fotoIds.map((id) => `${BASE_URL}/fotos/${id}`);
 
   return (
     <Screen>
@@ -121,14 +116,26 @@ export function ProductoScreen({ navigation, route }) {
           <ImgBox
             style={{ width: '100%', height: 230 }}
             size={42}
-            src={fotoIds.length > 0 ? `${BASE_URL}/fotos/${fotoIds[0]}` : undefined}
+            src={fotoUrls[0]}
+            onPress={() => fotoUrls.length > 0 && setLightboxIdx(0)}
           />
           {viva && <LiveBadge style={{ position: 'absolute', top: 12, left: 12 }} />}
+          {fotoUrls.length > 0 && (
+            <View style={st.expandHint}>
+              <Ionicons name="expand-outline" size={14} color="#fff" />
+            </View>
+          )}
         </View>
-        {fotoIds.length > 1 && (
+        {fotoUrls.length > 1 && (
           <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
-            {fotoIds.slice(0, 4).map((fotoId) => (
-              <ImgBox key={fotoId} style={{ flex: 1, height: 56 }} size={18} src={`${BASE_URL}/fotos/${fotoId}`} />
+            {fotoUrls.map((url, i) => (
+              <ImgBox
+                key={fotoIds[i]}
+                style={{ flex: 1, height: 56 }}
+                size={18}
+                src={url}
+                onPress={() => setLightboxIdx(i)}
+              />
             ))}
           </View>
         )}
@@ -142,9 +149,9 @@ export function ProductoScreen({ navigation, route }) {
             </Text>
           </View>
           <View>
-            <Text style={{ color: colors.muted, fontSize: 12 }}>Cierra</Text>
+            <Text style={{ color: colors.muted, fontSize: 12 }}>{viva ? 'Cierra' : subasta.fase === 'programada' ? 'Abre' : 'Estado'}</Text>
             <Text style={{ color: colors.gold, fontSize: 20, fontWeight: '800' }}>
-              {formatTimer(subasta.fecha, subasta.hora)}
+              {etiquetaTiempoSubasta(subasta)}
             </Text>
           </View>
         </View>
@@ -187,6 +194,13 @@ export function ProductoScreen({ navigation, route }) {
           </>
         )}
       </ScrollView>
+
+      <ImageLightbox
+        visible={lightboxIdx !== null}
+        images={fotoUrls}
+        initialIndex={lightboxIdx ?? 0}
+        onClose={() => setLightboxIdx(null)}
+      />
 
       {viva && primerItem && (() => {
         const ordenSubasta = ORDEN_CATEGORIA[subasta.categoria] ?? 0;
@@ -241,7 +255,7 @@ export function SubastaEnVivoScreen({ navigation, route }) {
     fecha,
     hora,
     categoriaSubasta,
-    subastador,
+  subastador,
   } = route.params || {};
 
   const [pujas, setPujas] = useState([]);
@@ -249,7 +263,8 @@ export function SubastaEnVivoScreen({ navigation, route }) {
   const [loadingPujas, setLoadingPujas] = useState(true);
   const [pujando, setPujando] = useState(false);
   const [pollingError, setPollingError] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(() => calcSecondsLeft(fecha, hora));
+  const [timeLeft, setTimeLeft] = useState(null);
+  const [fotoAmpliada, setFotoAmpliada] = useState(false);
   const mounted = useRef(true);
   const asistenteIdRef = useRef(null);
   const navegado = useRef(false);
@@ -261,20 +276,20 @@ export function SubastaEnVivoScreen({ navigation, route }) {
   // Mantener ref actualizada para usarla en callbacks sin crear dependencias.
   useEffect(() => { asistenteIdRef.current = asistenteId; }, [asistenteId]);
 
-  // Countdown ticker — actualiza cada segundo.
+  // Countdown por inactividad de pujas (30 min) o hasta apertura programada.
   useEffect(() => {
-    if (!fecha) return;
-    const tick = setInterval(() => {
-      const s = calcSecondsLeft(fecha, hora);
-      setTimeLeft(s);
-      if (s <= 0) clearInterval(tick);
-    }, 1000);
-    return () => clearInterval(tick);
-  }, [fecha, hora]);
+    const tick = () => {
+      setTimeLeft(segundosHastaCierrePujas(pujas, fecha, hora));
+    };
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [pujas, fecha, hora]);
 
-  // Inscribir al usuario como asistente (solo si tiene cuenta).
+  // Inscribir al usuario como asistente.
   useEffect(() => {
     if (!user?.clienteId || !subastaId) return;
+
     Asistentes.inscribir(user.clienteId, subastaId)
       .then((a) => { if (mounted.current) setAsistenteId(a.identificador); })
       .catch(() => {});
@@ -328,7 +343,7 @@ export function SubastaEnVivoScreen({ navigation, route }) {
     return () => clearInterval(interval);
   }, [cargarPujas]);
 
-  // Reglas de puja
+  // Calcular puja actual, próximo importe y tope máximo.
   const pujaActual = pujas.length > 0 ? pujas[0].importe : null;
   const precioBaseValido = Number(precioBase) > 0;
   const esExento = categoriaSubasta === 'oro' || categoriaSubasta === 'platino';  // R3
@@ -340,9 +355,11 @@ export function SubastaEnVivoScreen({ navigation, route }) {
   const proximaPuja = pujaActual != null
     ? Number(pujaActual) + minIncremento
     : Number(precioBase);
-  const maximaPuja = pujaActual != null
-    ? Number(pujaActual) + maxIncremento
-    : null;
+  const maxPuja = esExento
+    ? null
+    : pujaActual != null
+      ? Number(pujaActual) + maxIncremento
+      : null;
 
   const onPujar = async () => {
     // Invitado: mostrar aviso y redirigir al login.
@@ -371,10 +388,8 @@ export function SubastaEnVivoScreen({ navigation, route }) {
       await Pujas.pujar(asistenteId, itemId, proximaPuja);
       cargarPujas();
     } catch (e) {
-      Alert.alert(
-        'No se pudo pujar',
-        e.data?.error || e.message || 'Error al registrar la puja.',
-      );
+      Alert.alert('No se pudo pujar', mensajeError(e, proximaPuja, maxPuja, moneda));
+      if (['MIN_BID', 'RACE'].includes(e?.data?.code)) cargarPujas();
     } finally {
       setPujando(false);
     }
@@ -384,6 +399,7 @@ export function SubastaEnVivoScreen({ navigation, route }) {
     pujas[0].asistente?.identificador === asistenteId;
 
   const countdownColor = timeLeft != null && timeLeft < 300 ? colors.red ?? '#ff4d4d' : colors.gold;
+  const portadaUrl = productoId ? `${BASE_URL}/productos/${productoId}/portada` : undefined;
 
   return (
     <Screen>
@@ -393,9 +409,15 @@ export function SubastaEnVivoScreen({ navigation, route }) {
           <ImgBox
             style={{ width: '100%', height: 200 }}
             size={40}
-            src={productoId ? `${BASE_URL}/productos/${productoId}/portada` : undefined}
+            src={portadaUrl}
+            onPress={() => portadaUrl && setFotoAmpliada(true)}
           />
           <LiveBadge style={{ position: 'absolute', top: 12, left: 12 }} />
+          {portadaUrl && (
+            <View style={st.expandHint}>
+              <Ionicons name="expand-outline" size={14} color="#fff" />
+            </View>
+          )}
         </View>
         <Display style={{ fontSize: 20, marginVertical: 14, lineHeight: 23 }}>{titulo}</Display>
 
@@ -409,7 +431,7 @@ export function SubastaEnVivoScreen({ navigation, route }) {
           <View style={{ alignItems: 'center' }}>
             <Text style={{ color: colors.muted, fontSize: 12 }}>Cierra en</Text>
             <Text style={{ color: countdownColor, fontSize: 22, fontWeight: '800', fontVariant: ['tabular-nums'] }}>
-              {formatCountdown(timeLeft)}
+              {timeLeft == null ? '—' : formatCountdown(timeLeft)}
             </Text>
           </View>
           <View style={{ alignItems: 'flex-end' }}>
@@ -430,7 +452,7 @@ export function SubastaEnVivoScreen({ navigation, route }) {
                 {pujaActual != null ? formatImporte(pujaActual, moneda) : formatImporte(precioBase, moneda)}
               </Text>
               <Text style={{ color: colors.muted, fontSize: 12.5, marginTop: 2 }}>
-                Próxima mínima: {formatImporte(proximaPuja, moneda)}
+                Mínima: {formatImporte(proximaPuja, moneda)}{maxPuja != null ? `  ·  Tope: ${formatImporte(maxPuja, moneda)}` : '  ·  Sin tope'}
               </Text>
             </>
           )}
@@ -446,6 +468,13 @@ export function SubastaEnVivoScreen({ navigation, route }) {
           <Card el style={{ marginTop: 10, backgroundColor: 'rgba(255,193,7,0.08)', borderColor: colors.gold, borderWidth: 1 }}>
             <Text style={{ color: colors.gold, fontWeight: '700', textAlign: 'center', fontSize: 13 }}>
               Estás viendo como invitado. Creá una cuenta para pujar.
+            </Text>
+          </Card>
+        )}
+        {!user?.isGuest && !asistenteId && (
+          <Card el style={{ marginTop: 10, backgroundColor: 'rgba(255,193,7,0.08)', borderColor: colors.gold, borderWidth: 1 }}>
+            <Text style={{ color: colors.gold, fontWeight: '700', textAlign: 'center', fontSize: 13 }}>
+              Registrando tu acceso a la subasta…
             </Text>
           </Card>
         )}
@@ -483,6 +512,8 @@ export function SubastaEnVivoScreen({ navigation, route }) {
           <Btn title="No podés pujar en tu propia subasta" kind="ghost" disabled />
         ) : !precioBaseValido ? (
           <Btn title="Precio base no disponible" kind="ghost" disabled />
+        ) : !user?.isGuest && !asistenteId ? (
+          <Btn title="Esperando acceso…" kind="ghost" disabled />
         ) : esLidero ? (
           <Btn title="Ya sos el mayor postor" kind="ghost" disabled />
         ) : (
@@ -492,9 +523,9 @@ export function SubastaEnVivoScreen({ navigation, route }) {
                 Subasta {categoriaSubasta?.toUpperCase()} — sin límite máximo de puja
               </Text>
             )}
-            {!esExento && maximaPuja != null && (
+            {!esExento && maxPuja != null && (
               <Text style={{ color: colors.muted, fontSize: 11, textAlign: 'center', marginBottom: 6 }}>
-                Máx: {formatImporte(maximaPuja, moneda)}
+                Máx: {formatImporte(maxPuja, moneda)}
               </Text>
             )}
             <Btn
@@ -509,6 +540,12 @@ export function SubastaEnVivoScreen({ navigation, route }) {
           </>
         )}
       </BottomBar>
+
+      <ImageLightbox
+        visible={fotoAmpliada}
+        images={portadaUrl ? [portadaUrl] : []}
+        onClose={() => setFotoAmpliada(false)}
+      />
     </Screen>
   );
 }
@@ -535,7 +572,7 @@ export function GanasteScreen({ navigation, route }) {
         <Card el style={{ marginTop: 22, width: '100%', flexDirection: 'row', gap: 14, alignItems: 'center' }}>
           <ImgBox style={{ width: 64, height: 64 }} size={26} />
           <View>
-            <Display style={{ fontSize: 15, lineHeight: 18 }}>{titulo || `Subasta #${subastaId}`}</Display>
+            <Display style={{ fontSize: 15, lineHeight: 18 }}>{titulo}</Display>
             <Text style={{ color: colors.muted, fontSize: 12.5, marginTop: 6 }}>
               Item #{itemId} · {new Date().toLocaleDateString('es-AR')}
             </Text>
@@ -554,6 +591,7 @@ export function GanasteScreen({ navigation, route }) {
         <Btn
           title="Continuar al pago"
           onPress={() => navigation.navigate('MedioPago', {
+            registroId: route.params?.registroId,
             subastaId, itemId, moneda, importe, comision, titulo,
           })}
         />
@@ -572,7 +610,7 @@ export function SubastaFinalizadaScreen({ navigation, route }) {
         <ImgBox style={{ width: 160, height: 160 }} size={44} />
         <Text style={[st.kicker, { textAlign: 'center', marginTop: 24 }]}>SUBASTA FINALIZADA</Text>
         <Display style={{ fontSize: 26, textAlign: 'center', marginVertical: 8, lineHeight: 30 }}>
-          {titulo || `Subasta #${subastaId}`}
+          {titulo}
         </Display>
         {importe != null && (
           <Display style={{ color: colors.green, fontSize: 24 }}>
@@ -601,8 +639,8 @@ export function SubastaAdminScreen({ navigation, route }) {
   const [pujas, setPujas] = useState([]);
   const [asistentes, setAsistentes] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [adjudicando, setAdjudicando] = useState(false);
-  const [cambiandoEstado, setCambiandoEstado] = useState(false);
+  const [successMsg, setSuccessMsg] = useState(null);
+  const [fotoAmpliada, setFotoAmpliada] = useState(false);
   const mounted = useRef(true);
 
   useEffect(() => { return () => { mounted.current = false; }; }, []);
@@ -649,75 +687,6 @@ export function SubastaAdminScreen({ navigation, route }) {
     return () => clearInterval(interval);
   }, [cargarPujas]);
 
-  const onToggleEstado = async () => {
-    if (!subasta) return;
-    const nuevoEstado = subasta.estado === 'abierta' ? 'cerrada' : 'abierta';
-    const accion = nuevoEstado === 'abierta' ? 'Abrir' : 'Cerrar';
-    Alert.alert(
-      `${accion} subasta`,
-      `¿Confirmas ${accion.toLowerCase()} la subasta?`,
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: accion,
-          style: nuevoEstado === 'cerrada' ? 'destructive' : 'default',
-          onPress: async () => {
-            setCambiandoEstado(true);
-            try {
-              const updated = await Subastas.actualizarEstado(subastaId, nuevoEstado);
-              if (mounted.current) setSubasta(updated);
-            } catch (e) {
-              Alert.alert('Error', e.message || 'No se pudo actualizar el estado.');
-            } finally {
-              if (mounted.current) setCambiandoEstado(false);
-            }
-          },
-        },
-      ]
-    );
-  };
-
-  const onAdjudicar = async () => {
-    if (!itemActivo) return;
-    if (pujas.length === 0) {
-      return Alert.alert('Sin pujas', 'No hay pujas en este ítem. No se puede adjudicar.');
-    }
-    Alert.alert(
-      'Adjudicar ítem',
-      `¿Cerrar las pujas de "${itemActivo.producto?.descripcionCatalogo || `ítem #${itemActivo.identificador}`}" y marcar ganador?`,
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Adjudicar',
-          onPress: async () => {
-            setAdjudicando(true);
-            try {
-              const resultado = await Items.adjudicar(itemActivo.identificador);
-              Alert.alert(
-                '¡Ítem adjudicado!',
-                `Ganador: Cliente #${resultado.ganadorClienteId}\nImporte: ${formatImporte(resultado.importeFinal, subasta?.moneda)}`,
-                [{ text: 'OK', onPress: () => cargarSubasta() }]
-              );
-            } catch (e) {
-              Alert.alert('Error', e.data?.error || e.message || 'No se pudo adjudicar.');
-            } finally {
-              if (mounted.current) setAdjudicando(false);
-            }
-          },
-        },
-      ]
-    );
-  };
-
-  const onSiguiente = () => {
-    const pendientes = items.filter((i) => i.subastado !== 'si' && i.identificador !== itemActivo?.identificador);
-    if (pendientes.length === 0) {
-      return Alert.alert('Sin ítems pendientes', 'Todos los ítems ya fueron adjudicados.');
-    }
-    setItemActivo(pendientes[0]);
-    setPujas([]);
-  };
-
   if (loading) {
     return (
       <Screen><Header />
@@ -730,20 +699,23 @@ export function SubastaAdminScreen({ navigation, route }) {
 
   const pujaTop = pujas[0];
   const moneda = subasta?.moneda || 'pesos';
-  const estaAbierta = subasta?.estado === 'abierta';
+  const enVivo = subasta?.fase === 'en_curso';
   const itemActivoAdjudicado = itemActivo?.subastado === 'si';
+  const tituloAdmin = tituloSubasta(subasta, items);
+  const tagEstado = tagEstadoSubasta(subasta);
+  const portadaItemUrl = itemActivo?.producto?.identificador
+    ? `${BASE_URL}/productos/${itemActivo.producto.identificador}/portada`
+    : undefined;
 
   return (
     <Screen>
       <Header />
+      <SuccessBanner message={successMsg} onDismiss={() => setSuccessMsg(null)} />
       <ScrollView contentContainerStyle={{ paddingHorizontal: 22, paddingBottom: 130 }} showsVerticalScrollIndicator={false}>
         {/* Cabecera */}
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
-          <Display style={{ fontSize: 20 }}>Subasta #{subastaId}</Display>
-          <Tag
-            label={estaAbierta ? 'ABIERTA' : 'CERRADA'}
-            color={estaAbierta ? colors.green : colors.muted}
-          />
+          <Display style={{ fontSize: 20, flex: 1, paddingRight: 10 }} numberOfLines={2}>{tituloAdmin}</Display>
+          <Tag label={tagEstado.label} color={tagEstado.color} />
         </View>
         <Text style={{ color: colors.muted, fontSize: 13, marginBottom: 14 }}>
           {subasta?.categoria ? subasta.categoria.toUpperCase() : ''} · {asistentes.length} asistentes
@@ -757,7 +729,8 @@ export function SubastaAdminScreen({ navigation, route }) {
               <ImgBox
                 style={{ width: '100%', height: 160, borderRadius: 10 }}
                 size={36}
-                src={`${BASE_URL}/productos/${itemActivo.producto.identificador}/portada`}
+                src={portadaItemUrl}
+                onPress={() => portadaItemUrl && setFotoAmpliada(true)}
               />
             )}
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -787,27 +760,6 @@ export function SubastaAdminScreen({ navigation, route }) {
                 <Text style={{ color: colors.muted, fontSize: 14, marginTop: 4 }}>Sin pujas aún</Text>
               )}
             </View>
-
-            {/* Acciones sobre el ítem */}
-            {!itemActivoAdjudicado && (
-              <View style={{ flexDirection: 'row', gap: 10, marginTop: 8 }}>
-                <Btn
-                  title={adjudicando ? 'Adjudicando…' : 'Adjudicar ítem'}
-                  onPress={onAdjudicar}
-                  disabled={adjudicando || !estaAbierta}
-                  style={{ flex: 1 }}
-                />
-                <Btn
-                  title="Siguiente →"
-                  kind="ghost"
-                  onPress={onSiguiente}
-                  style={{ flex: 1 }}
-                />
-              </View>
-            )}
-            {itemActivoAdjudicado && (
-              <Btn title="Siguiente ítem →" onPress={onSiguiente} style={{ marginTop: 8 }} />
-            )}
           </Card>
         ) : (
           <Card el>
@@ -873,19 +825,20 @@ export function SubastaAdminScreen({ navigation, route }) {
       </ScrollView>
 
       <BottomBar>
-        <Btn
-          title={
-            cambiandoEstado
-              ? 'Actualizando…'
-              : estaAbierta
-              ? 'Cerrar subasta'
-              : 'Abrir subasta'
-          }
-          kind={estaAbierta ? 'danger' : 'primary'}
-          onPress={onToggleEstado}
-          disabled={cambiandoEstado}
-        />
+        <Card el style={{ padding: 14, width: '100%' }}>
+          <Text style={{ color: colors.muted, fontSize: 13, textAlign: 'center', lineHeight: 19 }}>
+            {enVivo
+              ? 'Subasta en vivo. El cierre de la puja lo gestiona el panel de administración.'
+              : 'La puja solo puede iniciarse desde el panel de administración, una vez aprobada tu subasta.'}
+          </Text>
+        </Card>
       </BottomBar>
+
+      <ImageLightbox
+        visible={fotoAmpliada}
+        images={portadaItemUrl ? [portadaItemUrl] : []}
+        onClose={() => setFotoAmpliada(false)}
+      />
     </Screen>
   );
 }
@@ -895,4 +848,9 @@ const st = StyleSheet.create({
   avatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.cardEl, alignItems: 'center', justifyContent: 'center' },
   bidRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border },
   centerIcon: { width: 74, height: 74, borderRadius: 37, alignItems: 'center', justifyContent: 'center', marginTop: 10 },
+  expandHint: {
+    position: 'absolute', bottom: 10, right: 10,
+    backgroundColor: 'rgba(0,0,0,0.45)', borderRadius: 6,
+    padding: 5,
+  },
 });

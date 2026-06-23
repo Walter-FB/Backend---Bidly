@@ -12,6 +12,10 @@ import com.bidly.bidly_backend.repository.ItemCatalogoRepository;
 import com.bidly.bidly_backend.repository.ProductoRepository;
 import com.bidly.bidly_backend.repository.PujaRepository;
 import com.bidly.bidly_backend.repository.RegistroDeSubastaRepository;
+import com.bidly.bidly_backend.repository.SubastaRepository;
+import com.bidly.bidly_backend.service.NotificacionService;
+import com.bidly.bidly_backend.service.SubastaEstadoService;
+import jakarta.transaction.Transactional;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -38,6 +42,15 @@ public class ItemCatalogoController {
 
     @Autowired
     private RegistroDeSubastaRepository registroRepository;
+
+    @Autowired
+    private SubastaRepository subastaRepository;
+
+    @Autowired
+    private SubastaEstadoService subastaEstadoService;
+
+    @Autowired
+    private NotificacionService notificacionService;
 
     @PostMapping("/api/catalogos/{catalogoId}/items")
     public ResponseEntity<?> agregarItem(@PathVariable Long catalogoId,
@@ -67,8 +80,9 @@ public class ItemCatalogoController {
     }
 
     @PatchMapping("/api/items/{id}/adjudicar")
+    @Transactional
     public ResponseEntity<?> adjudicar(@PathVariable Long id) {
-        ItemCatalogo item = itemCatalogoRepository.findById(id).orElse(null);
+        ItemCatalogo item = itemCatalogoRepository.findByIdForUpdate(id).orElse(null);
         if (item == null) return ResponseEntity.notFound().build();
 
         if ("si".equals(item.getSubastado())) {
@@ -100,6 +114,32 @@ public class ItemCatalogoController {
         registro.setImporte(mejorPuja.getImporte());
         registro.setComision(item.getComision());
         registroRepository.save(registro);
+
+        boolean todosFinalizados = itemCatalogoRepository
+                .findByCatalogoSubastaIdentificador(subasta.getIdentificador())
+                .stream()
+                .allMatch(i -> "si".equals(i.getSubastado()));
+        if (todosFinalizados) {
+            subastaEstadoService.aplicarEstado(subasta.getIdentificador(), "cerrada");
+            subasta.setEstado("cerrada");
+        }
+
+        String producto = item.getProducto().getDescripcionCatalogo();
+        notificacionService.crear(ganador.getIdentificador(), "ganaste",
+                "Ganaste " + producto + " por $" + mejorPuja.getImporte());
+
+        long pendientes = itemCatalogoRepository
+                .findByCatalogoSubastaIdentificador(subasta.getIdentificador())
+                .stream()
+                .filter(i -> !"si".equals(i.getSubastado()))
+                .count();
+        if (pendientes == 1) {
+            notificacionService.notificarAsistentesSubasta(subasta.getIdentificador(), "subasta_por_cerrar",
+                    "Queda 1 ítem en la subasta #" + subasta.getIdentificador() + ". Pronto finalizará.");
+        } else if (todosFinalizados) {
+            notificacionService.notificarAsistentesSubasta(subasta.getIdentificador(), "subasta_por_cerrar",
+                    "La subasta #" + subasta.getIdentificador() + " finalizó.");
+        }
 
         return ResponseEntity.ok(Map.of(
                 "ganadorClienteId", ganador.getIdentificador(),

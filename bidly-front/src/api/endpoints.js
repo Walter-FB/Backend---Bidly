@@ -17,6 +17,8 @@ export const Auth = {
     api.post('/auth/send-verification', { email }, { auth: false }),
   verifyCode: (email, code) =>
     api.post('/auth/verify-code', { email, code }, { auth: false }),
+  uploadDni: (clienteId, formData) =>
+    upload(`/clientes/${clienteId}/dni-fotos`, formData),
 };
 
 // ─── SUBASTAS ────────────────────────────────────────────────────────────────
@@ -35,6 +37,7 @@ export const Subastas = {
     if (params.estado) backendParams.estado = params.estado;     // 'abierta' | 'cerrada'
     if (params.categoria) backendParams.categoria = params.categoria;
     if (params.moneda) backendParams.moneda = params.moneda;
+    if (params.publico === false) backendParams.publico = 'false';
     const q = new URLSearchParams(backendParams).toString();
     return api.get(`/subastas${q ? `?${q}` : ''}`);
   },
@@ -123,7 +126,19 @@ export const Productos = {
     api.patch(`/productos/${id}/disponible`, { disponible }),
   fotos: (id) => api.get(`/productos/${id}/fotos`),
   agregarFotos: (id, formData) => upload(`/productos/${id}/fotos`, formData),
-  eliminar: (id) => api.delete(`/productos/${id}`),
+  eliminar: (id) => api.del(`/productos/${id}`),
+};
+
+// ─── REVISIÓN DE SUBASTAS (moderación admin) ─────────────────────────────────
+// GET  /api/subasta-revision?estado=pendiente
+// PATCH /api/subasta-revision/{subastaId}/aprobar|pausar|rechazar
+export const SubastaRevision = {
+  listar: (estado = 'pendiente') => api.get(`/subasta-revision?estado=${estado}`),
+  contarPendientes: () => api.get('/subasta-revision/pendientes/count'),
+  aprobar: (subastaId) => api.patch(`/subasta-revision/${subastaId}/aprobar`, {}),
+  pausar: (subastaId) => api.patch(`/subasta-revision/${subastaId}/pausar`, {}),
+  rechazar: (subastaId, observacion) =>
+    api.patch(`/subasta-revision/${subastaId}/rechazar`, { observacion }),
 };
 
 // ─── REGISTRO DE SUBASTA ─────────────────────────────────────────────────────
@@ -198,4 +213,5 @@ export default {
   Notificaciones,
   Subastadores,
   Items,
+  SubastaRevision,
 };

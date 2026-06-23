@@ -1,9 +1,10 @@
-// BIDLY — Auth screens: Splash, Login, Registro (3 pasos: datos → verificar email → contraseña).
+// BIDLY — Auth screens: Splash, Login, FotoDNI, Registro (3 pasos: datos → verificar email → contraseña).
 import React, { useState } from 'react';
 import {
   View, Text, TextInput, ActivityIndicator, TouchableOpacity,
-  Alert, StyleSheet, KeyboardAvoidingView, Platform, ScrollView,
+  Alert, StyleSheet, KeyboardAvoidingView, Platform, ScrollView, Image,
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen, Header, Title, Sub, Btn, Field, Display } from '../components/ui';
 import { colors } from '../theme/theme';
@@ -70,7 +71,7 @@ export function LoginScreen({ navigation }) {
           <Btn title={loading ? 'Ingresando…' : 'Ingresar'} onPress={onLogin} disabled={loading} />
           <View style={{ flexDirection: 'row', justifyContent: 'center', marginTop: 18 }}>
             <Text style={{ color: colors.muted, fontSize: 14 }}>¿No tenés cuenta? </Text>
-            <TouchableOpacity onPress={() => navigation.navigate('Registro')}>
+            <TouchableOpacity onPress={() => navigation.navigate('FotoDNI')}>
               <Text style={{ color: colors.blue, fontWeight: '800', fontSize: 14 }}>Crear cuenta</Text>
             </TouchableOpacity>
           </View>
@@ -91,8 +92,118 @@ export function LoginScreen({ navigation }) {
   );
 }
 
+// ─── FOTO DNI — paso 0 del registro ──────────────────────────────────────────
+export function FotoDNIScreen({ navigation }) {
+  const [frente, setFrente] = useState(null);
+  const [dorso, setDorso] = useState(null);
+
+  const elegirFoto = async (setter) => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permiso requerido', 'Necesitamos acceso a tu galería para subir la foto del DNI.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsMultipleSelection: false,
+      quality: 0.7,
+    });
+    if (!result.canceled) {
+      setter(result.assets[0]);
+    }
+  };
+
+  const tomarFoto = async (setter) => {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permiso requerido', 'Necesitamos acceso a la cámara para fotografiar el DNI.');
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ['images'],
+      quality: 0.7,
+    });
+    if (!result.canceled) {
+      setter(result.assets[0]);
+    }
+  };
+
+  const mostrarOpciones = (setter) => {
+    Alert.alert('Foto del DNI', 'Elegí cómo querés subir la foto', [
+      { text: 'Cámara', onPress: () => tomarFoto(setter) },
+      { text: 'Galería', onPress: () => elegirFoto(setter) },
+      { text: 'Cancelar', style: 'cancel' },
+    ]);
+  };
+
+  const onContinuar = () => {
+    if (!frente || !dorso) {
+      return Alert.alert('Fotos requeridas', 'Necesitás subir el frente y el dorso de tu DNI para continuar.');
+    }
+    navigation.navigate('Registro', { fotoDNI: { frente, dorso } });
+  };
+
+  return (
+    <Screen scroll contentStyle={{ paddingHorizontal: 22 }}>
+      <Header />
+      <Title>Verificá tu{'\n'}identidad</Title>
+      <Sub>Para crear tu cuenta necesitamos una foto del frente y del dorso de tu DNI.</Sub>
+
+      <View style={{ gap: 16, marginTop: 8 }}>
+        <FotoSlot
+          label="Frente del DNI"
+          icon="card-outline"
+          foto={frente}
+          onPress={() => mostrarOpciones(setFrente)}
+        />
+        <FotoSlot
+          label="Dorso del DNI"
+          icon="card"
+          foto={dorso}
+          onPress={() => mostrarOpciones(setDorso)}
+        />
+      </View>
+
+      <Btn
+        title="Continuar"
+        onPress={onContinuar}
+        style={{ marginTop: 24 }}
+      />
+      <View style={{ flexDirection: 'row', justifyContent: 'center', marginTop: 16 }}>
+        <Text style={{ color: colors.muted, fontSize: 14 }}>¿Ya tenés cuenta? </Text>
+        <TouchableOpacity onPress={() => navigation.navigate('Login')}>
+          <Text style={{ color: colors.blue, fontWeight: '800', fontSize: 14 }}>Iniciar sesión</Text>
+        </TouchableOpacity>
+      </View>
+    </Screen>
+  );
+}
+
+function FotoSlot({ label, icon, foto, onPress }) {
+  return (
+    <TouchableOpacity onPress={onPress} style={st.fotoSlot}>
+      {foto ? (
+        <Image source={{ uri: foto.uri }} style={st.fotoPreview} resizeMode="cover" />
+      ) : (
+        <View style={st.fotoPlaceholder}>
+          <Ionicons name={icon} size={32} color={colors.muted} />
+          <Text style={{ color: colors.muted, fontSize: 13, marginTop: 8, textAlign: 'center' }}>{label}</Text>
+          <Text style={{ color: colors.blue, fontSize: 12, marginTop: 4, fontWeight: '700' }}>Tomar o elegir foto</Text>
+        </View>
+      )}
+      {foto && (
+        <View style={st.fotoLabel}>
+          <Ionicons name="checkmark-circle" size={16} color={colors.green} />
+          <Text style={{ color: colors.green, fontSize: 12, fontWeight: '700', marginLeft: 4 }}>{label}</Text>
+        </View>
+      )}
+    </TouchableOpacity>
+  );
+}
+
 // ─── REGISTRO — datos personales + email (paso único) ────────────────────────
-export function RegistroScreen({ navigation }) {
+export function RegistroScreen({ navigation, route }) {
+  const fotoDNI = route.params?.fotoDNI;
   const [f, setF] = useState({ nom: '', ape: '', dom: '', doc: '', email: '' });
   const [loading, setLoading] = useState(false);
   const set = (k) => (v) => setF((s) => ({ ...s, [k]: v }));
@@ -110,6 +221,7 @@ export function RegistroScreen({ navigation }) {
       navigation.navigate('VerificarEmail', {
         email: f.email.trim(),
         datosPersonales: f,
+        fotoDNI,
       });
     } catch (e) {
       Alert.alert('Error', e.message || 'No se pudo enviar el código de verificación.');
@@ -151,7 +263,7 @@ export function RegistroScreen({ navigation }) {
 
 // ─── VERIFICAR EMAIL — ingresá el código de 6 dígitos ────────────────────────
 export function VerificarEmailScreen({ navigation, route }) {
-  const { email, datosPersonales } = route.params || {};
+  const { email, datosPersonales, fotoDNI } = route.params || {};
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
@@ -170,6 +282,7 @@ export function VerificarEmailScreen({ navigation, route }) {
         email,
         verificationToken: res.verificationToken,
         datosPersonales,
+        fotoDNI,
       });
     } catch (e) {
       setError(e.message || 'El código es inválido o expiró. Pedí uno nuevo.');
@@ -246,7 +359,7 @@ export function VerificarEmailScreen({ navigation, route }) {
 // ─── CREAR CONTRASEÑA — solo acá se guarda en la base de datos ───────────────
 export function CrearPasswordScreen({ navigation, route }) {
   const { register } = useAuth();
-  const { email, verificationToken, datosPersonales = {} } = route.params || {};
+  const { email, verificationToken, datosPersonales = {}, fotoDNI } = route.params || {};
   const [f, setF] = useState({ p1: '', p2: '' });
   const [ok, setOk] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -258,7 +371,7 @@ export function CrearPasswordScreen({ navigation, route }) {
     if (f.p1 !== f.p2) return Alert.alert('Contraseña', 'Las contraseñas no coinciden.');
     setLoading(true);
     try {
-      await register({
+      const u = await register({
         nombre: datosPersonales.nom || '',
         apellido: datosPersonales.ape || '',
         domicilio: datosPersonales.dom || '',
@@ -268,6 +381,17 @@ export function CrearPasswordScreen({ navigation, route }) {
         numeroPais: '1',
         verificationToken,
       });
+      // Subir fotos de DNI en segundo plano — no bloquea el acceso si falla
+      if (fotoDNI?.frente?.uri && fotoDNI?.dorso?.uri && u?.clienteId) {
+        try {
+          const fd = new FormData();
+          fd.append('frente', { uri: fotoDNI.frente.uri, name: 'frente.jpg', type: 'image/jpeg' });
+          fd.append('dorso', { uri: fotoDNI.dorso.uri, name: 'dorso.jpg', type: 'image/jpeg' });
+          await Auth.uploadDni(u.clienteId, fd);
+        } catch (uploadErr) {
+          console.warn('No se pudieron subir las fotos del DNI:', uploadErr);
+        }
+      }
       // AuthContext setUser → RootNavigator redirige al app
     } catch (e) {
       Alert.alert('No se pudo crear la cuenta', e.message || 'Error de conexión.');
@@ -334,4 +458,30 @@ const st = StyleSheet.create({
     paddingHorizontal: 12, paddingVertical: 10, marginTop: 10,
   },
   errorText: { color: '#ef4444', fontSize: 13.5, flex: 1, lineHeight: 18 },
+  fotoSlot: {
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    overflow: 'hidden',
+    minHeight: 140,
+  },
+  fotoPlaceholder: {
+    flex: 1,
+    minHeight: 140,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+    backgroundColor: colors.cardEl ?? colors.card,
+  },
+  fotoPreview: {
+    width: '100%',
+    height: 160,
+  },
+  fotoLabel: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: 'rgba(55,214,111,0.1)',
+  },
 });

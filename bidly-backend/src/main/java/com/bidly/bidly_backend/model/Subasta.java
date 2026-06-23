@@ -2,6 +2,7 @@ package com.bidly.bidly_backend.model;
 
 import jakarta.persistence.*;
 import lombok.*;
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalTime;
 
@@ -25,4 +26,23 @@ public class Subasta {
     private String categoria;
     @Transient
     private String moneda;
+    @Transient
+    private BigDecimal precioBase;
+    @Transient
+    private Long totalAsistentes;
+    @Transient
+    private String titulo;
+    @Transient
+    private Integer totalItems;
+    @Transient
+    private String revisionEstado;
+  /** programada | en_curso | finalizada */
+    @Transient
+    private String fase;
+    @Transient
+    private Long segundosRestantes;
+    @Transient
+    private Integer itemsPendientes;
+    @Transient
+    private Boolean algunaVezAbierta;
 }

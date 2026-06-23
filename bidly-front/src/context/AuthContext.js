@@ -61,8 +61,8 @@ export function AuthProvider({ children }) {
     setUser({ isGuest: true, nombre: 'Invitado', clienteId: null });
   }, []);
 
-  // isAdmin: no existe en el modelo actual; reservado para extensiones futuras.
-  const isAdmin = false;
+  // Acceso al panel de administración (subastas + solicitudes a confirmar).
+  const isAdmin = true;
 
   return (
     <AuthContext.Provider value={{ user, setUser, booting, login, register, logout, loginAsGuest, isAdmin }}>
