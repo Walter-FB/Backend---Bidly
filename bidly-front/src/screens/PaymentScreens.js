@@ -184,7 +184,7 @@ export function MedioPagoScreen({ navigation, route }) {
                 </Text>
                 {m.titular && <Text style={{ color: colors.faint, fontSize: 11.5 }}>{m.titular}</Text>}
               </View>
-              <Tag label={m.verificado === 'si' ? 'VERIFICADA' : 'ACTIVA'} color={colors.green} />
+              <Tag label="VERIFICADA" color={colors.green} />
               <Radio on={selIdx === i} />
             </Card>
           </TouchableOpacity>

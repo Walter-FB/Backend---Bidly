@@ -6,7 +6,6 @@ import com.bidly.bidly_backend.model.Puja;
 import com.bidly.bidly_backend.model.PujoFecha;
 import com.bidly.bidly_backend.repository.AsistenteRepository;
 import com.bidly.bidly_backend.repository.ItemCatalogoRepository;
-import com.bidly.bidly_backend.repository.MedioPagoRepository;
 import com.bidly.bidly_backend.repository.PujaRepository;
 import com.bidly.bidly_backend.repository.PujoFechaRepository;
 import com.bidly.bidly_backend.service.NotificacionService;
@@ -29,14 +28,6 @@ public class PujaController {
 
     private static final Set<String> CATEGORIAS_SIN_LIMITE = Set.of("oro", "platino");
 
-    private static final Map<String, Integer> CATEGORIA_RANK = Map.of(
-            "comun",    1,
-            "especial", 2,
-            "plata",    3,
-            "oro",      4,
-            "platino",  5
-    );
-
     @Autowired
     private PujaRepository pujaRepository;
 
@@ -48,9 +39,6 @@ public class PujaController {
 
     @Autowired
     private AsistenteRepository asistenteRepository;
-
-    @Autowired
-    private MedioPagoRepository medioPagoRepository;
 
     @Autowired
     private NotificacionService notificacionService;
@@ -103,33 +91,18 @@ public class PujaController {
                     .body(Map.of("error", "El asistente no pertenece a esta subasta", "code", "FORBIDDEN"));
         }
 
-        // 5. Categoría del cliente >= categoría de la subasta
+        // 5–8. Sin pasarela real: no bloqueamos por categoría ni medio de pago.
         String categoriaSubasta = item.getCatalogo().getSubasta().getCategoria();
-        String categoriaCliente = asistente.getCliente().getCategoria();
-        int rankCliente = CATEGORIA_RANK.getOrDefault(categoriaCliente, 0);
-        int rankSubasta = CATEGORIA_RANK.getOrDefault(categoriaSubasta, 0);
-        if (rankCliente < rankSubasta) {
-            return ResponseEntity.status(403)
-                    .body(Map.of("error", "Tu categoría no permite pujar en esta subasta", "code", "CATEGORY"));
-        }
+        Long clienteId = asistente.getCliente().getIdentificador();
 
-        // 6. Subasta abierta
         if (!"abierta".equals(item.getCatalogo().getSubasta().getEstado())) {
             return ResponseEntity.status(409)
                     .body(Map.of("error", "La subasta no está abierta", "code", "AUCTION_CLOSED"));
         }
 
-        // 7. Ítem no adjudicado
         if ("si".equals(item.getSubastado())) {
             return ResponseEntity.status(409)
                     .body(Map.of("error", "El item ya fue adjudicado", "code", "ITEM_SOLD"));
-        }
-
-        // 8. Cliente tiene al menos un medio de pago registrado (sin pasarela real aún)
-        Long clienteId = asistente.getCliente().getIdentificador();
-        if (medioPagoRepository.findByClienteIdentificador(clienteId).isEmpty()) {
-            return ResponseEntity.status(403)
-                    .body(Map.of("error", "Necesitás registrar un medio de pago para pujar", "code", "NO_PAYMENT"));
         }
 
         // 9. Mínimo: última puja + 1% del precio base (o precio base si no hay pujas)

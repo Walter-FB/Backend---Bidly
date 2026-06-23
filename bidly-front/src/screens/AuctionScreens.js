@@ -4,7 +4,7 @@ import { View, Text, ScrollView, StyleSheet, ActivityIndicator, Alert, Touchable
 import { Ionicons } from '@expo/vector-icons';
 import { Screen, Header, Title, SectionLabel, Btn, Card, LiveBadge, Tag, ImgBox, ImageLightbox, BottomBar, Row, Display, SuccessBanner } from '../components/ui';
 import { colors } from '../theme/theme';
-import { Subastas, Pujas, Asistentes, Productos, Clientes } from '../api/endpoints';
+import { Subastas, Pujas, Asistentes, Productos } from '../api/endpoints';
 import { BASE_URL } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { tituloSubasta, tagEstadoSubasta } from '../utils/subasta';
@@ -240,8 +240,6 @@ export function SubastaEnVivoScreen({ navigation, route }) {
 
   const [pujas, setPujas] = useState([]);
   const [asistenteId, setAsistenteId] = useState(null);
-  const [tieneAcceso, setTieneAcceso] = useState(null);
-  const [motivoBloqueo, setMotivoBloqueo] = useState(null);
   const [loadingPujas, setLoadingPujas] = useState(true);
   const [pujando, setPujando] = useState(false);
   const [pollingError, setPollingError] = useState(false);
@@ -268,33 +266,14 @@ export function SubastaEnVivoScreen({ navigation, route }) {
     return () => clearInterval(interval);
   }, [pujas, fecha, hora]);
 
-  // Inscribir al usuario como asistente y verificar acceso (solo si tiene cuenta).
+  // Inscribir al usuario como asistente.
   useEffect(() => {
     if (!user?.clienteId || !subastaId) return;
 
     Asistentes.inscribir(user.clienteId, subastaId)
       .then((a) => { if (mounted.current) setAsistenteId(a.identificador); })
       .catch(() => {});
-
-    const RANK = { comun: 1, especial: 2, plata: 3, oro: 4, platino: 5 };
-    const rankCliente = RANK[user.categoria] ?? 1;
-    const rankSubasta = RANK[categoriaSubasta] ?? 1;
-    const categoryOk = rankCliente >= rankSubasta;
-    Clientes.mediosPago(user.clienteId)
-      .then((medios) => {
-        const tieneMedio = (medios || []).length > 0;
-        if (!mounted.current) return;
-        if (!categoryOk) setMotivoBloqueo('categoria');
-        else if (!tieneMedio) setMotivoBloqueo('pago');
-        else setMotivoBloqueo(null);
-        setTieneAcceso(categoryOk && tieneMedio);
-      })
-      .catch(() => {
-        if (!mounted.current) return;
-        setMotivoBloqueo('pago');
-        setTieneAcceso(false);
-      });
-  }, [user, subastaId, categoriaSubasta]);
+  }, [user, subastaId]);
 
   // Cargar pujas y refrescar cada 5 segundos.
   // Detecta automáticamente cuando el ítem fue adjudicado y navega al resultado.
@@ -463,14 +442,10 @@ export function SubastaEnVivoScreen({ navigation, route }) {
             </Text>
           </Card>
         )}
-        {!user?.isGuest && tieneAcceso === false && (
-          <Card el style={{ marginTop: 10, backgroundColor: 'rgba(255,59,48,0.10)', borderColor: '#ff3b30', borderWidth: 1 }}>
-            <Text style={{ color: '#ff3b30', fontWeight: '700', textAlign: 'center', fontSize: 13 }}>
-              {motivoBloqueo === 'categoria'
-                ? `Tu categoría (${user.categoria || 'común'}) no alcanza para esta subasta (${categoriaSubasta || '—'}).`
-                : motivoBloqueo === 'pago'
-                  ? 'Registrá un medio de pago en tu perfil para pujar.'
-                  : 'No podés pujar en esta subasta.'}
+        {!user?.isGuest && !asistenteId && (
+          <Card el style={{ marginTop: 10, backgroundColor: 'rgba(255,193,7,0.08)', borderColor: colors.gold, borderWidth: 1 }}>
+            <Text style={{ color: colors.gold, fontWeight: '700', textAlign: 'center', fontSize: 13 }}>
+              Registrando tu acceso a la subasta…
             </Text>
           </Card>
         )}
@@ -504,8 +479,8 @@ export function SubastaEnVivoScreen({ navigation, route }) {
       </ScrollView>
 
       <BottomBar>
-        {!user?.isGuest && tieneAcceso === false ? (
-          <Btn title="Solo lectura — sin acceso" kind="ghost" disabled />
+        {!user?.isGuest && !asistenteId ? (
+          <Btn title="Esperando acceso…" kind="ghost" disabled />
         ) : esLidero ? (
           <Btn title="Ya sos el mayor postor" kind="ghost" disabled />
         ) : (

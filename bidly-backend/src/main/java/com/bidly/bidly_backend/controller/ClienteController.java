@@ -91,6 +91,7 @@ public class ClienteController {
             return ResponseEntity.notFound().build();
         }
         List<MedioPago> medios = medioPagoRepository.findByClienteIdentificador(id);
+        medios.forEach(m -> m.setVerificado("si"));
         return ResponseEntity.ok(medios);
     }
 
@@ -118,7 +119,7 @@ public class ClienteController {
         } else if (!Set.of("tarjeta", "cuenta", "cheque").contains(tipo)) {
             mp.setTipo("tarjeta");
         }
-        if (mp.getVerificado() == null || mp.getVerificado().isBlank()) {
+        if (mp.getVerificado() == null || mp.getVerificado().isBlank() || "no".equalsIgnoreCase(mp.getVerificado())) {
             mp.setVerificado("si");
         }
         String venc = mp.getVencimiento();
