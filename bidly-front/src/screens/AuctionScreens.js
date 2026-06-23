@@ -8,6 +8,7 @@ import { Subastas, Pujas, Asistentes, Productos, Items, Clientes } from '../api/
 import { BASE_URL } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { tituloSubasta } from '../utils/subasta';
+import { etiquetaTiempoSubasta, esSubastaEnVivo, segundosHastaCierrePujas, formatDuracion } from '../utils/tiempo';
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
@@ -127,7 +128,7 @@ export function ProductoScreen({ navigation, route }) {
   const titulo = tituloSubasta(subasta, items);
   const categoria = `${subasta.categoria || 'General'} · ${subasta.ubicacion || ''}`.replace(/·\s*$/, '').trim();
   const precioBase = primerItem?.precioBase;
-  const viva = subasta.estado === 'abierta';
+  const viva = esSubastaEnVivo(subasta);
   const fotoUrls = fotoIds.map((id) => `${BASE_URL}/fotos/${id}`);
 
   return (
@@ -171,9 +172,9 @@ export function ProductoScreen({ navigation, route }) {
             </Text>
           </View>
           <View>
-            <Text style={{ color: colors.muted, fontSize: 12 }}>Cierra</Text>
+            <Text style={{ color: colors.muted, fontSize: 12 }}>{viva ? 'Cierra' : subasta.fase === 'programada' ? 'Abre' : 'Estado'}</Text>
             <Text style={{ color: colors.gold, fontSize: 20, fontWeight: '800' }}>
-              {formatTimer(subasta.fecha, subasta.hora)}
+              {etiquetaTiempoSubasta(subasta)}
             </Text>
           </View>
         </View>
@@ -269,7 +270,7 @@ export function SubastaEnVivoScreen({ navigation, route }) {
   const [loadingPujas, setLoadingPujas] = useState(true);
   const [pujando, setPujando] = useState(false);
   const [pollingError, setPollingError] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(() => calcSecondsLeft(fecha, hora));
+  const [timeLeft, setTimeLeft] = useState(null);
   const [fotoAmpliada, setFotoAmpliada] = useState(false);
   const mounted = useRef(true);
   const asistenteIdRef = useRef(null);
@@ -282,16 +283,15 @@ export function SubastaEnVivoScreen({ navigation, route }) {
   // Mantener ref actualizada para usarla en callbacks sin crear dependencias.
   useEffect(() => { asistenteIdRef.current = asistenteId; }, [asistenteId]);
 
-  // Countdown ticker — actualiza cada segundo.
+  // Countdown por inactividad de pujas (30 min) o hasta apertura programada.
   useEffect(() => {
-    if (!fecha) return;
-    const tick = setInterval(() => {
-      const s = calcSecondsLeft(fecha, hora);
-      setTimeLeft(s);
-      if (s <= 0) clearInterval(tick);
-    }, 1000);
-    return () => clearInterval(tick);
-  }, [fecha, hora]);
+    const tick = () => {
+      setTimeLeft(segundosHastaCierrePujas(pujas, fecha, hora));
+    };
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [pujas, fecha, hora]);
 
   // Inscribir al usuario como asistente y verificar acceso (solo si tiene cuenta).
   useEffect(() => {
@@ -438,7 +438,7 @@ export function SubastaEnVivoScreen({ navigation, route }) {
           <View style={{ alignItems: 'center' }}>
             <Text style={{ color: colors.muted, fontSize: 12 }}>Cierra en</Text>
             <Text style={{ color: countdownColor, fontSize: 22, fontWeight: '800', fontVariant: ['tabular-nums'] }}>
-              {formatCountdown(timeLeft)}
+              {timeLeft == null ? '—' : formatCountdown(timeLeft)}
             </Text>
           </View>
           <View style={{ alignItems: 'flex-end' }}>
@@ -696,7 +696,10 @@ export function SubastaAdminScreen({ navigation, route }) {
               const updated = await Subastas.actualizarEstado(subastaId, nuevoEstado);
               if (mounted.current) setSubasta(updated);
             } catch (e) {
-              Alert.alert('Error', e.message || 'No se pudo actualizar el estado.');
+              const msg = e.data?.code === 'NOT_APPROVED'
+                ? 'Tu subasta aún no fue aprobada por un administrador.'
+                : (e.message || 'No se pudo actualizar el estado.');
+              Alert.alert('Error', msg);
             } finally {
               if (mounted.current) setCambiandoEstado(false);
             }

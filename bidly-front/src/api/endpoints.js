@@ -37,6 +37,7 @@ export const Subastas = {
     if (params.estado) backendParams.estado = params.estado;     // 'abierta' | 'cerrada'
     if (params.categoria) backendParams.categoria = params.categoria;
     if (params.moneda) backendParams.moneda = params.moneda;
+    if (params.publico === false) backendParams.publico = 'false';
     const q = new URLSearchParams(backendParams).toString();
     return api.get(`/subastas${q ? `?${q}` : ''}`);
   },
@@ -128,6 +129,18 @@ export const Productos = {
   eliminar: (id) => api.del(`/productos/${id}`),
 };
 
+// ─── REVISIÓN DE SUBASTAS (moderación admin) ─────────────────────────────────
+// GET  /api/subasta-revision?estado=pendiente
+// PATCH /api/subasta-revision/{subastaId}/aprobar|pausar|rechazar
+export const SubastaRevision = {
+  listar: (estado = 'pendiente') => api.get(`/subasta-revision?estado=${estado}`),
+  contarPendientes: () => api.get('/subasta-revision/pendientes/count'),
+  aprobar: (subastaId) => api.patch(`/subasta-revision/${subastaId}/aprobar`, {}),
+  pausar: (subastaId) => api.patch(`/subasta-revision/${subastaId}/pausar`, {}),
+  rechazar: (subastaId, observacion) =>
+    api.patch(`/subasta-revision/${subastaId}/rechazar`, { observacion }),
+};
+
 // ─── REGISTRO DE SUBASTA ─────────────────────────────────────────────────────
 // POST  /api/registro-subasta
 // GET   /api/registro-subasta/{id}
@@ -200,4 +213,5 @@ export default {
   Notificaciones,
   Subastadores,
   Items,
+  SubastaRevision,
 };

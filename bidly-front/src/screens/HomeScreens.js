@@ -9,6 +9,7 @@ import { Subastas, Notificaciones } from '../api/endpoints';
 import { BASE_URL } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { tituloSubasta, subtituloSubasta } from '../utils/subasta';
+import { etiquetaTiempoSubasta, esSubastaEnVivo } from '../utils/tiempo';
 
 // Convierte una Subasta del backend al shape que espera AuctionCard.
 // Mapea el valor de moneda de la BD ('pesos'/'dolares') al símbolo de pantalla
@@ -24,7 +25,9 @@ function mapSubasta(s) {
     cat: subtituloSubasta(s),
     puja: s.precioBase ? s.precioBase.toLocaleString('es-AR') : '—',
     ppl: s.totalAsistentes || 0,
-    time: formatFechaHora(s.fecha, s.hora),
+    time: etiquetaTiempoSubasta(s),
+    fase: s.fase,
+    segundosRestantes: s.segundosRestantes,
     lead: false,
     estado: s.estado,
     moneda: s.moneda || 'pesos',
@@ -32,23 +35,9 @@ function mapSubasta(s) {
     portadaUrl: `${BASE_URL}/subastas/${s.identificador}/portada`,
     ubicacion: s.ubicacion,
     subastador: s.subastador,
+    fecha: s.fecha,
+    hora: s.hora,
   };
-}
-
-function formatFechaHora(fecha, hora) {
-  if (!fecha) return '—';
-  try {
-    const dt = new Date(`${fecha}T${hora || '00:00'}`);
-    const now = new Date();
-    const diffMs = dt - now;
-    if (diffMs <= 0) return 'Finalizada';
-    const diffH = Math.floor(diffMs / 3600000);
-    const diffM = Math.floor((diffMs % 3600000) / 60000);
-    if (diffH > 0) return `${diffH}h ${diffM}m`;
-    return `${diffM}m`;
-  } catch {
-    return fecha;
-  }
 }
 
 // ─── HOME TOP BAR ─────────────────────────────────────────────────────────────
@@ -66,7 +55,7 @@ function HomeTopBar({ navigation }) {
 
 // ─── AUCTION CARD ─────────────────────────────────────────────────────────────
 export function AuctionCard({ a, onPress }) {
-  const viva = a.estado === 'abierta' || a.estado === undefined;
+  const viva = esSubastaEnVivo(a);
   return (
     <Card el style={{ padding: 14 }}>
       {viva && <LiveBadge style={{ marginBottom: 10 }} />}
@@ -144,8 +133,8 @@ export function HomeScreen({ navigation }) {
   }, [navigation]);
 
   const subrastasFiltradas = subastas.filter((a) => {
-    if (tab === 'vivo') return a.estado === 'abierta';
-    if (tab === 'term') return a.estado === 'cerrada';
+    if (tab === 'vivo') return esSubastaEnVivo(a);
+    if (tab === 'term') return a.estado === 'cerrada' || a.fase === 'finalizada';
     return true;
   });
 

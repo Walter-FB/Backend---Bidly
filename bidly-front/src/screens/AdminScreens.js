@@ -8,7 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Display, Tag, Chip, Card, SectionLabel, Row, Btn, LiveBadge } from '../components/ui';
 import { colors } from '../theme/theme';
 import { useAuth } from '../context/AuthContext';
-import { Subastas, Pujas, Items, Asistentes } from '../api/endpoints';
+import { Subastas, Pujas, Items, Asistentes, SubastaRevision } from '../api/endpoints';
 import { tituloSubasta, formatFechaSubasta } from '../utils/subasta';
 
 const FILTROS_SUBASTA = [
@@ -52,6 +52,9 @@ export function DashboardAdminScreen() {
   const [running, setRunning] = useState(null);
   const [ctrl, setCtrl] = useState(false);
   const [lastRefresh, setLastRefresh] = useState('—');
+  const [revisiones, setRevisiones] = useState([]);
+  const [loadingRevisiones, setLoadingRevisiones] = useState(false);
+  const [pendientesCount, setPendientesCount] = useState(0);
   const mounted = useRef(true);
 
   useEffect(() => () => { mounted.current = false; }, []);
@@ -77,9 +80,10 @@ export function DashboardAdminScreen() {
   const loadSubastas = useCallback(async () => {
     setLoadingSubastas(true);
     try {
-      const params = filtroLista === 'abierta' || filtroLista === 'cerrada'
-        ? { estado: filtroLista }
-        : {};
+      const params = { publico: false };
+      if (filtroLista === 'abierta' || filtroLista === 'cerrada') {
+        params.estado = filtroLista;
+      }
       const data = await Subastas.listar(params);
       if (mounted.current) setSubastas(Array.isArray(data) ? data : []);
     } catch (e) {
@@ -92,6 +96,68 @@ export function DashboardAdminScreen() {
   }, [filtroLista]);
 
   useEffect(() => { loadSubastas(); }, [loadSubastas]);
+
+  const loadRevisiones = useCallback(async () => {
+    setLoadingRevisiones(true);
+    try {
+      const [lista, countData] = await Promise.all([
+        SubastaRevision.listar('pendiente'),
+        SubastaRevision.contarPendientes(),
+      ]);
+      if (!mounted.current) return;
+      setRevisiones(Array.isArray(lista) ? lista : []);
+      setPendientesCount(Number(countData?.pendientes ?? 0));
+    } catch (e) {
+      if (mounted.current) {
+        Alert.alert('Error', e.message || 'No se pudo cargar subastas a confirmar.');
+      }
+    } finally {
+      if (mounted.current) setLoadingRevisiones(false);
+    }
+  }, []);
+
+  useEffect(() => { loadRevisiones(); }, [loadRevisiones]);
+
+  const actuarRevision = (subastaId, accion) => {
+    const cfg = {
+      aprobar: {
+        title: 'Aprobar subasta',
+        msg: 'La subasta será visible en el home. El subastador podrá abrirla cuando quiera.',
+        fn: () => SubastaRevision.aprobar(subastaId),
+      },
+      pausar: {
+        title: 'Pausar subasta',
+        msg: 'Quedará oculta del público y se cerrará hasta que la apruebes de nuevo.',
+        fn: () => SubastaRevision.pausar(subastaId),
+      },
+      rechazar: {
+        title: 'Eliminar solicitud',
+        msg: 'Se rechaza la subasta y queda cerrada. Esta acción no borra el historial.',
+        fn: () => SubastaRevision.rechazar(subastaId, 'Rechazada por administrador'),
+      },
+    }[accion];
+    if (!cfg) return;
+
+    Alert.alert(cfg.title, cfg.msg, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Confirmar',
+        style: accion === 'rechazar' ? 'destructive' : 'default',
+        onPress: async () => {
+          setCtrl(true);
+          try {
+            await exec(cfg.title, 'PATCH', `/subasta-revision/${subastaId}/${accion}`, cfg.fn, 200);
+            await Promise.all([loadRevisiones(), loadSubastas()]);
+            if (selId === subastaId && accion !== 'aprobar') await refreshContexto();
+          } catch (e) {
+            Alert.alert('Error', e.message || 'No se pudo completar la acción.');
+          } finally {
+            if (mounted.current) setCtrl(false);
+          }
+        },
+      },
+    ]);
+  };
 
   const refreshContexto = useCallback(async () => {
     if (!selId || !mounted.current) return;
@@ -462,9 +528,17 @@ export function DashboardAdminScreen() {
 
       {/* Tabs */}
       <View style={s.tabRow}>
-        {[['subastas', 'Subastas'], ['estado', 'Estado'], ['escenarios', 'Tests'], ['inspector', 'Log']].map(([k, label]) => (
+        {[
+          ['subastas', 'Subastas'],
+          ['confirmar', pendientesCount > 0 ? `Confirmar (${pendientesCount})` : 'Confirmar'],
+          ['estado', 'Estado'],
+          ['escenarios', 'Tests'],
+          ['inspector', 'Log'],
+        ].map(([k, label]) => (
           <TouchableOpacity key={k} onPress={() => setTab(k)} style={[s.tabBtn, tab === k && s.tabActive]}>
-            <Text style={[s.tabTxt, tab === k && { color: '#fff', fontWeight: '700' }]}>{label}</Text>
+            <Text style={[s.tabTxt, tab === k && { color: '#fff', fontWeight: '700' }]} numberOfLines={1}>
+              {label}
+            </Text>
           </TouchableOpacity>
         ))}
       </View>
@@ -483,8 +557,21 @@ export function DashboardAdminScreen() {
             onRefresh={loadSubastas}
             onAbrir={() => aplicarEstado('abierta')}
             onCerrar={() => aplicarEstado('cerrada')}
+            onIrConfirmar={() => setTab('confirmar')}
+            pendientesCount={pendientesCount}
             ctrl={ctrl}
             sinLogin={!user?.clienteId}
+          />
+        ) : tab === 'confirmar' ? (
+          <ConfirmarSection
+            revisiones={revisiones}
+            loading={loadingRevisiones}
+            ctrl={ctrl}
+            onRefresh={loadRevisiones}
+            onAprobar={(id) => actuarRevision(id, 'aprobar')}
+            onPausar={(id) => actuarRevision(id, 'pausar')}
+            onRechazar={(id) => actuarRevision(id, 'rechazar')}
+            onVer={(id) => selectSubasta(id)}
           />
         ) : !selId ? (
           <View style={{ paddingTop: 48, alignItems: 'center', gap: 8 }}>
@@ -529,17 +616,26 @@ export function DashboardAdminScreen() {
 
 // ─── Sección listado de subastas ──────────────────────────────────────────────
 function SubastasListSection({
-  subastas, total, loading, filtro, onFiltro, selId, onSelect, onRefresh, onAbrir, onCerrar, ctrl, sinLogin,
+  subastas, total, loading, filtro, onFiltro, selId, onSelect, onRefresh, onAbrir, onCerrar,
+  onIrConfirmar, pendientesCount, ctrl, sinLogin,
 }) {
   return (
     <View style={{ gap: 12, paddingTop: 14 }}>
+      <Btn
+        title={pendientesCount > 0
+          ? `Subastas a confirmar (${pendientesCount})`
+          : 'Subastas a confirmar'}
+        kind="primary"
+        onPress={onIrConfirmar}
+      />
+
       <Card el style={{ gap: 6 }}>
         <Text style={{ color: '#fff', fontWeight: '700', fontSize: 14 }}>¿Qué hace esta consola?</Text>
         <Text style={{ color: colors.muted, fontSize: 12.5, lineHeight: 18 }}>
-          1. Ver subastas del backend y abrir/cerrar cuando quieras{'\n'}
-          2. Estado: catálogo, pujas en vivo, adjudicar ítems{'\n'}
-          3. Tests: disparar reglas de puja automáticas{'\n'}
-          4. Log: historial HTTP de cada acción
+          1. Revisar y aprobar subastas nuevas antes del home{'\n'}
+          2. Abrir/cerrar subastas y ver catálogo + pujas{'\n'}
+          3. Tests automáticos de reglas de puja{'\n'}
+          4. Log HTTP de cada acción
         </Text>
       </Card>
 
@@ -620,6 +716,75 @@ function SubastasListSection({
   );
 }
 
+const REVISION_LABEL = {
+  pendiente: { label: 'PENDIENTE', color: colors.gold },
+  aprobada: { label: 'APROBADA', color: colors.green },
+  pausada: { label: 'PAUSADA', color: colors.muted },
+  rechazada: { label: 'RECHAZADA', color: colors.red },
+};
+
+function ConfirmarSection({
+  revisiones, loading, ctrl, onRefresh, onAprobar, onPausar, onRechazar, onVer,
+}) {
+  return (
+    <View style={{ gap: 12, paddingTop: 14 }}>
+      <Card el style={{ gap: 6 }}>
+        <Display style={{ fontSize: 15 }}>Subastas a confirmar</Display>
+        <Text style={{ color: colors.muted, fontSize: 12.5, lineHeight: 18 }}>
+          Cuando alguien crea una subasta nueva, aparece acá como pendiente.
+          Aprobala para que se vea en el home; pausala o eliminá la solicitud si no corresponde.
+        </Text>
+      </Card>
+
+      <View style={{ flexDirection: 'row', justifyContent: 'flex-end' }}>
+        <TouchableOpacity onPress={onRefresh} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          <Ionicons name="refresh" size={16} color={colors.blue} />
+          <Text style={{ color: colors.blue, fontSize: 13, fontWeight: '700' }}>Actualizar</Text>
+        </TouchableOpacity>
+      </View>
+
+      {loading && <ActivityIndicator color={colors.blue} />}
+
+      {!loading && revisiones.length === 0 && (
+        <Text style={{ color: colors.muted, fontSize: 13, textAlign: 'center', paddingVertical: 28 }}>
+          No hay subastas pendientes ni pausadas.
+        </Text>
+      )}
+
+      {revisiones.map((rev) => {
+        const sub = rev.subasta;
+        const sid = sub?.identificador;
+        const meta = REVISION_LABEL[rev.estado] || REVISION_LABEL.pendiente;
+        return (
+          <Card key={rev.identificador ?? sid} el style={{ gap: 8 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 8 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: colors.muted, fontSize: 11.5, fontWeight: '700' }}>#{sid}</Text>
+                <Display style={{ fontSize: 14.5, lineHeight: 18 }} numberOfLines={2}>
+                  {sub?.titulo || tituloSubasta(sub)}
+                </Display>
+              </View>
+              <Tag label={meta.label} color={meta.color} />
+            </View>
+            <Text style={{ color: colors.muted, fontSize: 12 }}>
+              Solicitante #{rev.solicitante} · {formatFechaSubasta(sub?.fecha)} · {sub?.categoria}
+            </Text>
+            <Text style={{ color: colors.muted, fontSize: 11.5 }}>
+              {sub?.totalItems ?? 0} ítems · subasta {sub?.estado === 'abierta' ? 'abierta' : 'cerrada'}
+            </Text>
+            <Btn title="Ver detalle → Estado" kind="ghost" onPress={() => onVer(sid)} />
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <Btn title="Aprobar" kind="primary" style={{ flex: 1 }} onPress={() => onAprobar(sid)} disabled={ctrl} />
+              <Btn title="Pausar" kind="ghost" style={{ flex: 1 }} onPress={() => onPausar(sid)} disabled={ctrl} />
+              <Btn title="Eliminar" kind="danger" style={{ flex: 1 }} onPress={() => onRechazar(sid)} disabled={ctrl} />
+            </View>
+          </Card>
+        );
+      })}
+    </View>
+  );
+}
+
 // ─── Sección Estado ───────────────────────────────────────────────────────────
 function EstadoSection({
   subasta, items, asistentes, pujas, activeIdx, onSelectItem,
@@ -649,6 +814,13 @@ function EstadoSection({
         <Row k="Categoría" v={subasta?.categoria ?? '—'} />
         <Row k="Moneda" v={subasta?.moneda ?? '—'} />
         <Row k="Fecha" v={subasta?.fecha ?? '—'} />
+        {subasta?.revisionEstado ? (
+          <Row k="Revisión admin" v={subasta.revisionEstado} vc={
+            subasta.revisionEstado === 'aprobada' ? colors.green
+              : subasta.revisionEstado === 'pendiente' ? colors.gold
+              : colors.red
+          } />
+        ) : null}
         <Row k="Asistentes" v={String(asistentes.length)} />
         <Row k="Último refresh" v={lastRefresh} />
       </Card>
@@ -865,9 +1037,9 @@ const s = StyleSheet.create({
   },
   bannerTxt: { color: colors.gold, fontSize: 11, fontWeight: '700', letterSpacing: 0.4, flex: 1 },
   tabRow: { flexDirection: 'row', borderBottomWidth: 1, borderColor: colors.border },
-  tabBtn: { flex: 1, paddingVertical: 11, alignItems: 'center' },
+  tabBtn: { flex: 1, paddingVertical: 11, alignItems: 'center', paddingHorizontal: 2 },
   tabActive: { borderBottomWidth: 2, borderBottomColor: colors.blue },
-  tabTxt: { color: colors.muted, fontSize: 13.5, fontWeight: '600' },
+  tabTxt: { color: colors.muted, fontSize: 11.5, fontWeight: '600' },
   selBar: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     paddingHorizontal: 16, paddingVertical: 10,

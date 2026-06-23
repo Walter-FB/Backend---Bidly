@@ -34,4 +34,13 @@ public class Subasta {
     private String titulo;
     @Transient
     private Integer totalItems;
+    @Transient
+    private String revisionEstado;
+  /** programada | en_curso | finalizada */
+    @Transient
+    private String fase;
+    @Transient
+    private Long segundosRestantes;
+    @Transient
+    private Integer itemsPendientes;
 }

@@ -300,10 +300,21 @@ export function MisSubastasScreen({ navigation }) {
                       <Display style={{ fontSize: 15, flex: 1, paddingRight: 8 }} numberOfLines={2}>
                         {tituloSubasta(a)}
                       </Display>
-                      <Tag
-                        label={a.estado === 'abierta' ? 'EN VIVO' : 'CERRADA'}
-                        color={a.estado === 'abierta' ? colors.green : colors.muted}
-                      />
+                      <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                        {a.revisionEstado === 'pendiente' && (
+                          <Tag label="PENDIENTE" color={colors.gold} />
+                        )}
+                        {a.revisionEstado === 'pausada' && (
+                          <Tag label="PAUSADA" color={colors.muted} />
+                        )}
+                        {a.revisionEstado === 'rechazada' && (
+                          <Tag label="RECHAZADA" color={colors.red} />
+                        )}
+                        <Tag
+                          label={a.estado === 'abierta' ? 'EN VIVO' : 'CERRADA'}
+                          color={a.estado === 'abierta' ? colors.green : colors.muted}
+                        />
+                      </View>
                     </View>
                     <Text style={{ color: colors.muted, fontSize: 13 }}>
                       {subtituloSubasta(a)} · {formatFechaSubasta(a.fecha)}
@@ -638,8 +649,8 @@ export function CrearSubastaScreen({ navigation, route }) {
       );
 
       Alert.alert(
-        '¡Subasta creada!',
-        `"${itemsSeleccionados[0]?.titulo || tituloSubasta(subasta)}" creada con ${itemsSeleccionados.length} producto(s). Abrila desde "Mis subastas" cuando estés listo.`,
+        '¡Subasta enviada!',
+        `"${itemsSeleccionados[0]?.titulo || tituloSubasta(subasta)}" fue creada y está pendiente de aprobación del administrador. Cuando la aprueben, podrás abrirla desde Mis subastas.`,
         [{ text: 'Ir a mis subastas', onPress: () => navigation.navigate('Subastas') }]
       );
     } catch (e) {

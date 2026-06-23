@@ -100,10 +100,41 @@ public class ClienteController {
         return clienteRepository.findById(id)
                 .map(cliente -> {
                     medioPago.setCliente(cliente);
+                    normalizarMedioPago(medioPago);
                     MedioPago guardado = medioPagoRepository.save(medioPago);
                     return ResponseEntity.status(201).<Object>body(guardado);
                 })
                 .orElse(ResponseEntity.notFound().build());
+    }
+
+    /** Ajusta tipo/vencimiento al esquema de mediosdepago (tarjeta/cuenta/cheque, vencimiento ≤ 7). */
+    private void normalizarMedioPago(MedioPago mp) {
+        String tipo = mp.getTipo() != null ? mp.getTipo().trim().toLowerCase() : "";
+        if ("credito".equals(tipo) || "debito".equals(tipo)) {
+            if (mp.getBanco() == null || mp.getBanco().isBlank()) {
+                mp.setBanco(tipo);
+            }
+            mp.setTipo("tarjeta");
+        } else if (!Set.of("tarjeta", "cuenta", "cheque").contains(tipo)) {
+            mp.setTipo("tarjeta");
+        }
+        if (mp.getVerificado() == null || mp.getVerificado().isBlank()) {
+            mp.setVerificado("no");
+        }
+        String venc = mp.getVencimiento();
+        if (venc != null && !venc.isBlank()) {
+            venc = venc.trim();
+            if (venc.matches("\\d{2}/\\d{2}")) {
+                String[] p = venc.split("/");
+                mp.setVencimiento("20" + p[1] + "-" + p[0]);
+            } else if (venc.matches("\\d{2}/\\d{4}")) {
+                String[] p = venc.split("/");
+                mp.setVencimiento(p[1] + "-" + p[0]);
+            }
+            if (mp.getVencimiento().length() > 7) {
+                mp.setVencimiento(mp.getVencimiento().substring(0, 7));
+            }
+        }
     }
 
     @PostMapping("/{id}/dni-fotos")

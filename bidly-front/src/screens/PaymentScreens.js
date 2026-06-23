@@ -81,10 +81,24 @@ function isValidCardNumber(numero) {
   return len >= 13 && len <= 19;
 }
 
-function tipoTarjetaLabel(tipo) {
-  if (tipo === 'credito') return 'Crédito';
-  if (tipo === 'debito') return 'Débito';
-  return tipo || 'Tarjeta';
+function cardSubtipo(medio) {
+  if (!medio) return null;
+  if (medio.banco === 'credito' || medio.banco === 'debito') return medio.banco;
+  if (medio.tipo === 'credito' || medio.tipo === 'debito') return medio.tipo;
+  return medio.tipo;
+}
+
+function tipoTarjetaLabel(medio) {
+  const sub = typeof medio === 'string' ? medio : cardSubtipo(medio);
+  if (sub === 'credito') return 'Crédito';
+  if (sub === 'debito') return 'Débito';
+  if (sub === 'tarjeta') return 'Tarjeta';
+  return sub || 'Tarjeta';
+}
+
+function esTarjeta(medio) {
+  const sub = cardSubtipo(medio);
+  return sub === 'tarjeta' || sub === 'credito' || sub === 'debito';
 }
 
 // ─── MEDIO PAGO SCREEN ────────────────────────────────────────────────────────
@@ -128,10 +142,11 @@ export function MedioPagoScreen({ navigation, route }) {
     setGuardando(true);
     try {
       const guardada = await Clientes.agregarMedioPago(user.clienteId, {
-        tipo: nuevaTarjeta.tipo,
+        tipo: 'tarjeta',
         numeroTarjeta: numero,
         vencimiento,
         titular,
+        banco: nuevaTarjeta.tipo,
         verificado: 'no',
       });
       setMedios((m) => [...m, guardada]);
@@ -161,11 +176,11 @@ export function MedioPagoScreen({ navigation, route }) {
           <TouchableOpacity key={m.identificador} activeOpacity={0.9} onPress={() => setSelIdx(i)}>
             <Card el style={{ flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 10,
               borderColor: selIdx === i ? colors.borderHi : colors.border, borderWidth: 1.5 }}>
-              {m.tipo === 'credito' || m.tipo === 'debito' ? <VisaChip /> : <OtroChip tipo={m.tipo} />}
+              {esTarjeta(m) ? <VisaChip /> : <OtroChip tipo={m.tipo} />}
               <View style={{ flex: 1 }}>
                 <Text style={{ color: '#fff', fontSize: 15, fontWeight: '800' }}>{maskCard(m.numeroTarjeta)}</Text>
                 <Text style={{ color: colors.muted, fontSize: 12.5 }}>
-                  {tipoTarjetaLabel(m.tipo)} · vence {formatExpiryDisplay(m.vencimiento)}
+                  {tipoTarjetaLabel(m)} · vence {formatExpiryDisplay(m.vencimiento)}
                 </Text>
                 {m.titular && <Text style={{ color: colors.faint, fontSize: 11.5 }}>{m.titular}</Text>}
               </View>
@@ -240,7 +255,7 @@ export function MedioPagoScreen({ navigation, route }) {
               ...params,
               medioPagoId: medioSeleccionado?.identificador,
               medioPagoLabel: medioSeleccionado
-                ? `${tipoTarjetaLabel(medioSeleccionado.tipo)} •••• ${cardDigits(medioSeleccionado.numeroTarjeta).slice(-4)}`
+                ? `${tipoTarjetaLabel(medioSeleccionado)} •••• ${cardDigits(medioSeleccionado.numeroTarjeta).slice(-4)}`
                 : '—',
             })}
           />
