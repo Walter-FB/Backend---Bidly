@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -35,6 +36,9 @@ public class SubastaEstadoService {
         if ("abierta".equals(estado) || "cerrada".equals(estado)) {
             rec.setAlgunaVezAbierta(true);
         }
+        if ("abierta".equals(estado) && rec.getFechaApertura() == null) {
+            rec.setFechaApertura(LocalDateTime.now());
+        }
         estadoAdminRepository.save(rec);
         subastaRepository.updateEstadoSiFechaValida(subastaId, estado);
     }
@@ -50,6 +54,9 @@ public class SubastaEstadoService {
             if (r.getEstado() != null) s.setEstado(r.getEstado());
             if (Boolean.TRUE.equals(r.getAlgunaVezAbierta())) {
                 s.setAlgunaVezAbierta(true);
+            }
+            if (r.getFechaApertura() != null) {
+                s.setFechaApertura(r.getFechaApertura());
             }
         });
     }

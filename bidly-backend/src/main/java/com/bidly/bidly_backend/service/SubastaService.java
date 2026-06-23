@@ -107,7 +107,7 @@ public class SubastaService {
         if ("abierta".equals(s.getEstado())) {
             s.setFase(FASE_EN_CURSO);
             LocalDateTime referencia = pujoFechaRepository.findUltimaFechaBySubastaId(s.getIdentificador())
-                .orElse(ahora);
+                .orElseGet(() -> s.getFechaApertura() != null ? s.getFechaApertura() : ahora);
             LocalDateTime cierre = referencia.plusMinutes(MINUTOS_INACTIVIDAD);
             long segundos = ChronoUnit.SECONDS.between(ahora, cierre);
             s.setSegundosRestantes(Math.max(0L, segundos));

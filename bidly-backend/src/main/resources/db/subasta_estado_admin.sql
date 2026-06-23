@@ -15,6 +15,9 @@ CREATE TABLE IF NOT EXISTS subasta_estado_admin (
 ALTER TABLE subasta_estado_admin
     ADD COLUMN IF NOT EXISTS alguna_vez_abierta BOOLEAN NOT NULL DEFAULT false;
 
+ALTER TABLE subasta_estado_admin
+    ADD COLUMN IF NOT EXISTS fecha_apertura TIMESTAMP;
+
 -- Marcar como iniciadas solo subastas cerradas que ya pasaron su fecha o vendieron algo.
 UPDATE subasta_estado_admin a SET alguna_vez_abierta = true
 FROM subastas s

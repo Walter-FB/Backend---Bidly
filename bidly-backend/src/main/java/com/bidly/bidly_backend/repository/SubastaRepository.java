@@ -23,11 +23,8 @@ public interface SubastaRepository extends JpaRepository<Subasta, Long> {
                                 @Param("categoria") String categoria,
                                 @Param("moneda") String moneda);
 
-    /** Solo actualiza estado si chkfecha sigue cumpliéndose en la fila. */
     @Modifying(clearAutomatically = true)
     @Transactional
-    @Query(value = "UPDATE subastas SET estado = :estado " +
-            "WHERE identificador = :id AND fecha > (CURRENT_DATE + INTERVAL '10 days')",
-            nativeQuery = true)
+    @Query(value = "UPDATE subastas SET estado = :estado WHERE identificador = :id", nativeQuery = true)
     int updateEstadoSiFechaValida(@Param("id") Long id, @Param("estado") String estado);
 }

@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.*;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 
 @Entity
@@ -45,4 +46,6 @@ public class Subasta {
     private Integer itemsPendientes;
     @Transient
     private Boolean algunaVezAbierta;
+    @Transient
+    private LocalDateTime fechaApertura;
 }

@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/pujos")
@@ -48,10 +49,14 @@ public class PujaController {
             @RequestParam(required = false) Long item,
             @RequestParam(required = false) Long asistente) {
         if (item != null) {
-            return ResponseEntity.ok(pujaRepository.findByItemIdentificadorOrderByImporteDesc(item));
+            List<Puja> pujas = pujaRepository.findByItemIdentificadorOrderByImporteDesc(item);
+            inyectarFechaHora(pujas);
+            return ResponseEntity.ok(pujas);
         }
         if (asistente != null) {
-            return ResponseEntity.ok(pujaRepository.findByAsistenteIdentificadorOrderByImporteDesc(asistente));
+            List<Puja> pujas = pujaRepository.findByAsistenteIdentificadorOrderByImporteDesc(asistente);
+            inyectarFechaHora(pujas);
+            return ResponseEntity.ok(pujas);
         }
         return ResponseEntity.badRequest().body(Map.of("error", "Debe indicar ?item= o ?asistente=", "code", "BAD_REQUEST"));
     }
@@ -171,5 +176,13 @@ public class PujaController {
         return pujaRepository.findByItemIdentificadorAndGanador(itemId, "si")
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.status(404).body(null));
+    }
+
+    private void inyectarFechaHora(List<Puja> pujas) {
+        if (pujas.isEmpty()) return;
+        List<Long> ids = pujas.stream().map(Puja::getIdentificador).toList();
+        Map<Long, LocalDateTime> fechas = pujoFechaRepository.findAllById(ids).stream()
+                .collect(Collectors.toMap(PujoFecha::getPujo, PujoFecha::getFechaHora));
+        pujas.forEach(p -> p.setFechaHora(fechas.get(p.getIdentificador())));
     }
 }

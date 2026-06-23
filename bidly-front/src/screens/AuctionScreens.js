@@ -2,13 +2,13 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { View, Text, ScrollView, StyleSheet, ActivityIndicator, Alert, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Screen, Header, Title, SectionLabel, Btn, Card, LiveBadge, Tag, ImgBox, ImageLightbox, BottomBar, Row, Display, SuccessBanner } from '../components/ui';
+import { Screen, Header, Title, SectionLabel, Btn, Card, LiveBadge, Tag, ImgBox, ImageLightbox, BottomBar, Row, Display, SuccessBanner, Field } from '../components/ui';
 import { colors } from '../theme/theme';
 import { Subastas, Pujas, Asistentes, Productos } from '../api/endpoints';
 import { BASE_URL } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { tituloSubasta, tagEstadoSubasta } from '../utils/subasta';
-import { etiquetaTiempoSubasta, esSubastaEnVivo, segundosHastaCierrePujas } from '../utils/tiempo';
+import { etiquetaTiempoSubasta, esSubastaEnVivo } from '../utils/tiempo';
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
@@ -245,9 +245,11 @@ export function SubastaEnVivoScreen({ navigation, route }) {
   const [pollingError, setPollingError] = useState(false);
   const [timeLeft, setTimeLeft] = useState(null);
   const [fotoAmpliada, setFotoAmpliada] = useState(false);
+  const [montoIngresado, setMontoIngresado] = useState('');
   const mounted = useRef(true);
   const asistenteIdRef = useRef(null);
   const navegado = useRef(false);
+  const baselineRef = useRef(null); // { fetchedAt: ms, segundos: number } — baseline del backend al entrar
 
   useEffect(() => {
     return () => { mounted.current = false; };
@@ -256,15 +258,40 @@ export function SubastaEnVivoScreen({ navigation, route }) {
   // Mantener ref actualizada para usarla en callbacks sin crear dependencias.
   useEffect(() => { asistenteIdRef.current = asistenteId; }, [asistenteId]);
 
-  // Countdown por inactividad de pujas (30 min) o hasta apertura programada.
+  // Obtener baseline de tiempo desde el backend al entrar a la pantalla.
   useEffect(() => {
+    if (!subastaId) return;
+    Subastas.obtener(subastaId)
+      .then((s) => {
+        if (mounted.current && s?.segundosRestantes != null) {
+          baselineRef.current = { fetchedAt: Date.now(), segundos: Number(s.segundosRestantes) };
+        }
+      })
+      .catch(() => {});
+  }, [subastaId]);
+
+  // Countdown: 30 min desde la última puja, o desde la apertura real (baseline del backend).
+  useEffect(() => {
+    const INACTIVIDAD_MS = 30 * 60 * 1000;
     const tick = () => {
-      setTimeLeft(segundosHastaCierrePujas(pujas, fecha, hora));
+      if (pujas.length > 0 && pujas[0]?.fechaHora) {
+        const ultima = new Date(pujas[0].fechaHora).getTime();
+        if (!Number.isNaN(ultima)) {
+          setTimeLeft(Math.max(0, Math.floor((ultima + INACTIVIDAD_MS - Date.now()) / 1000)));
+          return;
+        }
+      }
+      const b = baselineRef.current;
+      if (b) {
+        setTimeLeft(Math.max(0, Math.floor(b.segundos - (Date.now() - b.fetchedAt) / 1000)));
+        return;
+      }
+      setTimeLeft(null);
     };
     tick();
     const interval = setInterval(tick, 1000);
     return () => clearInterval(interval);
-  }, [pujas, fecha, hora]);
+  }, [pujas]);
 
   // Inscribir al usuario como asistente.
   useEffect(() => {
@@ -338,6 +365,21 @@ export function SubastaEnVivoScreen({ navigation, route }) {
       ? Number(pujaActual) + Number(precioBase) * 0.20
       : Number(precioBase) * 1.20;
 
+  // Sincronizar el input con el mínimo cuando cambia (nueva puja de otro postor).
+  useEffect(() => {
+    setMontoIngresado((prev) => {
+      const num = parseFloat(prev.replace(',', '.'));
+      return Number.isNaN(num) || num < proximaPuja ? String(proximaPuja) : prev;
+    });
+  }, [proximaPuja]);
+
+  // Validación del monto ingresado.
+  const montoNum = parseFloat(montoIngresado.replace(',', '.'));
+  const montoValido = !Number.isNaN(montoNum) && montoNum > 0;
+  const montoMenorQueMin = montoValido && montoNum < proximaPuja - 0.001;
+  const montoMayorQueMax = maxPuja != null && montoValido && montoNum > maxPuja + 0.001;
+  const montoInvalido = !montoValido || montoMenorQueMin || montoMayorQueMax;
+
   const onPujar = async () => {
     // Invitado: mostrar aviso y redirigir al login.
     if (user?.isGuest) {
@@ -356,7 +398,7 @@ export function SubastaEnVivoScreen({ navigation, route }) {
     }
     setPujando(true);
     try {
-      await Pujas.pujar(asistenteId, itemId, proximaPuja);
+      await Pujas.pujar(asistenteId, itemId, montoNum);
       cargarPujas();
     } catch (e) {
       Alert.alert('No se pudo pujar', mensajeError(e, proximaPuja, maxPuja, moneda));
@@ -429,6 +471,29 @@ export function SubastaEnVivoScreen({ navigation, route }) {
           )}
         </Card>
 
+        {!user?.isGuest && asistenteId && !esLidero && (
+          <Card el style={{ marginTop: 12 }}>
+            <Text style={{ color: colors.muted, fontSize: 11, fontWeight: '800', letterSpacing: 1 }}>TU OFERTA</Text>
+            <Field
+              value={montoIngresado}
+              onChangeText={setMontoIngresado}
+              keyboardType="decimal-pad"
+              style={{ fontSize: 22, fontWeight: '800', color: montoInvalido ? colors.red : '#fff', marginTop: 6 }}
+            />
+            <Text style={{ color: montoMenorQueMin || montoMayorQueMax ? colors.red : colors.muted, fontSize: 12, marginTop: 4 }}>
+              {maxPuja != null
+                ? `Mín: ${formatImporte(proximaPuja, moneda)}  ·  Máx: ${formatImporte(maxPuja, moneda)}`
+                : `Mín: ${formatImporte(proximaPuja, moneda)}  ·  Sin tope`}
+            </Text>
+            {montoMenorQueMin && (
+              <Text style={{ color: colors.red, fontSize: 12, marginTop: 2 }}>El monto está por debajo del mínimo permitido.</Text>
+            )}
+            {montoMayorQueMax && (
+              <Text style={{ color: colors.red, fontSize: 12, marginTop: 2 }}>El monto supera el tope máximo.</Text>
+            )}
+          </Card>
+        )}
+
         {esLidero && (
           <Card el style={{ marginTop: 10, backgroundColor: 'rgba(55,214,111,0.12)', borderColor: colors.green, borderWidth: 1 }}>
             <Text style={{ color: colors.green, fontWeight: '800', textAlign: 'center' }}>✓ Estás liderando la puja</Text>
@@ -488,10 +553,11 @@ export function SubastaEnVivoScreen({ navigation, route }) {
             title={
               user?.isGuest
                 ? 'Pujar (requiere cuenta)'
-                : pujando ? 'Pujando…' : `Pujar ${formatImporte(proximaPuja, moneda)}`
+                : pujando ? 'Pujando…'
+                : `Pujar ${montoValido ? formatImporte(montoNum, moneda) : '—'}`
             }
             onPress={onPujar}
-            disabled={pujando || (!user?.isGuest && !asistenteId)}
+            disabled={pujando || (!user?.isGuest && (!asistenteId || montoInvalido))}
           />
         )}
       </BottomBar>
