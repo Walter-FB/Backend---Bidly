@@ -1,7 +1,7 @@
 // BIDLY — shared UI kit (RN). Mirrors preview/components.jsx.
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Image, Modal, Dimensions,
+  View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Image, Modal, Dimensions, Animated,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -93,6 +93,36 @@ export function LiveBadge({ style }) {
       <View style={{ width: 7, height: 7, borderRadius: 2, backgroundColor: '#fff' }} />
       <Text style={s.liveTxt}>EN VIVO</Text>
     </View>
+  );
+}
+
+export function SuccessBanner({ message, onDismiss }) {
+  const opacity = useRef(new Animated.Value(0)).current;
+  const translateY = useRef(new Animated.Value(-10)).current;
+
+  useEffect(() => {
+    if (!message) return undefined;
+    opacity.setValue(0);
+    translateY.setValue(-10);
+    Animated.parallel([
+      Animated.timing(opacity, { toValue: 1, duration: 350, useNativeDriver: true }),
+      Animated.spring(translateY, { toValue: 0, useNativeDriver: true, tension: 80, friction: 12 }),
+    ]).start();
+    const timer = setTimeout(() => {
+      Animated.timing(opacity, { toValue: 0, duration: 450, useNativeDriver: true }).start(({ finished }) => {
+        if (finished) onDismiss?.();
+      });
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, [message, onDismiss, opacity, translateY]);
+
+  if (!message) return null;
+
+  return (
+    <Animated.View style={[s.successBanner, { opacity, transform: [{ translateY }] }]}>
+      <Ionicons name="checkmark-circle" size={20} color={colors.green} />
+      <Text style={s.successBannerTxt}>{message}</Text>
+    </Animated.View>
   );
 }
 
@@ -249,6 +279,14 @@ const s = StyleSheet.create({
   liveTxt: { color: '#fff', fontSize: 10.5, fontWeight: '800', letterSpacing: 0.6 },
   bottomBar: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 22, paddingTop: 14,
     backgroundColor: colors.bg },
+  successBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    marginHorizontal: 16, marginTop: 10, marginBottom: 2,
+    backgroundColor: 'rgba(55, 214, 111, 0.12)', borderRadius: 12,
+    borderWidth: 1, borderColor: 'rgba(55, 214, 111, 0.35)',
+    paddingVertical: 12, paddingHorizontal: 14,
+  },
+  successBannerTxt: { color: colors.green, fontSize: 14, fontWeight: '700', flex: 1 },
 });
 
-export default { Screen, Header, Title, Sub, SectionLabel, Btn, Chip, Card, Field, LiveBadge, Tag, ImgBox, ImageLightbox, BottomBar, Row, Display };
+export default { Screen, Header, Title, Sub, SectionLabel, Btn, Chip, Card, Field, LiveBadge, SuccessBanner, Tag, ImgBox, ImageLightbox, BottomBar, Row, Display };

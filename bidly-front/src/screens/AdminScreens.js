@@ -4,7 +4,7 @@ import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert, ActivityIn
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { Display, Tag, Chip, Card, SectionLabel, Row, Btn, LiveBadge } from '../components/ui';
+import { Display, Tag, Chip, Card, SectionLabel, Row, Btn, LiveBadge, SuccessBanner } from '../components/ui';
 import { colors } from '../theme/theme';
 import { Subastas, Pujas, Items, SubastaRevision } from '../api/endpoints';
 import { tituloSubasta, formatFechaSubasta } from '../utils/subasta';
@@ -34,6 +34,7 @@ export function DashboardAdminScreen() {
   const [revisiones, setRevisiones] = useState([]);
   const [loadingRevisiones, setLoadingRevisiones] = useState(false);
   const [pendientesCount, setPendientesCount] = useState(0);
+  const [successMsg, setSuccessMsg] = useState(null);
   const mounted = useRef(true);
 
   useEffect(() => () => { mounted.current = false; }, []);
@@ -224,6 +225,9 @@ export function DashboardAdminScreen() {
               await Subastas.actualizarEstado(selId, next);
               await refreshContexto();
               await loadSubastas();
+              if (mounted.current) {
+                setSuccessMsg(next === 'abierta' ? 'Subasta abierta correctamente' : 'Subasta cerrada correctamente');
+              }
             } catch (e) {
               Alert.alert('Error', e.message || `No se pudo ${verbo} la subasta.`);
             } finally {
@@ -244,27 +248,6 @@ export function DashboardAdminScreen() {
       await loadSubastas();
     } catch (e) {
       Alert.alert('Error', e.message || 'No se pudo adjudicar el ítem.');
-    } finally {
-      if (mounted.current) setCtrl(false);
-    }
-  };
-
-  const nextItem = async () => {
-    if (ctrl || !selId) return;
-    setCtrl(true);
-    try {
-      const data = await Subastas.catalogos(selId);
-      if (!mounted.current) return;
-      const list = Array.isArray(data) ? data : [];
-      setItems(list);
-      if (list.length === 0) {
-        setPujas([]);
-        Alert.alert('Sin catálogo', 'Esta subasta no tiene ítems cargados.');
-        return;
-      }
-      setActiveIdx(prev => (prev + 1) % list.length);
-    } catch {
-      Alert.alert('Error', 'No se pudo refrescar el catálogo.');
     } finally {
       if (mounted.current) setCtrl(false);
     }
@@ -297,6 +280,8 @@ export function DashboardAdminScreen() {
         ))}
       </View>
 
+      <SuccessBanner message={successMsg} onDismiss={() => setSuccessMsg(null)} />
+
       <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 48 }} showsVerticalScrollIndicator={false}>
         {tab === 'solicitudes' ? (
           <SolicitudesSection
@@ -322,7 +307,6 @@ export function DashboardAdminScreen() {
             onCerrar={() => aplicarEstado('cerrada')}
             onRefresh={refreshContexto}
             onAdjudicar={adjudicar}
-            onNext={nextItem}
             ctrl={ctrl}
             lastRefresh={lastRefresh}
           />
@@ -335,8 +319,6 @@ export function DashboardAdminScreen() {
             onFiltro={setFiltroLista}
             onSelect={abrirSubasta}
             onRefresh={loadSubastas}
-            onIrSolicitudes={() => setTab('solicitudes')}
-            pendientesCount={pendientesCount}
           />
         )}
       </ScrollView>
@@ -345,18 +327,10 @@ export function DashboardAdminScreen() {
 }
 
 function SubastasListSection({
-  subastas, total, loading, filtro, onFiltro, onSelect, onRefresh, onIrSolicitudes, pendientesCount,
+  subastas, total, loading, filtro, onFiltro, onSelect, onRefresh,
 }) {
   return (
     <View style={{ gap: 12, paddingTop: 14 }}>
-      <Btn
-        title={pendientesCount > 0
-          ? `Solicitudes a confirmar (${pendientesCount})`
-          : 'Solicitudes a confirmar'}
-        kind="primary"
-        onPress={onIrSolicitudes}
-      />
-
       <ScrollView horizontal showsHorizontalScrollIndicator={false}>
         <View style={{ flexDirection: 'row', gap: 8, paddingBottom: 4 }}>
           {FILTROS_SUBASTA.map(([k, label]) => (
@@ -482,7 +456,7 @@ function SolicitudesSection({
 
 function EstadoSection({
   subasta, items, asistentes, pujas, activeIdx, onBack, onSelectItem,
-  onAbrir, onCerrar, onRefresh, onAdjudicar, onNext, ctrl, lastRefresh,
+  onAbrir, onCerrar, onRefresh, onAdjudicar, ctrl, lastRefresh,
 }) {
   const isOpen = subasta?.estado === 'abierta';
   const allAdjudicados = items.length > 0 && items.every(i => i.subastado === 'si');
@@ -577,16 +551,13 @@ function EstadoSection({
         <Btn title="Cerrar" kind="danger" style={{ flex: 1 }} onPress={onCerrar} disabled={ctrl || !isOpen} />
       </View>
       <Btn title="Refrescar" kind="ghost" onPress={onRefresh} disabled={ctrl} style={{ marginTop: 4 }} />
-      <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
-        <Btn
-          title="Adjudicar ítem"
-          kind="primary"
-          style={{ flex: 1 }}
-          onPress={onAdjudicar}
-          disabled={ctrl || !items[activeIdx] || items[activeIdx]?.subastado === 'si'}
-        />
-        <Btn title="Siguiente →" kind="ghost" style={{ flex: 1 }} onPress={onNext} disabled={ctrl} />
-      </View>
+      <Btn
+        title="Adjudicar ítem"
+        kind="primary"
+        onPress={onAdjudicar}
+        disabled={ctrl || !items[activeIdx] || items[activeIdx]?.subastado === 'si'}
+        style={{ marginTop: 4 }}
+      />
     </View>
   );
 }

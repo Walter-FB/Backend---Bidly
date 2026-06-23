@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { View, Text, ScrollView, StyleSheet, ActivityIndicator, Alert, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Screen, Header, Title, SectionLabel, Btn, Card, LiveBadge, Tag, ImgBox, ImageLightbox, BottomBar, Row, Display } from '../components/ui';
+import { Screen, Header, Title, SectionLabel, Btn, Card, LiveBadge, Tag, ImgBox, ImageLightbox, BottomBar, Row, Display, SuccessBanner } from '../components/ui';
 import { colors } from '../theme/theme';
 import { Subastas, Pujas, Asistentes, Productos, Items, Clientes } from '../api/endpoints';
 import { BASE_URL } from '../api/client';
@@ -605,6 +605,7 @@ export function SubastaAdminScreen({ navigation, route }) {
   const [loading, setLoading] = useState(true);
   const [adjudicando, setAdjudicando] = useState(false);
   const [cambiandoEstado, setCambiandoEstado] = useState(false);
+  const [successMsg, setSuccessMsg] = useState(null);
   const [fotoAmpliada, setFotoAmpliada] = useState(false);
   const mounted = useRef(true);
 
@@ -668,7 +669,10 @@ export function SubastaAdminScreen({ navigation, route }) {
             setCambiandoEstado(true);
             try {
               const updated = await Subastas.actualizarEstado(subastaId, nuevoEstado);
-              if (mounted.current) setSubasta(updated);
+              if (mounted.current) {
+                setSubasta(updated);
+                setSuccessMsg(nuevoEstado === 'abierta' ? 'Subasta abierta correctamente' : 'Subasta cerrada correctamente');
+              }
             } catch (e) {
               const msg = e.data?.code === 'NOT_APPROVED'
                 ? 'Tu subasta aún no fue aprobada por un administrador.'
@@ -715,15 +719,6 @@ export function SubastaAdminScreen({ navigation, route }) {
     );
   };
 
-  const onSiguiente = () => {
-    const pendientes = items.filter((i) => i.subastado !== 'si' && i.identificador !== itemActivo?.identificador);
-    if (pendientes.length === 0) {
-      return Alert.alert('Sin ítems pendientes', 'Todos los ítems ya fueron adjudicados.');
-    }
-    setItemActivo(pendientes[0]);
-    setPujas([]);
-  };
-
   if (loading) {
     return (
       <Screen><Header />
@@ -746,6 +741,7 @@ export function SubastaAdminScreen({ navigation, route }) {
   return (
     <Screen>
       <Header />
+      <SuccessBanner message={successMsg} onDismiss={() => setSuccessMsg(null)} />
       <ScrollView contentContainerStyle={{ paddingHorizontal: 22, paddingBottom: 130 }} showsVerticalScrollIndicator={false}>
         {/* Cabecera */}
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
@@ -801,23 +797,12 @@ export function SubastaAdminScreen({ navigation, route }) {
 
             {/* Acciones sobre el ítem */}
             {!itemActivoAdjudicado && (
-              <View style={{ flexDirection: 'row', gap: 10, marginTop: 8 }}>
-                <Btn
-                  title={adjudicando ? 'Adjudicando…' : 'Adjudicar ítem'}
-                  onPress={onAdjudicar}
-                  disabled={adjudicando || !estaAbierta}
-                  style={{ flex: 1 }}
-                />
-                <Btn
-                  title="Siguiente →"
-                  kind="ghost"
-                  onPress={onSiguiente}
-                  style={{ flex: 1 }}
-                />
-              </View>
-            )}
-            {itemActivoAdjudicado && (
-              <Btn title="Siguiente ítem →" onPress={onSiguiente} style={{ marginTop: 8 }} />
+              <Btn
+                title={adjudicando ? 'Adjudicando…' : 'Adjudicar ítem'}
+                onPress={onAdjudicar}
+                disabled={adjudicando || !estaAbierta}
+                style={{ marginTop: 8 }}
+              />
             )}
           </Card>
         ) : (
