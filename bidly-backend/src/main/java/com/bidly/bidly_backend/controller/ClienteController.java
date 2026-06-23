@@ -119,7 +119,7 @@ public class ClienteController {
             mp.setTipo("tarjeta");
         }
         if (mp.getVerificado() == null || mp.getVerificado().isBlank()) {
-            mp.setVerificado("no");
+            mp.setVerificado("si");
         }
         String venc = mp.getVencimiento();
         if (venc != null && !venc.isBlank()) {

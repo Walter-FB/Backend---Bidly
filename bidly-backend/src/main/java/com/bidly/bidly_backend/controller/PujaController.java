@@ -125,11 +125,11 @@ public class PujaController {
                     .body(Map.of("error", "El item ya fue adjudicado", "code", "ITEM_SOLD"));
         }
 
-        // 8. Cliente tiene al menos 1 medio de pago verificado
+        // 8. Cliente tiene al menos un medio de pago registrado (sin pasarela real aún)
         Long clienteId = asistente.getCliente().getIdentificador();
-        if (medioPagoRepository.findByClienteIdentificadorAndVerificado(clienteId, "si").isEmpty()) {
+        if (medioPagoRepository.findByClienteIdentificador(clienteId).isEmpty()) {
             return ResponseEntity.status(403)
-                    .body(Map.of("error", "Necesitás un medio de pago verificado para pujar", "code", "NO_PAYMENT"));
+                    .body(Map.of("error", "Necesitás registrar un medio de pago para pujar", "code", "NO_PAYMENT"));
         }
 
         // 9. Mínimo: última puja + 1% del precio base (o precio base si no hay pujas)

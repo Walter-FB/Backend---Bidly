@@ -35,7 +35,7 @@ function mensajeError(e, proximaPuja, maxPuja, moneda) {
   switch (code) {
     case 'MIN_BID':      return `La oferta mínima es ${formatImporte(min, moneda)}.`;
     case 'MAX_BID':      return `El tope para esta subasta es ${formatImporte(max, moneda)}.`;
-    case 'NO_PAYMENT':   return 'Necesitás un medio de pago verificado para pujar.';
+    case 'NO_PAYMENT':   return 'Registrá un medio de pago en tu perfil para pujar.';
     case 'CATEGORY':     return 'Tu categoría no permite esta subasta.';
     case 'FORBIDDEN':    return 'No estás inscripto en esta subasta.';
     case 'AUCTION_CLOSED':
@@ -241,6 +241,7 @@ export function SubastaEnVivoScreen({ navigation, route }) {
   const [pujas, setPujas] = useState([]);
   const [asistenteId, setAsistenteId] = useState(null);
   const [tieneAcceso, setTieneAcceso] = useState(null);
+  const [motivoBloqueo, setMotivoBloqueo] = useState(null);
   const [loadingPujas, setLoadingPujas] = useState(true);
   const [pujando, setPujando] = useState(false);
   const [pollingError, setPollingError] = useState(false);
@@ -276,13 +277,23 @@ export function SubastaEnVivoScreen({ navigation, route }) {
       .catch(() => {});
 
     const RANK = { comun: 1, especial: 2, plata: 3, oro: 4, platino: 5 };
-    const categoryOk = (RANK[user.categoria] ?? 0) >= (RANK[categoriaSubasta] ?? 0);
+    const rankCliente = RANK[user.categoria] ?? 1;
+    const rankSubasta = RANK[categoriaSubasta] ?? 1;
+    const categoryOk = rankCliente >= rankSubasta;
     Clientes.mediosPago(user.clienteId)
       .then((medios) => {
-        const tieneVerificado = (medios || []).some((m) => m.verificado === 'si');
-        if (mounted.current) setTieneAcceso(categoryOk && tieneVerificado);
+        const tieneMedio = (medios || []).length > 0;
+        if (!mounted.current) return;
+        if (!categoryOk) setMotivoBloqueo('categoria');
+        else if (!tieneMedio) setMotivoBloqueo('pago');
+        else setMotivoBloqueo(null);
+        setTieneAcceso(categoryOk && tieneMedio);
       })
-      .catch(() => { if (mounted.current) setTieneAcceso(false); });
+      .catch(() => {
+        if (!mounted.current) return;
+        setMotivoBloqueo('pago');
+        setTieneAcceso(false);
+      });
   }, [user, subastaId, categoriaSubasta]);
 
   // Cargar pujas y refrescar cada 5 segundos.
@@ -455,7 +466,11 @@ export function SubastaEnVivoScreen({ navigation, route }) {
         {!user?.isGuest && tieneAcceso === false && (
           <Card el style={{ marginTop: 10, backgroundColor: 'rgba(255,59,48,0.10)', borderColor: '#ff3b30', borderWidth: 1 }}>
             <Text style={{ color: '#ff3b30', fontWeight: '700', textAlign: 'center', fontSize: 13 }}>
-              No podés pujar en esta subasta. Verificá tu medio de pago o tu categoría.
+              {motivoBloqueo === 'categoria'
+                ? `Tu categoría (${user.categoria || 'común'}) no alcanza para esta subasta (${categoriaSubasta || '—'}).`
+                : motivoBloqueo === 'pago'
+                  ? 'Registrá un medio de pago en tu perfil para pujar.'
+                  : 'No podés pujar en esta subasta.'}
             </Text>
           </Card>
         )}
@@ -700,7 +715,7 @@ export function SubastaAdminScreen({ navigation, route }) {
 
   const pujaTop = pujas[0];
   const moneda = subasta?.moneda || 'pesos';
-  const estaAbierta = subasta?.estado === 'abierta';
+  const enVivo = subasta?.fase === 'en_curso';
   const itemActivoAdjudicado = itemActivo?.subastado === 'si';
   const tituloAdmin = tituloSubasta(subasta, items);
   const tagEstado = tagEstadoSubasta(subasta);
@@ -826,18 +841,25 @@ export function SubastaAdminScreen({ navigation, route }) {
       </ScrollView>
 
       <BottomBar>
-        <Btn
-          title={
-            cambiandoEstado
-              ? 'Actualizando…'
-              : estaAbierta
-              ? 'Cerrar subasta'
-              : 'Iniciar puja'
-          }
-          kind={estaAbierta ? 'danger' : 'primary'}
-          onPress={onToggleEstado}
-          disabled={cambiandoEstado}
-        />
+        {enVivo ? (
+          <View style={{ flexDirection: 'row', gap: 10, flex: 1 }}>
+            <Btn title="Puja iniciada" kind="ghost" style={{ flex: 1 }} disabled />
+            <Btn
+              title={cambiandoEstado ? 'Actualizando…' : 'Cerrar'}
+              kind="danger"
+              style={{ flex: 1 }}
+              onPress={onToggleEstado}
+              disabled={cambiandoEstado}
+            />
+          </View>
+        ) : (
+          <Btn
+            title={cambiandoEstado ? 'Actualizando…' : 'Iniciar puja'}
+            kind="primary"
+            onPress={onToggleEstado}
+            disabled={cambiandoEstado}
+          />
+        )}
       </BottomBar>
 
       <ImageLightbox

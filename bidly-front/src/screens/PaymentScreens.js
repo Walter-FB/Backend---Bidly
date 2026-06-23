@@ -147,13 +147,13 @@ export function MedioPagoScreen({ navigation, route }) {
         vencimiento,
         titular,
         banco: nuevaTarjeta.tipo,
-        verificado: 'no',
+        verificado: 'si',
       });
       setMedios((m) => [...m, guardada]);
       setSelIdx(medios.length);
       setMostrarForm(false);
       setNuevaTarjeta({ tipo: 'credito', numeroTarjeta: '', vencimiento: '', titular: '' });
-      Alert.alert('Tarjeta guardada', 'Tu medio de pago fue agregado. La verificación puede demorar unos minutos.');
+      Alert.alert('Tarjeta guardada', 'Ya podés usarla para pujar en subastas.');
     } catch (e) {
       Alert.alert('Error', e.message || 'No se pudo guardar la tarjeta.');
     } finally {
@@ -184,9 +184,7 @@ export function MedioPagoScreen({ navigation, route }) {
                 </Text>
                 {m.titular && <Text style={{ color: colors.faint, fontSize: 11.5 }}>{m.titular}</Text>}
               </View>
-              {m.verificado === 'si'
-                ? <Tag label="VERIFICADA" color={colors.green} />
-                : <Tag label="PENDIENTE" color={colors.gold} />}
+              <Tag label={m.verificado === 'si' ? 'VERIFICADA' : 'ACTIVA'} color={colors.green} />
               <Radio on={selIdx === i} />
             </Card>
           </TouchableOpacity>
