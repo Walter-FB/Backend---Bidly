@@ -16,6 +16,17 @@ const FILTROS_SUBASTA = [
   ['con_items', 'Con ítems'],
 ];
 
+function tagEstadoSubasta(sub) {
+  const rev = sub.revisionEstado;
+  if (rev === 'pendiente') return { label: 'PENDIENTE', color: colors.gold };
+  if (rev === 'pausada') return { label: 'PAUSADA', color: colors.muted };
+  if (rev === 'rechazada') return { label: 'RECHAZADA', color: colors.red };
+  if (sub.fase === 'en_curso') return { label: 'EN VIVO', color: colors.green };
+  if (sub.fase === 'programada') return { label: 'POR ABRIR', color: colors.blue };
+  if (sub.fase === 'finalizada') return { label: 'FINALIZADA', color: colors.muted };
+  return { label: sub.estado === 'abierta' ? 'ABIERTA' : 'CERRADA', color: sub.estado === 'abierta' ? colors.green : colors.muted };
+}
+
 export function DashboardAdminScreen() {
   const insets = useSafeAreaInsets();
   const nav = useNavigation();
@@ -358,7 +369,7 @@ function SubastasListSection({
       )}
 
       {subastas.map((sub) => {
-        const abierta = sub.estado === 'abierta';
+        const tag = tagEstadoSubasta(sub);
         return (
           <TouchableOpacity key={sub.identificador} onPress={() => onSelect(sub.identificador)} activeOpacity={0.85}>
             <Card el style={{ gap: 6 }}>
@@ -370,9 +381,7 @@ function SubastasListSection({
                   </Display>
                 </View>
                 <View style={{ alignItems: 'flex-end', gap: 4 }}>
-                  {sub.revisionEstado === 'pendiente' && <Tag label="PENDIENTE" color={colors.gold} />}
-                  {sub.revisionEstado === 'pausada' && <Tag label="PAUSADA" color={colors.muted} />}
-                  <Tag label={abierta ? 'ABIERTA' : 'CERRADA'} color={abierta ? colors.green : colors.muted} />
+                  <Tag label={tag.label} color={tag.color} />
                 </View>
               </View>
               <Text style={{ color: colors.muted, fontSize: 12 }}>
@@ -458,7 +467,8 @@ function EstadoSection({
   subasta, items, asistentes, pujas, activeIdx, onBack, onSelectItem,
   onAbrir, onCerrar, onRefresh, onAdjudicar, ctrl, lastRefresh,
 }) {
-  const isOpen = subasta?.estado === 'abierta';
+  const tag = tagEstadoSubasta(subasta || {});
+  const isOpen = subasta?.fase === 'en_curso';
   const allAdjudicados = items.length > 0 && items.every(i => i.subastado === 'si');
   const datosInconsistentes = isOpen && allAdjudicados;
 
@@ -481,7 +491,7 @@ function EstadoSection({
       <Card>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
           <Display style={{ fontSize: 15 }} numberOfLines={2}>{tituloSubasta(subasta, items)}</Display>
-          {isOpen ? <LiveBadge /> : <Tag label="CERRADA" color={colors.muted} />}
+          {isOpen ? <LiveBadge /> : <Tag label={tag.label} color={tag.color} />}
         </View>
         <Row k="ID" v={`#${subasta?.identificador ?? '—'}`} />
         <Row k="Categoría" v={subasta?.categoria ?? '—'} />

@@ -88,12 +88,14 @@ public class SubastaService {
             .filter(i -> !"si".equals(i.getSubastado()))
             .count();
         s.setItemsPendientes((int) pendientes);
+        boolean todosVendidos = !items.isEmpty() && pendientes == 0;
 
-        if ("cerrada".equals(s.getEstado()) || pendientes == 0 && !items.isEmpty()) {
-            if (pendientes == 0 && !items.isEmpty() && "abierta".equals(s.getEstado())) {
-                subastaEstadoService.aplicarEstado(s.getIdentificador(), "cerrada");
-                s.setEstado("cerrada");
-            }
+        if (todosVendidos && "abierta".equals(s.getEstado())) {
+            subastaEstadoService.aplicarEstado(s.getIdentificador(), "cerrada");
+            s.setEstado("cerrada");
+        }
+
+        if (todosVendidos) {
             s.setFase(FASE_FINALIZADA);
             s.setSegundosRestantes(0L);
             return;
@@ -101,24 +103,30 @@ public class SubastaService {
 
         LocalDateTime ahora = LocalDateTime.now();
         LocalDateTime inicio = inicioSubasta(s);
-        if (inicio == null) {
-            s.setFase(FASE_EN_CURSO);
-            s.setSegundosRestantes(null);
-            return;
-        }
 
-        if (inicio.isAfter(ahora)) {
+        if (inicio != null && inicio.isAfter(ahora)) {
             s.setFase(FASE_PROGRAMADA);
             s.setSegundosRestantes(ChronoUnit.SECONDS.between(ahora, inicio));
             return;
         }
 
-        s.setFase(FASE_EN_CURSO);
-        LocalDateTime referencia = pujoFechaRepository.findUltimaFechaBySubastaId(s.getIdentificador())
-            .orElse(inicio);
-        LocalDateTime cierre = referencia.plusMinutes(MINUTOS_INACTIVIDAD);
-        long segundos = ChronoUnit.SECONDS.between(ahora, cierre);
-        s.setSegundosRestantes(Math.max(0L, segundos));
+        if ("abierta".equals(s.getEstado())) {
+            s.setFase(FASE_EN_CURSO);
+            LocalDateTime referencia = pujoFechaRepository.findUltimaFechaBySubastaId(s.getIdentificador())
+                .orElse(inicio);
+            if (referencia == null) {
+                s.setSegundosRestantes(null);
+                return;
+            }
+            LocalDateTime cierre = referencia.plusMinutes(MINUTOS_INACTIVIDAD);
+            long segundos = ChronoUnit.SECONDS.between(ahora, cierre);
+            s.setSegundosRestantes(Math.max(0L, segundos));
+            return;
+        }
+
+        // cerrada en BD = aún no abierta por el dueño, no significa finalizada
+        s.setFase(FASE_PROGRAMADA);
+        s.setSegundosRestantes(0L);
     }
 
     private LocalDateTime inicioSubasta(Subasta s) {

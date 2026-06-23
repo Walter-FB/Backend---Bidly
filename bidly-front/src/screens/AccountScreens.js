@@ -626,7 +626,7 @@ export function CrearSubastaScreen({ navigation, route }) {
       const subasta = await Subastas.crear({
         fecha: f.fecha,
         hora: f.hora + ':00',
-        estado: 'cerrada',
+        estado: 'cerrada', // aún no abierta; el dueño la abre desde Mis subastas
         subastador: user.clienteId,
         ubicacion: f.ubicacion,
         categoria: f.categoria,

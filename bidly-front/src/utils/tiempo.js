@@ -30,6 +30,7 @@ export function etiquetaTiempoSubasta(subasta) {
 
   if (subasta.fase === 'programada') {
     if (secs == null) return 'Próximamente';
+    if (secs <= 0 && subasta.estado === 'cerrada') return 'Esperando apertura';
     return `Abre en ${formatDuracion(Number(secs))}`;
   }
 
