@@ -10,6 +10,8 @@ import com.bidly.bidly_backend.repository.PujaRepository;
 import com.bidly.bidly_backend.repository.PujoFechaRepository;
 import com.bidly.bidly_backend.service.NotificacionService;
 import jakarta.transaction.Transactional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -27,6 +29,7 @@ import java.util.stream.Collectors;
 @RequestMapping("/api/pujos")
 public class PujaController {
 
+    private static final Logger log = LoggerFactory.getLogger(PujaController.class);
     private static final Set<String> CATEGORIAS_SIN_LIMITE = Set.of("oro", "platino");
 
     @Autowired
@@ -44,6 +47,7 @@ public class PujaController {
     @Autowired
     private NotificacionService notificacionService;
 
+    @Transactional
     @GetMapping
     public ResponseEntity<?> listar(
             @RequestParam(required = false) Long item,
@@ -71,6 +75,11 @@ public class PujaController {
                 || puja.getImporte() == null) {
             return ResponseEntity.badRequest()
                     .body(Map.of("error", "Campos obligatorios faltantes (item, asistente, importe)", "code", "BAD_BODY"));
+        }
+
+        if (puja.getImporte().compareTo(BigDecimal.ZERO) <= 0) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("error", "El importe debe ser mayor a cero", "code", "INVALID_BID_AMOUNT"));
         }
 
         // 2. Asistente existe
@@ -110,8 +119,13 @@ public class PujaController {
                     .body(Map.of("error", "El item ya fue adjudicado", "code", "ITEM_SOLD"));
         }
 
-        // 9. Mínimo: última puja + 1% del precio base (o precio base si no hay pujas)
         BigDecimal precioBase = item.getPrecioBase();
+        if (precioBase == null || precioBase.compareTo(BigDecimal.ZERO) <= 0) {
+            return ResponseEntity.status(400)
+                    .body(Map.of("error", "El ítem no tiene un precio base válido", "code", "INVALID_BASE_PRICE"));
+        }
+
+        // 9. Mínimo: última puja + 1% del precio base (o precio base si no hay pujas)
         BigDecimal minIncremento = precioBase.multiply(BigDecimal.valueOf(0.01))
                 .setScale(2, RoundingMode.HALF_UP);
         Optional<Puja> ultimaPujaOpt = pujaRepository.findTopByItemIdentificadorOrderByImporteDesc(
@@ -182,7 +196,19 @@ public class PujaController {
         if (pujas.isEmpty()) return;
         List<Long> ids = pujas.stream().map(Puja::getIdentificador).toList();
         Map<Long, LocalDateTime> fechas = pujoFechaRepository.findAllById(ids).stream()
+                .filter(pf -> pf.getFechaHora() != null)
                 .collect(Collectors.toMap(PujoFecha::getPujo, PujoFecha::getFechaHora));
-        pujas.forEach(p -> p.setFechaHora(fechas.get(p.getIdentificador())));
+        for (Puja p : pujas) {
+            LocalDateTime fechaHora = fechas.get(p.getIdentificador());
+            if (fechaHora == null) {
+                log.warn("PUJAS - pujaId={} sin pujo_fecha; reparando registro", p.getIdentificador());
+                fechaHora = LocalDateTime.now();
+                PujoFecha pf = new PujoFecha();
+                pf.setPujo(p.getIdentificador());
+                pf.setFechaHora(fechaHora);
+                pujoFechaRepository.save(pf);
+            }
+            p.setFechaHora(fechaHora);
+        }
     }
 }

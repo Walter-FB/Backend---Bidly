@@ -33,14 +33,35 @@ public class SubastaEstadoService {
                     return n;
                 });
         rec.setEstado(estado);
-        if ("abierta".equals(estado) || "cerrada".equals(estado)) {
+        if ("abierta".equals(estado)) {
             rec.setAlgunaVezAbierta(true);
-        }
-        if ("abierta".equals(estado) && rec.getFechaApertura() == null) {
-            rec.setFechaApertura(LocalDateTime.now());
+            if (rec.getFechaApertura() == null) {
+                rec.setFechaApertura(LocalDateTime.now());
+            }
         }
         estadoAdminRepository.save(rec);
         subastaRepository.updateEstadoSiFechaValida(subastaId, estado);
+    }
+
+    @Transactional
+    public LocalDateTime asegurarFechaApertura(Long subastaId, LocalDateTime candidata) {
+        SubastaEstadoAdmin rec = estadoAdminRepository.findById(subastaId)
+                .orElseGet(() -> {
+                    SubastaEstadoAdmin n = new SubastaEstadoAdmin();
+                    n.setSubasta(subastaId);
+                    n.setEstado("abierta");
+                    n.setAlgunaVezAbierta(true);
+                    return n;
+                });
+        if (rec.getFechaApertura() != null) {
+            return rec.getFechaApertura();
+        }
+        rec.setFechaApertura(candidata);
+        if ("abierta".equals(rec.getEstado())) {
+            rec.setAlgunaVezAbierta(true);
+        }
+        estadoAdminRepository.save(rec);
+        return candidata;
     }
 
     public void aplicarOverrides(Collection<Subasta> subastas) {
