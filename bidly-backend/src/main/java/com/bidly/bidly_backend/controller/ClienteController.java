@@ -1,14 +1,20 @@
 package com.bidly.bidly_backend.controller;
 
 import com.bidly.bidly_backend.model.Cliente;
+import com.bidly.bidly_backend.model.DniVerificacion;
 import com.bidly.bidly_backend.model.MedioPago;
 import com.bidly.bidly_backend.repository.ClienteRepository;
+import com.bidly.bidly_backend.repository.DniVerificacionRepository;
 import com.bidly.bidly_backend.repository.MedioPagoRepository;
 import com.bidly.bidly_backend.repository.PersonaRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
+import java.time.LocalDateTime;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -28,6 +34,9 @@ public class ClienteController {
 
     @Autowired
     private PersonaRepository personaRepository;
+
+    @Autowired
+    private DniVerificacionRepository dniVerificacionRepository;
 
     @PostMapping
     public ResponseEntity<?> crear(@RequestBody Cliente cliente) {
@@ -95,5 +104,27 @@ public class ClienteController {
                     return ResponseEntity.status(201).<Object>body(guardado);
                 })
                 .orElse(ResponseEntity.notFound().build());
+    }
+
+    @PostMapping("/{id}/dni-fotos")
+    public ResponseEntity<?> guardarDniFotos(
+            @PathVariable Long id,
+            @RequestParam("frente") MultipartFile frente,
+            @RequestParam("dorso") MultipartFile dorso) {
+        if (!clienteRepository.existsById(id)) {
+            return ResponseEntity.notFound().build();
+        }
+        try {
+            DniVerificacion dni = new DniVerificacion();
+            dni.setClienteId(id);
+            dni.setFotoFrente(Base64.getEncoder().encodeToString(frente.getBytes()));
+            dni.setFotoDorso(Base64.getEncoder().encodeToString(dorso.getBytes()));
+            dni.setCreadoEn(LocalDateTime.now());
+            dniVerificacionRepository.save(dni);
+            return ResponseEntity.status(201).body(Map.of("message", "Fotos de DNI guardadas"));
+        } catch (IOException e) {
+            return ResponseEntity.internalServerError()
+                    .body(Map.of("error", "No se pudieron procesar las fotos"));
+        }
     }
 }

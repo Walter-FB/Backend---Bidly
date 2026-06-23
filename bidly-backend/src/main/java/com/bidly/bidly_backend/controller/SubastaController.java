@@ -43,10 +43,17 @@ public class SubastaController {
             @RequestParam(required = false) String categoria,
             @RequestParam(required = false) String moneda) {
         List<Subasta> lista = subastaRepository.findByFiltros(estado, categoria, moneda);
-        lista.forEach(s ->
+        lista.forEach(s -> {
             subastaMonedaRepository.findById(s.getIdentificador())
-                .ifPresent(m -> s.setMoneda(m.getMoneda()))
-        );
+                .ifPresent(m -> s.setMoneda(m.getMoneda()));
+            itemCatalogoRepository.findByCatalogoSubastaIdentificador(s.getIdentificador())
+                .stream()
+                .map(i -> i.getPrecioBase())
+                .filter(p -> p != null)
+                .min(java.util.Comparator.naturalOrder())
+                .ifPresent(s::setPrecioBase);
+            s.setTotalAsistentes((long) asistenteRepository.findBySubastaIdentificador(s.getIdentificador()).size());
+        });
         return lista;
     }
 
@@ -56,6 +63,13 @@ public class SubastaController {
             .map(s -> {
                 subastaMonedaRepository.findById(id)
                     .ifPresent(m -> s.setMoneda(m.getMoneda()));
+                itemCatalogoRepository.findByCatalogoSubastaIdentificador(id)
+                    .stream()
+                    .map(i -> i.getPrecioBase())
+                    .filter(p -> p != null)
+                    .min(java.util.Comparator.naturalOrder())
+                    .ifPresent(s::setPrecioBase);
+                s.setTotalAsistentes((long) asistenteRepository.findBySubastaIdentificador(id).size());
                 return ResponseEntity.ok(s);
             })
             .orElse(ResponseEntity.notFound().build());

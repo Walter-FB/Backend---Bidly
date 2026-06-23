@@ -6,4 +6,5 @@ import java.util.List;
 
 public interface MedioPagoRepository extends JpaRepository<MedioPago, Long> {
     List<MedioPago> findByClienteIdentificador(Long clienteId);
+    List<MedioPago> findByClienteIdentificadorAndVerificado(Long clienteId, String verificado);
 }
