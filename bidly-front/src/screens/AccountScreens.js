@@ -1001,7 +1001,14 @@ export function PublicarScreen({ navigation }) {
           xhr.onload = () => xhr.status < 300 ? resolve() : reject(new Error(`HTTP ${xhr.status}`));
           xhr.onerror = () => reject(new Error('Error de red al subir foto'));
           const fd = new FormData();
-          fd.append('fotos', { uri: fotos[i].uri, name: `foto_${i}.jpg`, type: fotos[i].mimeType || 'image/jpeg' });
+          const fotoAsset = fotos[i];
+          if (fotoAsset.file) {
+            // Web: expo-image-picker provee un File object real
+            fd.append('fotos', fotoAsset.file, `foto_${i}.jpg`);
+          } else {
+            // Mobile: formato React Native
+            fd.append('fotos', { uri: fotoAsset.uri, name: `foto_${i}.jpg`, type: fotoAsset.mimeType || 'image/jpeg' });
+          }
           xhr.send(fd);
         });
       }
