@@ -924,7 +924,7 @@ export function CrearSubastaScreen({ navigation, route }) {
       </TouchableOpacity>
 
       <View style={{ marginTop: 24 }}>
-        <Btn title={loading ? 'Creando subasta…' : `Crear subasta con ${itemsSeleccionados.length} producto(s)`} onPress={onCrear} disabled={loading || exito || itemsSeleccionados.length === 0} />
+        <Btn title={loading ? 'Creando subasta…' : `Crear subasta con ${itemsSeleccionados.length} producto(s)`} onPress={onCrear} disabled={loading || !!exito || itemsSeleccionados.length === 0} />
       </View>
 
       <Modal visible={!!exito} transparent animationType="fade">
