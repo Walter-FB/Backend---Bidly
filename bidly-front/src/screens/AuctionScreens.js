@@ -8,7 +8,7 @@ import { Subastas, Pujas, Asistentes, Productos, Items, Clientes } from '../api/
 import { BASE_URL } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { tituloSubasta } from '../utils/subasta';
-import { etiquetaTiempoSubasta, esSubastaEnVivo, segundosHastaCierrePujas, formatDuracion } from '../utils/tiempo';
+import { etiquetaTiempoSubasta, esSubastaEnVivo, segundosHastaCierrePujas } from '../utils/tiempo';
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
@@ -16,32 +16,6 @@ function formatImporte(importe, moneda) {
   if (importe == null) return '—';
   const simbolo = moneda === 'dolares' ? 'U$D' : '$';
   return `${simbolo} ${Number(importe).toLocaleString('es-AR', { maximumFractionDigits: 2 })}`;
-}
-
-function formatTimer(fechaStr, horaStr) {
-  if (!fechaStr) return '—';
-  try {
-    const dt = new Date(`${fechaStr}T${horaStr || '00:00'}`);
-    const now = new Date();
-    const diffMs = dt - now;
-    if (diffMs <= 0) return 'Finalizada';
-    const diffH = Math.floor(diffMs / 3600000);
-    const diffM = Math.floor((diffMs % 3600000) / 60000);
-    if (diffH > 0) return `${diffH}h ${diffM}m`;
-    return `${diffM}m`;
-  } catch {
-    return fechaStr;
-  }
-}
-
-function calcSecondsLeft(fechaStr, horaStr) {
-  if (!fechaStr) return null;
-  try {
-    const dt = new Date(`${fechaStr}T${horaStr || '00:00'}`);
-    return Math.max(0, Math.floor((dt - new Date()) / 1000));
-  } catch {
-    return null;
-  }
 }
 
 function formatCountdown(seconds) {
