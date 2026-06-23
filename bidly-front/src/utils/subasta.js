@@ -94,6 +94,16 @@ export function esSubastaFinalizada(subasta) {
   return subasta.fase === 'finalizada';
 }
 
+/** Subasta en vivo (puja iniciada por administración). */
+export function esSubastaEnCursoVendedor(subasta) {
+  return subasta?.fase === 'en_curso';
+}
+
+export function esMiSubasta(subasta, clienteId) {
+  if (!clienteId || subasta?.subastador == null) return false;
+  return Number(subasta.subastador) === Number(clienteId);
+}
+
 export function tagEstadoSubasta(subasta) {
   const sub = subasta || {};
   const rev = sub.revisionEstado;
