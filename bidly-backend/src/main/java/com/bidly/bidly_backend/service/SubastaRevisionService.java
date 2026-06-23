@@ -2,7 +2,6 @@ package com.bidly.bidly_backend.service;
 
 import com.bidly.bidly_backend.model.Subasta;
 import com.bidly.bidly_backend.model.SubastaRevision;
-import com.bidly.bidly_backend.repository.SubastaRepository;
 import com.bidly.bidly_backend.repository.SubastaRevisionRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -24,10 +23,10 @@ public class SubastaRevisionService {
     private SubastaRevisionRepository revisionRepository;
 
     @Autowired
-    private SubastaRepository subastaRepository;
+    private SubastaService subastaService;
 
     @Autowired
-    private SubastaService subastaService;
+    private SubastaEstadoService subastaEstadoService;
 
     @Transactional
     public SubastaRevision registrarNueva(Subasta subasta) {
@@ -92,8 +91,8 @@ public class SubastaRevisionService {
                         revision.setObservacion(observacion.trim());
                     }
                     Subasta subasta = revision.getSubasta();
+                    subastaEstadoService.aplicarEstado(subasta.getIdentificador(), "cerrada");
                     subasta.setEstado("cerrada");
-                    subastaRepository.save(subasta);
                     return revisionRepository.save(revision);
                 });
     }
@@ -105,8 +104,8 @@ public class SubastaRevisionService {
                     revision.setFechaRevision(LocalDateTime.now());
                     if (forzarCerrada) {
                         Subasta subasta = revision.getSubasta();
+                        subastaEstadoService.aplicarEstado(subasta.getIdentificador(), "cerrada");
                         subasta.setEstado("cerrada");
-                        subastaRepository.save(subasta);
                     }
                     return revisionRepository.save(revision);
                 });

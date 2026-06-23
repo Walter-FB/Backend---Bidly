@@ -14,6 +14,7 @@ import com.bidly.bidly_backend.repository.PujaRepository;
 import com.bidly.bidly_backend.repository.RegistroDeSubastaRepository;
 import com.bidly.bidly_backend.repository.SubastaRepository;
 import com.bidly.bidly_backend.service.NotificacionService;
+import com.bidly.bidly_backend.service.SubastaEstadoService;
 import jakarta.transaction.Transactional;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -44,6 +45,9 @@ public class ItemCatalogoController {
 
     @Autowired
     private SubastaRepository subastaRepository;
+
+    @Autowired
+    private SubastaEstadoService subastaEstadoService;
 
     @Autowired
     private NotificacionService notificacionService;
@@ -116,8 +120,8 @@ public class ItemCatalogoController {
                 .stream()
                 .allMatch(i -> "si".equals(i.getSubastado()));
         if (todosFinalizados) {
+            subastaEstadoService.aplicarEstado(subasta.getIdentificador(), "cerrada");
             subasta.setEstado("cerrada");
-            subastaRepository.save(subasta);
         }
 
         String producto = item.getProducto().getDescripcionCatalogo();

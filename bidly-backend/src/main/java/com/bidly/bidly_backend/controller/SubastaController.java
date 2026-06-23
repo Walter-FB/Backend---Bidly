@@ -11,6 +11,7 @@ import com.bidly.bidly_backend.repository.ItemCatalogoRepository;
 import com.bidly.bidly_backend.repository.SubastaMonedaRepository;
 import com.bidly.bidly_backend.repository.SubastaRepository;
 import com.bidly.bidly_backend.repository.SubastaRevisionRepository;
+import com.bidly.bidly_backend.service.SubastaEstadoService;
 import com.bidly.bidly_backend.service.SubastaRevisionService;
 import com.bidly.bidly_backend.service.SubastaService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -42,6 +43,9 @@ public class SubastaController {
 
     @Autowired
     private SubastaService subastaService;
+
+    @Autowired
+    private SubastaEstadoService subastaEstadoService;
 
     @Autowired
     private SubastaRevisionService revisionService;
@@ -148,8 +152,9 @@ public class SubastaController {
         }
         return subastaRepository.findById(id)
                 .map(s -> {
+                    subastaEstadoService.aplicarEstado(id, nuevoEstado);
                     s.setEstado(nuevoEstado);
-                    return ResponseEntity.ok((Object) subastaRepository.save(s));
+                    return ResponseEntity.ok((Object) s);
                 })
                 .orElse(ResponseEntity.notFound().build());
     }

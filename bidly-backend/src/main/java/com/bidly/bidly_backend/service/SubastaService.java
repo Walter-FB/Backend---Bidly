@@ -50,8 +50,13 @@ public class SubastaService {
     @Autowired
     private SubastaRepository subastaRepository;
 
+    @Autowired
+    private SubastaEstadoService subastaEstadoService;
+
     public void enrich(Subasta s) {
         if (s == null) return;
+
+        subastaEstadoService.aplicarOverrides(List.of(s));
 
         subastaMonedaRepository.findById(s.getIdentificador())
             .ifPresent(m -> s.setMoneda(m.getMoneda()));
@@ -74,6 +79,7 @@ public class SubastaService {
     }
 
     public void enrichAll(List<Subasta> lista) {
+        subastaEstadoService.aplicarOverrides(lista);
         lista.forEach(this::enrich);
     }
 
@@ -85,8 +91,8 @@ public class SubastaService {
 
         if ("cerrada".equals(s.getEstado()) || pendientes == 0 && !items.isEmpty()) {
             if (pendientes == 0 && !items.isEmpty() && "abierta".equals(s.getEstado())) {
+                subastaEstadoService.aplicarEstado(s.getIdentificador(), "cerrada");
                 s.setEstado("cerrada");
-                subastaRepository.save(s);
             }
             s.setFase(FASE_FINALIZADA);
             s.setSegundosRestantes(0L);

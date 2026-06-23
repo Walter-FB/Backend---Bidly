@@ -18,3 +18,19 @@ CREATE TABLE IF NOT EXISTS subasta_revision (
 );
 
 CREATE INDEX IF NOT EXISTS idx_subasta_revision_estado ON subasta_revision(estado);
+
+-- Migración de subastas existentes: marcarlas como aprobadas (ejecutar una sola vez).
+INSERT INTO subasta_revision (subasta, solicitante, estado, fechasolicitud, fecharevision, observacion)
+SELECT
+    s.identificador,
+    COALESCE(c.identificador, fb.fallback_id),
+    'aprobada',
+    COALESCE(s.fecha::timestamp, CURRENT_TIMESTAMP),
+    CURRENT_TIMESTAMP,
+    'Migracion: subasta existente aprobada automaticamente'
+FROM subastas s
+LEFT JOIN clientes c ON c.identificador = s.subastador
+CROSS JOIN (SELECT MIN(identificador) AS fallback_id FROM clientes) fb
+WHERE NOT EXISTS (
+    SELECT 1 FROM subasta_revision r WHERE r.subasta = s.identificador
+);

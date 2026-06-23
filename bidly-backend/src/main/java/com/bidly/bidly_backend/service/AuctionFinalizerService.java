@@ -21,6 +21,7 @@ public class AuctionFinalizerService {
     @Autowired private PujaRepository pujaRepository;
     @Autowired private RegistroDeSubastaRepository registroDeSubastaRepository;
     @Autowired private SubastaRepository subastaRepository;
+    @Autowired private SubastaEstadoService subastaEstadoService;
     @Autowired private NotificacionService notificacionService;
 
     @Scheduled(fixedDelay = 60000)
@@ -92,8 +93,8 @@ public class AuctionFinalizerService {
                 .findByCatalogoSubastaIdentificador(subasta.getIdentificador())
                 .stream().allMatch(i -> "si".equals(i.getSubastado()));
         if (todosFinalizados) {
+            subastaEstadoService.aplicarEstado(subasta.getIdentificador(), "cerrada");
             subasta.setEstado("cerrada");
-            subastaRepository.save(subasta);
             notificacionService.notificarAsistentesSubasta(subasta.getIdentificador(), "subasta_por_cerrar",
                     "La subasta #" + subasta.getIdentificador() + " finalizó.");
         }
@@ -117,8 +118,8 @@ public class AuctionFinalizerService {
             if (items.isEmpty()) continue;
             boolean todos = items.stream().allMatch(i -> "si".equals(i.getSubastado()));
             if (todos) {
+                subastaEstadoService.aplicarEstado(subasta.getIdentificador(), "cerrada");
                 subasta.setEstado("cerrada");
-                subastaRepository.save(subasta);
             }
         }
     }
