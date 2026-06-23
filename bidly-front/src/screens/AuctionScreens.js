@@ -7,7 +7,7 @@ import { colors } from '../theme/theme';
 import { Subastas, Pujas, Asistentes, Productos, Items, Clientes } from '../api/endpoints';
 import { BASE_URL } from '../api/client';
 import { useAuth } from '../context/AuthContext';
-import { tituloSubasta } from '../utils/subasta';
+import { tituloSubasta, tagEstadoSubasta } from '../utils/subasta';
 import { etiquetaTiempoSubasta, esSubastaEnVivo, segundosHastaCierrePujas } from '../utils/tiempo';
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
@@ -734,6 +734,7 @@ export function SubastaAdminScreen({ navigation, route }) {
   const estaAbierta = subasta?.estado === 'abierta';
   const itemActivoAdjudicado = itemActivo?.subastado === 'si';
   const tituloAdmin = tituloSubasta(subasta, items);
+  const tagEstado = tagEstadoSubasta(subasta);
   const portadaItemUrl = itemActivo?.producto?.identificador
     ? `${BASE_URL}/productos/${itemActivo.producto.identificador}/portada`
     : undefined;
@@ -746,10 +747,7 @@ export function SubastaAdminScreen({ navigation, route }) {
         {/* Cabecera */}
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
           <Display style={{ fontSize: 20, flex: 1, paddingRight: 10 }} numberOfLines={2}>{tituloAdmin}</Display>
-          <Tag
-            label={estaAbierta ? 'ABIERTA' : 'CERRADA'}
-            color={estaAbierta ? colors.green : colors.muted}
-          />
+          <Tag label={tagEstado.label} color={tagEstado.color} />
         </View>
         <Text style={{ color: colors.muted, fontSize: 13, marginBottom: 14 }}>
           {subasta?.categoria ? subasta.categoria.toUpperCase() : ''} · {asistentes.length} asistentes

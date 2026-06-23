@@ -8,7 +8,7 @@ import { colors } from '../theme/theme';
 import { Subastas, Notificaciones } from '../api/endpoints';
 import { BASE_URL } from '../api/client';
 import { useAuth } from '../context/AuthContext';
-import { tituloSubasta, subtituloSubasta } from '../utils/subasta';
+import { tituloSubasta, subtituloSubasta, esSubastaFinalizada } from '../utils/subasta';
 import { etiquetaTiempoSubasta, esSubastaEnVivo } from '../utils/tiempo';
 
 // Convierte una Subasta del backend al shape que espera AuctionCard.
@@ -28,6 +28,8 @@ function mapSubasta(s) {
     time: etiquetaTiempoSubasta(s),
     fase: s.fase,
     segundosRestantes: s.segundosRestantes,
+    totalItems: s.totalItems,
+    itemsPendientes: s.itemsPendientes,
     lead: false,
     estado: s.estado,
     moneda: s.moneda || 'pesos',
@@ -134,7 +136,7 @@ export function HomeScreen({ navigation }) {
 
   const subrastasFiltradas = subastas.filter((a) => {
     if (tab === 'vivo') return esSubastaEnVivo(a);
-    if (tab === 'term') return a.estado === 'cerrada' || a.fase === 'finalizada';
+    if (tab === 'term') return esSubastaFinalizada(a);
     return true;
   });
 

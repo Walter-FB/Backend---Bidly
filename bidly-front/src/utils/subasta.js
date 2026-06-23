@@ -1,5 +1,7 @@
 // Helpers de presentación para subastas (sin campo "nombre" en BD: usamos producto del catálogo).
 
+import { colors } from '../theme/theme';
+
 const CATEGORIA_LABEL = {
   comun: 'Común',
   especial: 'Especial',
@@ -84,4 +86,26 @@ export function formatFechaSubasta(fecha) {
   } catch {
     return fecha;
   }
+}
+
+/** Solo finalizada de verdad: catálogo agotado (no confundir con cerrada = sin abrir). */
+export function esSubastaFinalizada(subasta) {
+  if (!subasta || subasta.fase !== 'finalizada') return false;
+  const total = subasta.totalItems ?? 0;
+  if (total === 0) return false;
+  const pend = subasta.itemsPendientes;
+  return pend == null || pend === 0;
+}
+
+export function tagEstadoSubasta(subasta) {
+  const sub = subasta || {};
+  const rev = sub.revisionEstado;
+  if (rev === 'pendiente') return { label: 'PENDIENTE', color: colors.gold };
+  if (rev === 'pausada') return { label: 'PAUSADA', color: colors.muted };
+  if (rev === 'rechazada') return { label: 'RECHAZADA', color: colors.red };
+  if (sub.fase === 'en_curso') return { label: 'EN VIVO', color: colors.green };
+  if (esSubastaFinalizada(sub)) return { label: 'FINALIZADA', color: colors.muted };
+  if (sub.fase === 'programada' || sub.estado === 'cerrada') return { label: 'POR ABRIR', color: colors.blue };
+  if (sub.estado === 'abierta') return { label: 'ABIERTA', color: colors.green };
+  return { label: 'CERRADA', color: colors.muted };
 }

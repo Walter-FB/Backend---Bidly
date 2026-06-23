@@ -154,6 +154,7 @@ public class SubastaController {
                 .map(s -> {
                     subastaEstadoService.aplicarEstado(id, nuevoEstado);
                     s.setEstado(nuevoEstado);
+                    subastaService.enrich(s);
                     return ResponseEntity.ok((Object) s);
                 })
                 .orElse(ResponseEntity.notFound().build());

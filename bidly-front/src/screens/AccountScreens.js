@@ -10,7 +10,7 @@ import { AuctionCard } from './HomeScreens';
 import { useAuth } from '../context/AuthContext';
 import { BASE_URL, getToken } from '../api/client';
 import { Clientes, Personas, RegistroSubasta, Subastas, Productos, Subastadores, Catalogos } from '../api/endpoints';
-import { tituloSubasta, subtituloSubasta, formatFechaSubasta } from '../utils/subasta';
+import { tituloSubasta, subtituloSubasta, formatFechaSubasta, esSubastaFinalizada, tagEstadoSubasta } from '../utils/subasta';
 
 const COMISION_BIDLY = 0.10;
 
@@ -253,8 +253,8 @@ export function MisSubastasScreen({ navigation }) {
   }, [navigation, user]);
 
   const filtradas = subastas.filter((a) => {
-    if (tab === 'curso') return a.estado === 'abierta';
-    if (tab === 'fin') return a.estado === 'cerrada';
+    if (tab === 'curso') return !esSubastaFinalizada(a);
+    if (tab === 'fin') return esSubastaFinalizada(a);
     return true;
   });
 
@@ -270,7 +270,7 @@ export function MisSubastasScreen({ navigation }) {
         <Title>Mis subastas</Title>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginVertical: 12 }}>
           <View style={{ flexDirection: 'row', gap: 9 }}>
-            <Chip label={`En curso · ${subastas.filter(a => a.estado === 'abierta').length}`} active={tab === 'curso'} dot={tab === 'curso'} onPress={() => setTab('curso')} />
+            <Chip label={`En curso · ${subastas.filter(a => !esSubastaFinalizada(a)).length}`} active={tab === 'curso'} dot={tab === 'curso'} onPress={() => setTab('curso')} />
             <Chip label="Finalizadas" active={tab === 'fin'} onPress={() => setTab('fin')} />
             <Chip label={`Todas · ${subastas.length}`} active={tab === 'todas'} onPress={() => setTab('todas')} />
           </View>
@@ -282,7 +282,9 @@ export function MisSubastasScreen({ navigation }) {
           </Text>
         )}
         <View style={{ gap: 14 }}>
-          {filtradas.map((a) => (
+          {filtradas.map((a) => {
+            const tag = tagEstadoSubasta(a);
+            return (
             <TouchableOpacity
               key={a.identificador}
               onPress={() => navigation.navigate('SubastaAdmin', { subastaId: a.identificador, subasta: a })}
@@ -301,19 +303,7 @@ export function MisSubastasScreen({ navigation }) {
                         {tituloSubasta(a)}
                       </Display>
                       <View style={{ alignItems: 'flex-end', gap: 4 }}>
-                        {a.revisionEstado === 'pendiente' && (
-                          <Tag label="PENDIENTE" color={colors.gold} />
-                        )}
-                        {a.revisionEstado === 'pausada' && (
-                          <Tag label="PAUSADA" color={colors.muted} />
-                        )}
-                        {a.revisionEstado === 'rechazada' && (
-                          <Tag label="RECHAZADA" color={colors.red} />
-                        )}
-                        <Tag
-                          label={a.estado === 'abierta' ? 'EN VIVO' : 'CERRADA'}
-                          color={a.estado === 'abierta' ? colors.green : colors.muted}
-                        />
+                        <Tag label={tag.label} color={tag.color} />
                       </View>
                     </View>
                     <Text style={{ color: colors.muted, fontSize: 13 }}>
@@ -329,7 +319,8 @@ export function MisSubastasScreen({ navigation }) {
                 </View>
               </Card>
             </TouchableOpacity>
-          ))}
+            );
+          })}
         </View>
       </ScrollView>
       <BottomBar>

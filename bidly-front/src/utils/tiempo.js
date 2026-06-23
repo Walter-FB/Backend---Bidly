@@ -1,5 +1,7 @@
 // Etiquetas de tiempo para subastas (fase + segundosRestantes vienen del backend).
 
+import { esSubastaFinalizada } from './subasta';
+
 export function formatDuracion(segundos) {
   if (segundos == null || segundos < 0) return '—';
   if (segundos <= 0) return '0m';
@@ -22,7 +24,7 @@ export function esSubastaEnVivo(subasta) {
 export function etiquetaTiempoSubasta(subasta) {
   if (!subasta) return '—';
 
-  if (subasta.estado === 'cerrada' || subasta.fase === 'finalizada') {
+  if (esSubastaFinalizada(subasta)) {
     return 'Finalizada';
   }
 

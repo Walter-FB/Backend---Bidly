@@ -7,7 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Display, Tag, Chip, Card, SectionLabel, Row, Btn, LiveBadge, SuccessBanner } from '../components/ui';
 import { colors } from '../theme/theme';
 import { Subastas, Pujas, Items, SubastaRevision } from '../api/endpoints';
-import { tituloSubasta, formatFechaSubasta } from '../utils/subasta';
+import { tituloSubasta, formatFechaSubasta, tagEstadoSubasta } from '../utils/subasta';
 
 const FILTROS_SUBASTA = [
   ['todas', 'Todas'],
@@ -15,17 +15,6 @@ const FILTROS_SUBASTA = [
   ['cerrada', 'Cerradas'],
   ['con_items', 'Con ítems'],
 ];
-
-function tagEstadoSubasta(sub) {
-  const rev = sub.revisionEstado;
-  if (rev === 'pendiente') return { label: 'PENDIENTE', color: colors.gold };
-  if (rev === 'pausada') return { label: 'PAUSADA', color: colors.muted };
-  if (rev === 'rechazada') return { label: 'RECHAZADA', color: colors.red };
-  if (sub.fase === 'en_curso') return { label: 'EN VIVO', color: colors.green };
-  if (sub.fase === 'programada') return { label: 'POR ABRIR', color: colors.blue };
-  if (sub.fase === 'finalizada') return { label: 'FINALIZADA', color: colors.muted };
-  return { label: sub.estado === 'abierta' ? 'ABIERTA' : 'CERRADA', color: sub.estado === 'abierta' ? colors.green : colors.muted };
-}
 
 export function DashboardAdminScreen() {
   const insets = useSafeAreaInsets();
@@ -474,7 +463,7 @@ function EstadoSection({
   onAbrir, onCerrar, onRefresh, onAdjudicar, ctrl, lastRefresh,
 }) {
   const tag = tagEstadoSubasta(subasta || {});
-  const isOpen = subasta?.fase === 'en_curso';
+  const isOpen = subasta?.estado === 'abierta';
   const allAdjudicados = items.length > 0 && items.every(i => i.subastado === 'si');
   const datosInconsistentes = isOpen && allAdjudicados;
 
