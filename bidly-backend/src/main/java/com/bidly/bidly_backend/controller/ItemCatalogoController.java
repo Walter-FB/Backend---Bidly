@@ -13,6 +13,7 @@ import com.bidly.bidly_backend.repository.ProductoRepository;
 import com.bidly.bidly_backend.repository.PujaRepository;
 import com.bidly.bidly_backend.repository.RegistroDeSubastaRepository;
 import com.bidly.bidly_backend.repository.SubastaRepository;
+import com.bidly.bidly_backend.service.NotificacionService;
 import jakarta.transaction.Transactional;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -43,6 +44,9 @@ public class ItemCatalogoController {
 
     @Autowired
     private SubastaRepository subastaRepository;
+
+    @Autowired
+    private NotificacionService notificacionService;
 
     @PostMapping("/api/catalogos/{catalogoId}/items")
     public ResponseEntity<?> agregarItem(@PathVariable Long catalogoId,
@@ -114,6 +118,23 @@ public class ItemCatalogoController {
         if (todosFinalizados) {
             subasta.setEstado("cerrada");
             subastaRepository.save(subasta);
+        }
+
+        String producto = item.getProducto().getDescripcionCatalogo();
+        notificacionService.crear(ganador.getIdentificador(), "ganaste",
+                "Ganaste " + producto + " por $" + mejorPuja.getImporte());
+
+        long pendientes = itemCatalogoRepository
+                .findByCatalogoSubastaIdentificador(subasta.getIdentificador())
+                .stream()
+                .filter(i -> !"si".equals(i.getSubastado()))
+                .count();
+        if (pendientes == 1) {
+            notificacionService.notificarAsistentesSubasta(subasta.getIdentificador(), "subasta_por_cerrar",
+                    "Queda 1 ítem en la subasta #" + subasta.getIdentificador() + ". Pronto finalizará.");
+        } else if (todosFinalizados) {
+            notificacionService.notificarAsistentesSubasta(subasta.getIdentificador(), "subasta_por_cerrar",
+                    "La subasta #" + subasta.getIdentificador() + " finalizó.");
         }
 
         return ResponseEntity.ok(Map.of(

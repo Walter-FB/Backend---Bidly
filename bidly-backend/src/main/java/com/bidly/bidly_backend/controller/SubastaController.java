@@ -10,6 +10,7 @@ import com.bidly.bidly_backend.repository.FotoRepository;
 import com.bidly.bidly_backend.repository.ItemCatalogoRepository;
 import com.bidly.bidly_backend.repository.SubastaMonedaRepository;
 import com.bidly.bidly_backend.repository.SubastaRepository;
+import com.bidly.bidly_backend.service.SubastaService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -37,23 +38,16 @@ public class SubastaController {
     @Autowired
     private FotoRepository fotoRepository;
 
+    @Autowired
+    private SubastaService subastaService;
+
     @GetMapping
     public List<Subasta> listar(
             @RequestParam(required = false) String estado,
             @RequestParam(required = false) String categoria,
             @RequestParam(required = false) String moneda) {
         List<Subasta> lista = subastaRepository.findByFiltros(estado, categoria, moneda);
-        lista.forEach(s -> {
-            subastaMonedaRepository.findById(s.getIdentificador())
-                .ifPresent(m -> s.setMoneda(m.getMoneda()));
-            itemCatalogoRepository.findByCatalogoSubastaIdentificador(s.getIdentificador())
-                .stream()
-                .map(i -> i.getPrecioBase())
-                .filter(p -> p != null)
-                .min(java.util.Comparator.naturalOrder())
-                .ifPresent(s::setPrecioBase);
-            s.setTotalAsistentes((long) asistenteRepository.findBySubastaIdentificador(s.getIdentificador()).size());
-        });
+        subastaService.enrichAll(lista);
         return lista;
     }
 
@@ -61,15 +55,7 @@ public class SubastaController {
     public ResponseEntity<Subasta> detalle(@PathVariable Long id) {
         return subastaRepository.findById(id)
             .map(s -> {
-                subastaMonedaRepository.findById(id)
-                    .ifPresent(m -> s.setMoneda(m.getMoneda()));
-                itemCatalogoRepository.findByCatalogoSubastaIdentificador(id)
-                    .stream()
-                    .map(i -> i.getPrecioBase())
-                    .filter(p -> p != null)
-                    .min(java.util.Comparator.naturalOrder())
-                    .ifPresent(s::setPrecioBase);
-                s.setTotalAsistentes((long) asistenteRepository.findBySubastaIdentificador(id).size());
+                subastaService.enrich(s);
                 return ResponseEntity.ok(s);
             })
             .orElse(ResponseEntity.notFound().build());

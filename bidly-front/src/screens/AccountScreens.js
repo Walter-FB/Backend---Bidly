@@ -10,6 +10,7 @@ import { AuctionCard } from './HomeScreens';
 import { useAuth } from '../context/AuthContext';
 import { BASE_URL, getToken } from '../api/client';
 import { Clientes, Personas, RegistroSubasta, Subastas, Productos, Subastadores, Catalogos } from '../api/endpoints';
+import { tituloSubasta, subtituloSubasta, formatFechaSubasta } from '../utils/subasta';
 
 const COMISION_BIDLY = 0.10;
 
@@ -38,9 +39,9 @@ function mapRegistro(r) {
   const reembolsada = r.reembolsada === 'si';
   return {
     id: r.identificador,
-    title: `Subasta #${r.subasta?.identificador || r.identificador}`,
+    title: tituloSubasta(r.subasta),
     date: fecha,
-    sub: r.subasta?.categoria || '',
+    sub: subtituloSubasta(r.subasta),
     price: r.importe ? Number(r.importe).toLocaleString('es-AR', { maximumFractionDigits: 2 }) : '—',
     tag: reembolsada ? 'Reembolsada' : 'Ganada',
     tagColor: reembolsada ? colors.red : colors.green,
@@ -288,22 +289,33 @@ export function MisSubastasScreen({ navigation }) {
               activeOpacity={0.85}
             >
               <Card el style={{ gap: 6 }}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Display style={{ fontSize: 15 }}>Subasta #{a.identificador}</Display>
-                  <Tag
-                    label={a.estado === 'abierta' ? 'EN VIVO' : 'CERRADA'}
-                    color={a.estado === 'abierta' ? colors.green : colors.muted}
+                <View style={{ flexDirection: 'row', gap: 12 }}>
+                  <ImgBox
+                    style={{ width: 64, height: 64, borderRadius: 10 }}
+                    size={22}
+                    src={`${BASE_URL}/subastas/${a.identificador}/portada`}
                   />
+                  <View style={{ flex: 1, gap: 4 }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <Display style={{ fontSize: 15, flex: 1, paddingRight: 8 }} numberOfLines={2}>
+                        {tituloSubasta(a)}
+                      </Display>
+                      <Tag
+                        label={a.estado === 'abierta' ? 'EN VIVO' : 'CERRADA'}
+                        color={a.estado === 'abierta' ? colors.green : colors.muted}
+                      />
+                    </View>
+                    <Text style={{ color: colors.muted, fontSize: 13 }}>
+                      {subtituloSubasta(a)} · {formatFechaSubasta(a.fecha)}
+                    </Text>
+                    {a.totalItems > 1 ? (
+                      <Text style={{ color: colors.muted, fontSize: 12 }}>{a.totalItems} ítems en catálogo</Text>
+                    ) : null}
+                    <Text style={{ color: colors.blue, fontSize: 13, fontWeight: '700', marginTop: 2 }}>
+                      Gestionar →
+                    </Text>
+                  </View>
                 </View>
-                <Text style={{ color: colors.muted, fontSize: 13 }}>
-                  {a.categoria ? a.categoria.toUpperCase() : '—'} · {a.fecha || '—'}
-                </Text>
-                {a.ubicacion ? (
-                  <Text style={{ color: colors.muted, fontSize: 12 }}>📍 {a.ubicacion}</Text>
-                ) : null}
-                <Text style={{ color: colors.blue, fontSize: 13, fontWeight: '700', marginTop: 4 }}>
-                  Gestionar →
-                </Text>
               </Card>
             </TouchableOpacity>
           ))}
@@ -627,7 +639,7 @@ export function CrearSubastaScreen({ navigation, route }) {
 
       Alert.alert(
         '¡Subasta creada!',
-        `Subasta #${subasta.identificador} creada con ${itemsSeleccionados.length} producto(s). Abrila desde "Mis subastas" cuando estés listo.`,
+        `"${itemsSeleccionados[0]?.titulo || tituloSubasta(subasta)}" creada con ${itemsSeleccionados.length} producto(s). Abrila desde "Mis subastas" cuando estés listo.`,
         [{ text: 'Ir a mis subastas', onPress: () => navigation.navigate('Subastas') }]
       );
     } catch (e) {
@@ -725,8 +737,9 @@ export function CrearSubastaScreen({ navigation, route }) {
                 <Ionicons name="cube" size={16} color={colors.blue} />
               </View>
               <View>
-                <Display style={{ fontSize: 13 }}>Producto #{item.productoId}</Display>
-                {item.titulo ? <Text style={{ color: colors.muted, fontSize: 11 }}>{item.titulo}</Text> : null}
+                <Display style={{ fontSize: 13 }} numberOfLines={2}>
+                  {item.titulo || `Producto #${item.productoId}`}
+                </Display>
               </View>
             </View>
             <TouchableOpacity onPress={() => setItemsSeleccionados(prev => prev.filter(i => i.productoId !== item.productoId))}>
@@ -841,7 +854,7 @@ export function PublicarScreen({ navigation }) {
 
       Alert.alert(
         '¡Producto publicado!',
-        `Producto #${producto.identificador} listo. ¿Querés crear una subasta con este producto ahora?`,
+        `¡${producto.descripcionCatalogo || 'Producto'} listo! ¿Querés crear una subasta con este producto ahora?`,
         [
           {
             text: 'Crear subasta',
@@ -944,7 +957,7 @@ export function DatosGanadorScreen({ navigation, route }) {
             <View>
               <Display style={{ fontSize: 16 }}>{nombre}</Display>
               <Text style={{ color: colors.muted, fontSize: 12.5, marginTop: 3 }}>
-                {registro ? `Subasta #${registro.subasta?.identificador}` : '—'}
+                {registro ? tituloSubasta(registro.subasta) : '—'}
               </Text>
             </View>
           </Card>

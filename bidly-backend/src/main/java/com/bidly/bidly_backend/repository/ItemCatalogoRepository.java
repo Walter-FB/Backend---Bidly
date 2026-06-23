@@ -16,6 +16,9 @@ public interface ItemCatalogoRepository extends JpaRepository<ItemCatalogo, Long
     Optional<ItemCatalogo> findByIdForUpdate(@Param("id") Long id);
 
     List<ItemCatalogo> findByCatalogoIdentificador(Long catalogoId);
+    @Query("SELECT i FROM ItemCatalogo i JOIN FETCH i.producto JOIN FETCH i.catalogo c WHERE c.subasta.identificador = :subastaId ORDER BY i.identificador")
+    List<ItemCatalogo> findBySubastaIdWithDetails(@Param("subastaId") Long subastaId);
+
     List<ItemCatalogo> findByCatalogoSubastaIdentificador(Long subastaId);
 
     @Query("SELECT i FROM ItemCatalogo i WHERE i.catalogo.subasta.estado = 'abierta' AND (i.subastado IS NULL OR i.subastado <> 'si')")

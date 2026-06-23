@@ -8,9 +8,9 @@ import { colors } from '../theme/theme';
 import { Subastas, Notificaciones } from '../api/endpoints';
 import { BASE_URL } from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import { tituloSubasta, subtituloSubasta } from '../utils/subasta';
 
 // Convierte una Subasta del backend al shape que espera AuctionCard.
-// La subasta del backend no tiene título ni precio: usamos categoria + identificador.
 // Mapea el valor de moneda de la BD ('pesos'/'dolares') al símbolo de pantalla
 function simboloMoneda(moneda) {
   return moneda === 'dolares' ? 'U$D' : '$';
@@ -20,8 +20,8 @@ function mapSubasta(s) {
   return {
     id: s.identificador,
     subastaId: s.identificador,
-    title: `Subasta #${s.identificador} · ${s.categoria || 'Sin categoría'}`,
-    cat: `${s.categoria || 'General'} · ${s.ubicacion || ''}`.trim().replace(/·\s*$/, ''),
+    title: tituloSubasta(s),
+    cat: subtituloSubasta(s),
     puja: s.precioBase ? s.precioBase.toLocaleString('es-AR') : '—',
     ppl: s.totalAsistentes || 0,
     time: formatFechaHora(s.fecha, s.hora),

@@ -2,11 +2,12 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { View, Text, ScrollView, StyleSheet, ActivityIndicator, Alert, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Screen, Header, Title, SectionLabel, Btn, Card, LiveBadge, Tag, ImgBox, BottomBar, Row, Display } from '../components/ui';
+import { Screen, Header, Title, SectionLabel, Btn, Card, LiveBadge, Tag, ImgBox, ImageLightbox, BottomBar, Row, Display } from '../components/ui';
 import { colors } from '../theme/theme';
 import { Subastas, Pujas, Asistentes, Productos, Items, Clientes } from '../api/endpoints';
 import { BASE_URL } from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import { tituloSubasta } from '../utils/subasta';
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
@@ -77,6 +78,7 @@ export function ProductoScreen({ navigation, route }) {
   const [subasta, setSubasta] = useState(null);
   const [items, setItems] = useState([]);
   const [fotoIds, setFotoIds] = useState([]);
+  const [lightboxIdx, setLightboxIdx] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -122,10 +124,11 @@ export function ProductoScreen({ navigation, route }) {
   }
 
   const primerItem = items[0];
-  const titulo = primerItem?.producto?.descripcionCatalogo || `Subasta #${subasta.identificador}`;
+  const titulo = tituloSubasta(subasta, items);
   const categoria = `${subasta.categoria || 'General'} · ${subasta.ubicacion || ''}`.replace(/·\s*$/, '').trim();
   const precioBase = primerItem?.precioBase;
   const viva = subasta.estado === 'abierta';
+  const fotoUrls = fotoIds.map((id) => `${BASE_URL}/fotos/${id}`);
 
   return (
     <Screen>
@@ -135,14 +138,26 @@ export function ProductoScreen({ navigation, route }) {
           <ImgBox
             style={{ width: '100%', height: 230 }}
             size={42}
-            src={fotoIds.length > 0 ? `${BASE_URL}/fotos/${fotoIds[0]}` : undefined}
+            src={fotoUrls[0]}
+            onPress={() => fotoUrls.length > 0 && setLightboxIdx(0)}
           />
           {viva && <LiveBadge style={{ position: 'absolute', top: 12, left: 12 }} />}
+          {fotoUrls.length > 0 && (
+            <View style={st.expandHint}>
+              <Ionicons name="expand-outline" size={14} color="#fff" />
+            </View>
+          )}
         </View>
-        {fotoIds.length > 1 && (
+        {fotoUrls.length > 1 && (
           <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
-            {fotoIds.slice(0, 4).map((fotoId) => (
-              <ImgBox key={fotoId} style={{ flex: 1, height: 56 }} size={18} src={`${BASE_URL}/fotos/${fotoId}`} />
+            {fotoUrls.map((url, i) => (
+              <ImgBox
+                key={fotoIds[i]}
+                style={{ flex: 1, height: 56 }}
+                size={18}
+                src={url}
+                onPress={() => setLightboxIdx(i)}
+              />
             ))}
           </View>
         )}
@@ -202,6 +217,13 @@ export function ProductoScreen({ navigation, route }) {
         )}
       </ScrollView>
 
+      <ImageLightbox
+        visible={lightboxIdx !== null}
+        images={fotoUrls}
+        initialIndex={lightboxIdx ?? 0}
+        onClose={() => setLightboxIdx(null)}
+      />
+
       {viva && primerItem && (
         <BottomBar>
           <Btn
@@ -248,6 +270,7 @@ export function SubastaEnVivoScreen({ navigation, route }) {
   const [pujando, setPujando] = useState(false);
   const [pollingError, setPollingError] = useState(false);
   const [timeLeft, setTimeLeft] = useState(() => calcSecondsLeft(fecha, hora));
+  const [fotoAmpliada, setFotoAmpliada] = useState(false);
   const mounted = useRef(true);
   const asistenteIdRef = useRef(null);
   const navegado = useRef(false);
@@ -383,6 +406,7 @@ export function SubastaEnVivoScreen({ navigation, route }) {
     pujas[0].asistente?.identificador === asistenteId;
 
   const countdownColor = timeLeft != null && timeLeft < 300 ? colors.red ?? '#ff4d4d' : colors.gold;
+  const portadaUrl = productoId ? `${BASE_URL}/productos/${productoId}/portada` : undefined;
 
   return (
     <Screen>
@@ -392,9 +416,15 @@ export function SubastaEnVivoScreen({ navigation, route }) {
           <ImgBox
             style={{ width: '100%', height: 200 }}
             size={40}
-            src={productoId ? `${BASE_URL}/productos/${productoId}/portada` : undefined}
+            src={portadaUrl}
+            onPress={() => portadaUrl && setFotoAmpliada(true)}
           />
           <LiveBadge style={{ position: 'absolute', top: 12, left: 12 }} />
+          {portadaUrl && (
+            <View style={st.expandHint}>
+              <Ionicons name="expand-outline" size={14} color="#fff" />
+            </View>
+          )}
         </View>
         <Display style={{ fontSize: 20, marginVertical: 14, lineHeight: 23 }}>{titulo}</Display>
 
@@ -501,6 +531,12 @@ export function SubastaEnVivoScreen({ navigation, route }) {
           />
         )}
       </BottomBar>
+
+      <ImageLightbox
+        visible={fotoAmpliada}
+        images={portadaUrl ? [portadaUrl] : []}
+        onClose={() => setFotoAmpliada(false)}
+      />
     </Screen>
   );
 }
@@ -527,7 +563,7 @@ export function GanasteScreen({ navigation, route }) {
         <Card el style={{ marginTop: 22, width: '100%', flexDirection: 'row', gap: 14, alignItems: 'center' }}>
           <ImgBox style={{ width: 64, height: 64 }} size={26} />
           <View>
-            <Display style={{ fontSize: 15, lineHeight: 18 }}>{titulo || `Subasta #${subastaId}`}</Display>
+            <Display style={{ fontSize: 15, lineHeight: 18 }}>{titulo}</Display>
             <Text style={{ color: colors.muted, fontSize: 12.5, marginTop: 6 }}>
               Item #{itemId} · {new Date().toLocaleDateString('es-AR')}
             </Text>
@@ -564,7 +600,7 @@ export function SubastaFinalizadaScreen({ navigation, route }) {
         <ImgBox style={{ width: 160, height: 160 }} size={44} />
         <Text style={[st.kicker, { textAlign: 'center', marginTop: 24 }]}>SUBASTA FINALIZADA</Text>
         <Display style={{ fontSize: 26, textAlign: 'center', marginVertical: 8, lineHeight: 30 }}>
-          {titulo || `Subasta #${subastaId}`}
+          {titulo}
         </Display>
         {importe != null && (
           <Display style={{ color: colors.green, fontSize: 24 }}>
@@ -595,6 +631,7 @@ export function SubastaAdminScreen({ navigation, route }) {
   const [loading, setLoading] = useState(true);
   const [adjudicando, setAdjudicando] = useState(false);
   const [cambiandoEstado, setCambiandoEstado] = useState(false);
+  const [fotoAmpliada, setFotoAmpliada] = useState(false);
   const mounted = useRef(true);
 
   useEffect(() => { return () => { mounted.current = false; }; }, []);
@@ -724,6 +761,10 @@ export function SubastaAdminScreen({ navigation, route }) {
   const moneda = subasta?.moneda || 'pesos';
   const estaAbierta = subasta?.estado === 'abierta';
   const itemActivoAdjudicado = itemActivo?.subastado === 'si';
+  const tituloAdmin = tituloSubasta(subasta, items);
+  const portadaItemUrl = itemActivo?.producto?.identificador
+    ? `${BASE_URL}/productos/${itemActivo.producto.identificador}/portada`
+    : undefined;
 
   return (
     <Screen>
@@ -731,7 +772,7 @@ export function SubastaAdminScreen({ navigation, route }) {
       <ScrollView contentContainerStyle={{ paddingHorizontal: 22, paddingBottom: 130 }} showsVerticalScrollIndicator={false}>
         {/* Cabecera */}
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
-          <Display style={{ fontSize: 20 }}>Subasta #{subastaId}</Display>
+          <Display style={{ fontSize: 20, flex: 1, paddingRight: 10 }} numberOfLines={2}>{tituloAdmin}</Display>
           <Tag
             label={estaAbierta ? 'ABIERTA' : 'CERRADA'}
             color={estaAbierta ? colors.green : colors.muted}
@@ -749,7 +790,8 @@ export function SubastaAdminScreen({ navigation, route }) {
               <ImgBox
                 style={{ width: '100%', height: 160, borderRadius: 10 }}
                 size={36}
-                src={`${BASE_URL}/productos/${itemActivo.producto.identificador}/portada`}
+                src={portadaItemUrl}
+                onPress={() => portadaItemUrl && setFotoAmpliada(true)}
               />
             )}
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -878,6 +920,12 @@ export function SubastaAdminScreen({ navigation, route }) {
           disabled={cambiandoEstado}
         />
       </BottomBar>
+
+      <ImageLightbox
+        visible={fotoAmpliada}
+        images={portadaItemUrl ? [portadaItemUrl] : []}
+        onClose={() => setFotoAmpliada(false)}
+      />
     </Screen>
   );
 }
@@ -887,4 +935,9 @@ const st = StyleSheet.create({
   avatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.cardEl, alignItems: 'center', justifyContent: 'center' },
   bidRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border },
   centerIcon: { width: 74, height: 74, borderRadius: 37, alignItems: 'center', justifyContent: 'center', marginTop: 10 },
+  expandHint: {
+    position: 'absolute', bottom: 10, right: 10,
+    backgroundColor: 'rgba(0,0,0,0.45)', borderRadius: 6,
+    padding: 5,
+  },
 });

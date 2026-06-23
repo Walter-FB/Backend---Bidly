@@ -6,6 +6,7 @@ import com.bidly.bidly_backend.repository.ClienteRepository;
 import com.bidly.bidly_backend.repository.ReembolsoRepository;
 import com.bidly.bidly_backend.repository.RegistroDeSubastaRepository;
 import com.bidly.bidly_backend.repository.SubastaRepository;
+import com.bidly.bidly_backend.service.SubastaService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -29,6 +30,9 @@ public class RegistroController {
     @Autowired
     private SubastaRepository subastaRepository;
 
+    @Autowired
+    private SubastaService subastaService;
+
     @PostMapping
     public ResponseEntity<?> crear(@RequestBody RegistroDeSubasta registro) {
         return ResponseEntity.status(201).body(registroRepository.save(registro));
@@ -37,7 +41,10 @@ public class RegistroController {
     @GetMapping("/{id}")
     public ResponseEntity<RegistroDeSubasta> obtener(@PathVariable Long id) {
         return registroRepository.findById(id)
-                .map(ResponseEntity::ok)
+                .map(r -> {
+                    enrichRegistro(r);
+                    return ResponseEntity.ok(r);
+                })
                 .orElse(ResponseEntity.notFound().build());
     }
 
@@ -46,7 +53,9 @@ public class RegistroController {
         if (!clienteRepository.existsById(id)) {
             return ResponseEntity.notFound().build();
         }
-        return ResponseEntity.ok(registroRepository.findByClienteIdentificador(id));
+        List<RegistroDeSubasta> lista = registroRepository.findByClienteIdentificador(id);
+        lista.forEach(this::enrichRegistro);
+        return ResponseEntity.ok(lista);
     }
 
     @GetMapping("/subasta/{id}")
@@ -54,7 +63,15 @@ public class RegistroController {
         if (!subastaRepository.existsById(id)) {
             return ResponseEntity.notFound().build();
         }
-        return ResponseEntity.ok(registroRepository.findBySubastaIdentificador(id));
+        List<RegistroDeSubasta> lista = registroRepository.findBySubastaIdentificador(id);
+        lista.forEach(this::enrichRegistro);
+        return ResponseEntity.ok(lista);
+    }
+
+    private void enrichRegistro(RegistroDeSubasta r) {
+        if (r.getSubasta() != null) {
+            subastaService.enrich(r.getSubasta());
+        }
     }
 
     @PatchMapping("/{id}/reembolso")

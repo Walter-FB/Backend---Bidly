@@ -9,6 +9,7 @@ import com.bidly.bidly_backend.repository.ItemCatalogoRepository;
 import com.bidly.bidly_backend.repository.MedioPagoRepository;
 import com.bidly.bidly_backend.repository.PujaRepository;
 import com.bidly.bidly_backend.repository.PujoFechaRepository;
+import com.bidly.bidly_backend.service.NotificacionService;
 import jakarta.transaction.Transactional;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -50,6 +51,9 @@ public class PujaController {
 
     @Autowired
     private MedioPagoRepository medioPagoRepository;
+
+    @Autowired
+    private NotificacionService notificacionService;
 
     @GetMapping
     public ResponseEntity<?> listar(
@@ -171,6 +175,18 @@ public class PujaController {
         pf.setFechaHora(ahora);
         pujoFechaRepository.save(pf);
         guardada.setFechaHora(ahora);
+
+        String producto = item.getProducto().getDescripcionCatalogo();
+        notificacionService.crear(clienteId, "lider",
+                "Tu puja de $" + puja.getImporte() + " lidera en " + producto);
+        ultimaPujaOpt.ifPresent(anterior -> {
+            Long anteriorClienteId = anterior.getAsistente().getCliente().getIdentificador();
+            if (!anteriorClienteId.equals(clienteId)) {
+                notificacionService.crear(anteriorClienteId, "perdiste",
+                        "Superaron tu puja en " + producto);
+            }
+        });
+
         return ResponseEntity.status(201).body(guardada);
     }
 

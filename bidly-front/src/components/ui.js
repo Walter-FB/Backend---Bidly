@@ -1,7 +1,7 @@
 // BIDLY — shared UI kit (RN). Mirrors preview/components.jsx.
 import React from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Image,
+  View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Image, Modal, Dimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -77,12 +77,13 @@ export function Card({ children, el, style }) {
   return <View style={[s.card, { backgroundColor: el ? colors.cardEl : colors.card }, style]}>{children}</View>;
 }
 
-export function Field({ value, onChangeText, placeholder, secureTextEntry, keyboardType, style, multiline }) {
+export function Field({ value, onChangeText, placeholder, secureTextEntry, keyboardType, style, multiline, ...rest }) {
   return (
     <TextInput value={value} onChangeText={onChangeText} placeholder={placeholder}
       placeholderTextColor={colors.muted} secureTextEntry={secureTextEntry} keyboardType={keyboardType}
       multiline={multiline}
-      style={[s.field, multiline && { height: 92, textAlignVertical: 'top' }, style]} />
+      style={[s.field, multiline && { height: 92, textAlignVertical: 'top' }, style]}
+      {...rest} />
   );
 }
 
@@ -104,25 +105,118 @@ export function Tag({ label, color = colors.blue, fill }) {
   );
 }
 
-export function ImgBox({ style, size = 32, src }) {
+export function ImgBox({ style, size = 32, src, onPress }) {
   const [failed, setFailed] = React.useState(false);
-  if (src && !failed) {
-    return (
-      <Image
-        source={{ uri: src }}
-        style={[{ backgroundColor: colors.cardEl, borderRadius: 12 }, style]}
-        resizeMode="cover"
-        onError={() => setFailed(true)}
-      />
-    );
-  }
-  return (
+  const canPress = Boolean(onPress && src && !failed);
+
+  const inner = src && !failed ? (
+    <Image
+      source={{ uri: src }}
+      style={[{ backgroundColor: colors.cardEl, borderRadius: 12 }, style]}
+      resizeMode="cover"
+      onError={() => setFailed(true)}
+    />
+  ) : (
     <View style={[{ backgroundColor: colors.cardEl, borderRadius: 12, borderWidth: 1,
       borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }, style]}>
       <Ionicons name="image-outline" size={size} color="#6b7494" />
     </View>
   );
+
+  if (!canPress) return inner;
+
+  return (
+    <TouchableOpacity activeOpacity={0.92} onPress={onPress}>
+      {inner}
+    </TouchableOpacity>
+  );
 }
+
+const SCREEN = Dimensions.get('window');
+
+// Visor fullscreen: tap en foto → ampliar. Soporta varias imágenes con swipe.
+export function ImageLightbox({ visible, images = [], initialIndex = 0, onClose }) {
+  const insets = useSafeAreaInsets();
+  const scrollRef = React.useRef(null);
+  const [idx, setIdx] = React.useState(initialIndex);
+
+  React.useEffect(() => {
+    if (!visible) return;
+    setIdx(initialIndex);
+    const t = setTimeout(() => {
+      scrollRef.current?.scrollTo({ x: initialIndex * SCREEN.width, animated: false });
+    }, 40);
+    return () => clearTimeout(t);
+  }, [visible, initialIndex]);
+
+  if (!images.length) return null;
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={lb.backdrop}>
+        <TouchableOpacity
+          style={[lb.closeBtn, { top: insets.top + 8 }]}
+          onPress={onClose}
+          hitSlop={12}
+        >
+          <Ionicons name="close" size={28} color="#fff" />
+        </TouchableOpacity>
+
+        {images.length > 1 && (
+          <Text style={[lb.counter, { top: insets.top + 14 }]}>
+            {idx + 1} / {images.length}
+          </Text>
+        )}
+
+        <ScrollView
+          ref={scrollRef}
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          onMomentumScrollEnd={(e) => {
+            setIdx(Math.round(e.nativeEvent.contentOffset.x / SCREEN.width));
+          }}
+          style={{ flex: 1 }}
+        >
+          {images.map((uri, i) => (
+            <TouchableOpacity
+              key={`${uri}-${i}`}
+              activeOpacity={1}
+              onPress={onClose}
+              style={lb.slide}
+            >
+              <Image source={{ uri }} style={lb.image} resizeMode="contain" />
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+
+        <Text style={[lb.hint, { paddingBottom: insets.bottom + 12 }]}>
+          Tocá para cerrar{images.length > 1 ? ' · Deslizá para ver más' : ''}
+        </Text>
+      </View>
+    </Modal>
+  );
+}
+
+const lb = StyleSheet.create({
+  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.94)' },
+  closeBtn: { position: 'absolute', right: 18, zIndex: 10 },
+  counter: {
+    position: 'absolute', alignSelf: 'center', zIndex: 10,
+    color: 'rgba(255,255,255,0.75)', fontSize: 13, fontWeight: '700',
+  },
+  slide: {
+    width: SCREEN.width,
+    height: SCREEN.height,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  image: { width: SCREEN.width, height: SCREEN.height * 0.78 },
+  hint: {
+    position: 'absolute', bottom: 0, left: 0, right: 0, textAlign: 'center',
+    color: 'rgba(255,255,255,0.45)', fontSize: 12,
+  },
+});
 
 // Bottom action bar pinned over content.
 export function BottomBar({ children }) {
@@ -157,4 +251,4 @@ const s = StyleSheet.create({
     backgroundColor: colors.bg },
 });
 
-export default { Screen, Header, Title, Sub, SectionLabel, Btn, Chip, Card, Field, LiveBadge, Tag, ImgBox, BottomBar, Row, Display };
+export default { Screen, Header, Title, Sub, SectionLabel, Btn, Chip, Card, Field, LiveBadge, Tag, ImgBox, ImageLightbox, BottomBar, Row, Display };

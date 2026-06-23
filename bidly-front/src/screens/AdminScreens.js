@@ -9,6 +9,7 @@ import { Display, Tag, Chip, Card, SectionLabel, Row, Btn, LiveBadge } from '../
 import { colors } from '../theme/theme';
 import { useAuth } from '../context/AuthContext';
 import { Subastas, Pujas, Items, Asistentes } from '../api/endpoints';
+import { tituloSubasta } from '../utils/subasta';
 
 // ─── Definición de escenarios ─────────────────────────────────────────────────
 const SCENARIOS = [
@@ -392,7 +393,7 @@ export function DashboardAdminScreen() {
           {subastas.map(sub => (
             <Chip
               key={sub.identificador}
-              label={`#${sub.identificador} ${sub.estado === 'abierta' ? '🟢' : '🔴'} ${sub.categoria ?? ''}`}
+              label={`${sub.titulo || sub.categoria || 'Subasta'} ${sub.estado === 'abierta' ? '🟢' : '🔴'}`}
               active={selId === sub.identificador}
               onPress={() => { setSelId(sub.identificador); setResults({}); }}
             />
@@ -477,7 +478,7 @@ function EstadoSection({ subasta, items, asistentes, pujas, activeIdx, onSelectI
       {/* Info subasta */}
       <Card>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-          <Display style={{ fontSize: 15 }}>Subasta #{subasta?.identificador}</Display>
+          <Display style={{ fontSize: 15 }} numberOfLines={2}>{tituloSubasta(subasta, items)}</Display>
           {isOpen ? <LiveBadge /> : <Tag label="CERRADA" color={colors.muted} />}
         </View>
         <Row k="Categoría" v={subasta?.categoria ?? '—'} />

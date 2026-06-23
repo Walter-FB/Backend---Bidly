@@ -30,4 +30,8 @@ public class Subasta {
     private BigDecimal precioBase;
     @Transient
     private Long totalAsistentes;
+    @Transient
+    private String titulo;
+    @Transient
+    private Integer totalItems;
 }

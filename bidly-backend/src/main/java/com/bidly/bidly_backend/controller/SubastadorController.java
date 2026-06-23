@@ -2,9 +2,9 @@ package com.bidly.bidly_backend.controller;
 
 import com.bidly.bidly_backend.model.Subasta;
 import com.bidly.bidly_backend.model.Subastador;
-import com.bidly.bidly_backend.repository.SubastaMonedaRepository;
 import com.bidly.bidly_backend.repository.SubastaRepository;
 import com.bidly.bidly_backend.repository.SubastadorRepository;
+import com.bidly.bidly_backend.service.SubastaService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -23,7 +23,7 @@ public class SubastadorController {
     private SubastadorRepository subastadorRepository;
 
     @Autowired
-    private SubastaMonedaRepository subastaMonedaRepository;
+    private SubastaService subastaService;
 
     @GetMapping("/{id}")
     public ResponseEntity<Subastador> obtener(@PathVariable Long id) {
@@ -48,10 +48,7 @@ public class SubastadorController {
     @GetMapping("/{id}/subastas")
     public ResponseEntity<List<Subasta>> subastas(@PathVariable Long id) {
         List<Subasta> resultado = subastaRepository.findBySubastador(id);
-        resultado.forEach(sub ->
-            subastaMonedaRepository.findById(sub.getIdentificador())
-                .ifPresent(m -> sub.setMoneda(m.getMoneda()))
-        );
+        subastaService.enrichAll(resultado);
         return ResponseEntity.ok(resultado);
     }
 }
