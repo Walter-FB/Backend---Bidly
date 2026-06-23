@@ -6,7 +6,7 @@ import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { Display, Tag, Chip, Card, SectionLabel, Row, Btn, LiveBadge, SuccessBanner } from '../components/ui';
 import { colors } from '../theme/theme';
-import { Subastas, Pujas, Items, SubastaRevision } from '../api/endpoints';
+import { Subastas, Pujas, SubastaRevision } from '../api/endpoints';
 import { tituloSubasta, formatFechaSubasta, tagEstadoSubasta } from '../utils/subasta';
 
 const FILTROS_SUBASTA = [
@@ -216,10 +216,12 @@ export function DashboardAdminScreen() {
 
   const aplicarEstado = (next) => {
     if (ctrl || !selId) return;
-    const verbo = next === 'abierta' ? 'abrir' : 'cerrar';
+    const esInicio = next === 'abierta';
     Alert.alert(
-      `${verbo.charAt(0).toUpperCase() + verbo.slice(1)} subasta`,
-      `¿Querés ${verbo} la subasta #${selId}?`,
+      esInicio ? 'Iniciar puja' : 'Cerrar subasta',
+      esInicio
+        ? `¿Iniciar la puja de la subasta #${selId} ahora? El timer de 30 min arranca ya.`
+        : `¿Cerrar la subasta #${selId}?`,
       [
         { text: 'Cancelar', style: 'cancel' },
         {
@@ -232,10 +234,13 @@ export function DashboardAdminScreen() {
               await refreshContexto();
               await loadSubastas();
               if (mounted.current) {
-                setSuccessMsg(next === 'abierta' ? 'Subasta abierta correctamente' : 'Subasta cerrada correctamente');
+                setSuccessMsg(esInicio ? 'Puja iniciada — en vivo' : 'Subasta cerrada');
               }
             } catch (e) {
-              Alert.alert('Error', e.message || `No se pudo ${verbo} la subasta.`);
+              const msg = e.data?.code === 'NOT_APPROVED'
+                ? 'La subasta debe estar aprobada antes de iniciar la puja.'
+                : (e.message || (esInicio ? 'No se pudo iniciar la puja.' : 'No se pudo cerrar la subasta.'));
+              Alert.alert('Error', msg);
             } finally {
               if (mounted.current) setCtrl(false);
             }
@@ -243,20 +248,6 @@ export function DashboardAdminScreen() {
         },
       ],
     );
-  };
-
-  const adjudicar = async () => {
-    if (ctrl || !activeItem || activeItem.subastado === 'si') return;
-    setCtrl(true);
-    try {
-      await Items.adjudicar(activeItem.identificador);
-      await refreshContexto();
-      await loadSubastas();
-    } catch (e) {
-      Alert.alert('Error', e.message || 'No se pudo adjudicar el ítem.');
-    } finally {
-      if (mounted.current) setCtrl(false);
-    }
   };
 
   const solicitudesLabel = pendientesCount > 0
@@ -312,7 +303,6 @@ export function DashboardAdminScreen() {
             onAbrir={() => aplicarEstado('abierta')}
             onCerrar={() => aplicarEstado('cerrada')}
             onRefresh={refreshContexto}
-            onAdjudicar={adjudicar}
             ctrl={ctrl}
             lastRefresh={lastRefresh}
           />
@@ -460,10 +450,10 @@ function SolicitudesSection({
 
 function EstadoSection({
   subasta, items, asistentes, pujas, activeIdx, onBack, onSelectItem,
-  onAbrir, onCerrar, onRefresh, onAdjudicar, ctrl, lastRefresh,
+  onAbrir, onCerrar, onRefresh, ctrl, lastRefresh,
 }) {
   const tag = tagEstadoSubasta(subasta || {});
-  const isOpen = subasta?.estado === 'abierta';
+  const isOpen = subasta?.fase === 'en_curso';
   const allAdjudicados = items.length > 0 && items.every(i => i.subastado === 'si');
   const datosInconsistentes = isOpen && allAdjudicados;
 
@@ -500,6 +490,9 @@ function EstadoSection({
           } />
         ) : null}
         <Row k="Asistentes" v={String(asistentes.length)} />
+        {isOpen && subasta?.segundosRestantes != null ? (
+          <Row k="Timer" v={`${Math.floor(subasta.segundosRestantes / 60)}m ${subasta.segundosRestantes % 60}s`} vc={colors.gold} />
+        ) : null}
         <Row k="Último refresh" v={lastRefresh} />
       </Card>
 
@@ -552,17 +545,10 @@ function EstadoSection({
 
       <SectionLabel>Control</SectionLabel>
       <View style={{ flexDirection: 'row', gap: 10 }}>
-        <Btn title="Abrir" kind="primary" style={{ flex: 1 }} onPress={onAbrir} disabled={ctrl || isOpen} />
+        <Btn title="Iniciar puja" kind="primary" style={{ flex: 1 }} onPress={onAbrir} disabled={ctrl || isOpen} />
         <Btn title="Cerrar" kind="danger" style={{ flex: 1 }} onPress={onCerrar} disabled={ctrl || !isOpen} />
       </View>
       <Btn title="Refrescar" kind="ghost" onPress={onRefresh} disabled={ctrl} style={{ marginTop: 4 }} />
-      <Btn
-        title="Adjudicar ítem"
-        kind="primary"
-        onPress={onAdjudicar}
-        disabled={ctrl || !items[activeIdx] || items[activeIdx]?.subastado === 'si'}
-        style={{ marginTop: 4 }}
-      />
     </View>
   );
 }

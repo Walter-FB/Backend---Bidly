@@ -1,6 +1,6 @@
 // BIDLY — Perfil, MisSubastas, MisCompras, Historial, Publicar, DatosGanador.
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, Image, Modal } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, Image, Modal, Animated } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,6 +13,27 @@ import { Clientes, Personas, RegistroSubasta, Subastas, Productos, Subastadores,
 import { tituloSubasta, subtituloSubasta, formatFechaSubasta, esSubastaFinalizada, tagEstadoSubasta } from '../utils/subasta';
 
 const COMISION_BIDLY = 0.10;
+
+function irAMisSubastas(navigation, params = {}) {
+  navigation.reset({
+    index: 0,
+    routes: [
+      {
+        name: 'Main',
+        state: {
+          index: 3,
+          routes: [
+            { name: 'Home' },
+            { name: 'Historial' },
+            { name: 'Publish' },
+            { name: 'Subastas', params },
+            { name: 'Perfil' },
+          ],
+        },
+      },
+    ],
+  });
+}
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
@@ -231,12 +252,13 @@ export function HistorialScreen({ navigation }) {
 }
 
 // ─── MIS SUBASTAS ─────────────────────────────────────────────────────────────
-export function MisSubastasScreen({ navigation }) {
+export function MisSubastasScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const [tab, setTab] = useState('curso');
   const [subastas, setSubastas] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [toast, setToast] = useState(null);
 
   const cargar = () => {
     if (!user?.clienteId) { setLoading(false); return; }
@@ -251,6 +273,17 @@ export function MisSubastasScreen({ navigation }) {
     const unsubscribe = navigation.addListener('focus', cargar);
     return unsubscribe;
   }, [navigation, user]);
+
+  useEffect(() => {
+    if (!route.params?.creada) return;
+    const titulo = route.params.tituloCreada || 'Tu subasta';
+    setToast(`"${titulo}" creada correctamente`);
+    setTab('todas');
+    cargar();
+    navigation.setParams({ creada: undefined, tituloCreada: undefined });
+    const t = setTimeout(() => setToast(null), 4500);
+    return () => clearTimeout(t);
+  }, [route.params?.creada]);
 
   const filtradas = subastas.filter((a) => {
     if (tab === 'curso') return !esSubastaFinalizada(a);
@@ -267,6 +300,12 @@ export function MisSubastasScreen({ navigation }) {
         </TouchableOpacity>
       </View>
       <ScrollView contentContainerStyle={{ paddingHorizontal: 22, paddingBottom: 170 }} showsVerticalScrollIndicator={false}>
+        {toast && (
+          <View style={s.toastOk}>
+            <Ionicons name="checkmark-circle" size={20} color={colors.green} />
+            <Text style={{ color: '#fff', fontSize: 13, fontWeight: '600', flex: 1 }}>{toast}</Text>
+          </View>
+        )}
         <Title>Mis subastas</Title>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginVertical: 12 }}>
           <View style={{ flexDirection: 'row', gap: 9 }}>
@@ -576,6 +615,9 @@ export function CrearSubastaScreen({ navigation, route }) {
     : [];
   const [itemsSeleccionados, setItemsSeleccionados] = useState(productoInicial);
   const [loading, setLoading] = useState(false);
+  const [exito, setExito] = useState(null);
+  const exitoScale = useRef(new Animated.Value(0.6)).current;
+  const exitoOpacity = useRef(new Animated.Value(0)).current;
   const set = (k) => (v) => setF((s) => ({ ...s, [k]: v }));
 
   const setItemField = (productoId, campo, valor) => {
@@ -600,6 +642,19 @@ export function CrearSubastaScreen({ navigation, route }) {
     if (!f.hora) return Alert.alert('Hora requerida', 'Ingresá la hora de inicio.');
     if (!f.ubicacion.trim()) return Alert.alert('Ubicación requerida', 'Completá la dirección.');
     setPaso(2);
+  };
+
+  const animarExitoYRedirigir = (subasta, titulo) => {
+    setExito({ id: subasta.identificador, titulo });
+    exitoScale.setValue(0.6);
+    exitoOpacity.setValue(0);
+    Animated.parallel([
+      Animated.spring(exitoScale, { toValue: 1, friction: 6, tension: 80, useNativeDriver: true }),
+      Animated.timing(exitoOpacity, { toValue: 1, duration: 280, useNativeDriver: true }),
+    ]).start();
+    setTimeout(() => {
+      irAMisSubastas(navigation, { creada: subasta.identificador, tituloCreada: titulo });
+    }, 1600);
   };
 
   const onCrear = async () => {
@@ -639,14 +694,11 @@ export function CrearSubastaScreen({ navigation, route }) {
         )
       );
 
-      Alert.alert(
-        '¡Subasta enviada!',
-        `"${itemsSeleccionados[0]?.titulo || tituloSubasta(subasta)}" fue creada y está pendiente de aprobación del administrador. Cuando la aprueben, podrás abrirla desde Mis subastas.`,
-        [{ text: 'Ir a mis subastas', onPress: () => navigation.navigate('Subastas') }]
-      );
+      const titulo = itemsSeleccionados[0]?.titulo || tituloSubasta(subasta);
+      setLoading(false);
+      animarExitoYRedirigir(subasta, titulo);
     } catch (e) {
       Alert.alert('Error al crear subasta', e.message || 'Revisá los datos e intentá nuevamente.');
-    } finally {
       setLoading(false);
     }
   };
@@ -789,8 +841,25 @@ export function CrearSubastaScreen({ navigation, route }) {
       </TouchableOpacity>
 
       <View style={{ marginTop: 24 }}>
-        <Btn title={loading ? 'Creando subasta…' : `Crear subasta con ${itemsSeleccionados.length} producto(s)`} onPress={onCrear} disabled={loading || itemsSeleccionados.length === 0} />
+        <Btn title={loading ? 'Creando subasta…' : `Crear subasta con ${itemsSeleccionados.length} producto(s)`} onPress={onCrear} disabled={loading || exito || itemsSeleccionados.length === 0} />
       </View>
+
+      <Modal visible={!!exito} transparent animationType="fade">
+        <View style={s.exitoOverlay}>
+          <Animated.View style={[s.exitoCard, { opacity: exitoOpacity, transform: [{ scale: exitoScale }] }]}>
+            <View style={s.exitoIcon}>
+              <Ionicons name="checkmark" size={42} color="#fff" />
+            </View>
+            <Display style={{ fontSize: 22, textAlign: 'center', marginTop: 16 }}>¡Subasta creada!</Display>
+            <Text style={{ color: colors.muted, fontSize: 14, textAlign: 'center', marginTop: 8, lineHeight: 20 }}>
+              {exito?.titulo}
+            </Text>
+            <Text style={{ color: colors.blue, fontSize: 13, fontWeight: '700', marginTop: 18 }}>
+              Yendo a Mis subastas…
+            </Text>
+          </Animated.View>
+        </View>
+      </Modal>
     </Screen>
   );
 }
@@ -1180,6 +1249,23 @@ const s = StyleSheet.create({
   photoEmpty: { borderWidth: 1.5, borderStyle: 'dashed', borderColor: colors.border, backgroundColor: colors.card, borderRadius: 12 },
   winnerAvatar: { width: 46, height: 46, borderRadius: 23, backgroundColor: colors.cardEl, alignItems: 'center', justifyContent: 'center' },
   dpIcon: { width: 40, height: 40, borderRadius: 10, backgroundColor: 'rgba(59,130,246,0.12)', alignItems: 'center', justifyContent: 'center' },
+  toastOk: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: 'rgba(55,214,111,0.12)', borderWidth: 1, borderColor: colors.green,
+    borderRadius: 12, padding: 14, marginBottom: 12,
+  },
+  exitoOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.88)',
+    alignItems: 'center', justifyContent: 'center', padding: 28,
+  },
+  exitoCard: {
+    width: '100%', backgroundColor: colors.card, borderRadius: 20,
+    borderWidth: 1, borderColor: colors.borderHi, padding: 28, alignItems: 'center',
+  },
+  exitoIcon: {
+    width: 80, height: 80, borderRadius: 40, backgroundColor: colors.green,
+    alignItems: 'center', justifyContent: 'center',
+  },
 });
 
 // Estilos del calendar picker y time selector

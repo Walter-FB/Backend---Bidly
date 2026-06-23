@@ -4,7 +4,7 @@ import { View, Text, ScrollView, StyleSheet, ActivityIndicator, Alert, Touchable
 import { Ionicons } from '@expo/vector-icons';
 import { Screen, Header, Title, SectionLabel, Btn, Card, LiveBadge, Tag, ImgBox, ImageLightbox, BottomBar, Row, Display, SuccessBanner } from '../components/ui';
 import { colors } from '../theme/theme';
-import { Subastas, Pujas, Asistentes, Productos, Items, Clientes } from '../api/endpoints';
+import { Subastas, Pujas, Asistentes, Productos, Clientes } from '../api/endpoints';
 import { BASE_URL } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { tituloSubasta, tagEstadoSubasta } from '../utils/subasta';
@@ -603,7 +603,6 @@ export function SubastaAdminScreen({ navigation, route }) {
   const [pujas, setPujas] = useState([]);
   const [asistentes, setAsistentes] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [adjudicando, setAdjudicando] = useState(false);
   const [cambiandoEstado, setCambiandoEstado] = useState(false);
   const [successMsg, setSuccessMsg] = useState(null);
   const [fotoAmpliada, setFotoAmpliada] = useState(false);
@@ -656,14 +655,16 @@ export function SubastaAdminScreen({ navigation, route }) {
   const onToggleEstado = async () => {
     if (!subasta) return;
     const nuevoEstado = subasta.estado === 'abierta' ? 'cerrada' : 'abierta';
-    const accion = nuevoEstado === 'abierta' ? 'Abrir' : 'Cerrar';
+    const esInicio = nuevoEstado === 'abierta';
     Alert.alert(
-      `${accion} subasta`,
-      `¿Confirmas ${accion.toLowerCase()} la subasta?`,
+      esInicio ? 'Iniciar puja' : 'Cerrar subasta',
+      esInicio
+        ? '¿Iniciar la puja ahora? El timer de 30 minutos arranca ya.'
+        : '¿Cerrar la subasta?',
       [
         { text: 'Cancelar', style: 'cancel' },
         {
-          text: accion,
+          text: 'Confirmar',
           style: nuevoEstado === 'cerrada' ? 'destructive' : 'default',
           onPress: async () => {
             setCambiandoEstado(true);
@@ -671,47 +672,15 @@ export function SubastaAdminScreen({ navigation, route }) {
               const updated = await Subastas.actualizarEstado(subastaId, nuevoEstado);
               if (mounted.current) {
                 setSubasta(updated);
-                setSuccessMsg(nuevoEstado === 'abierta' ? 'Subasta abierta correctamente' : 'Subasta cerrada correctamente');
+                setSuccessMsg(esInicio ? 'Puja iniciada — en vivo' : 'Subasta cerrada');
               }
             } catch (e) {
               const msg = e.data?.code === 'NOT_APPROVED'
                 ? 'Tu subasta aún no fue aprobada por un administrador.'
-                : (e.message || 'No se pudo actualizar el estado.');
+                : (e.message || (esInicio ? 'No se pudo iniciar la puja.' : 'No se pudo cerrar la subasta.'));
               Alert.alert('Error', msg);
             } finally {
               if (mounted.current) setCambiandoEstado(false);
-            }
-          },
-        },
-      ]
-    );
-  };
-
-  const onAdjudicar = async () => {
-    if (!itemActivo) return;
-    if (pujas.length === 0) {
-      return Alert.alert('Sin pujas', 'No hay pujas en este ítem. No se puede adjudicar.');
-    }
-    Alert.alert(
-      'Adjudicar ítem',
-      `¿Cerrar las pujas de "${itemActivo.producto?.descripcionCatalogo || `ítem #${itemActivo.identificador}`}" y marcar ganador?`,
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Adjudicar',
-          onPress: async () => {
-            setAdjudicando(true);
-            try {
-              const resultado = await Items.adjudicar(itemActivo.identificador);
-              Alert.alert(
-                '¡Ítem adjudicado!',
-                `Ganador: Cliente #${resultado.ganadorClienteId}\nImporte: ${formatImporte(resultado.importeFinal, subasta?.moneda)}`,
-                [{ text: 'OK', onPress: () => cargarSubasta() }]
-              );
-            } catch (e) {
-              Alert.alert('Error', e.data?.error || e.message || 'No se pudo adjudicar.');
-            } finally {
-              if (mounted.current) setAdjudicando(false);
             }
           },
         },
@@ -792,16 +761,6 @@ export function SubastaAdminScreen({ navigation, route }) {
                 <Text style={{ color: colors.muted, fontSize: 14, marginTop: 4 }}>Sin pujas aún</Text>
               )}
             </View>
-
-            {/* Acciones sobre el ítem */}
-            {!itemActivoAdjudicado && (
-              <Btn
-                title={adjudicando ? 'Adjudicando…' : 'Adjudicar ítem'}
-                onPress={onAdjudicar}
-                disabled={adjudicando || !estaAbierta}
-                style={{ marginTop: 8 }}
-              />
-            )}
           </Card>
         ) : (
           <Card el>
@@ -873,7 +832,7 @@ export function SubastaAdminScreen({ navigation, route }) {
               ? 'Actualizando…'
               : estaAbierta
               ? 'Cerrar subasta'
-              : 'Abrir subasta'
+              : 'Iniciar puja'
           }
           kind={estaAbierta ? 'danger' : 'primary'}
           onPress={onToggleEstado}

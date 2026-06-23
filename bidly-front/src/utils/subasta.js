@@ -103,7 +103,7 @@ export function tagEstadoSubasta(subasta) {
   if (rev === 'pendiente') return { label: 'PENDIENTE', color: colors.gold };
   if (rev === 'pausada') return { label: 'PAUSADA', color: colors.muted };
   if (rev === 'rechazada') return { label: 'RECHAZADA', color: colors.red };
-  if (sub.fase === 'en_curso') return { label: 'EN VIVO', color: colors.green };
+  if (sub.fase === 'en_curso' || sub.estado === 'abierta') return { label: 'EN VIVO', color: colors.green };
   if (esSubastaFinalizada(sub)) return { label: 'FINALIZADA', color: colors.muted };
   if (sub.fase === 'programada' || sub.estado === 'cerrada') return { label: 'POR ABRIR', color: colors.blue };
   if (sub.estado === 'abierta') return { label: 'ABIERTA', color: colors.green };

@@ -104,29 +104,26 @@ public class SubastaService {
         LocalDateTime ahora = LocalDateTime.now();
         LocalDateTime inicio = inicioSubasta(s);
 
-        if (inicio != null && inicio.isAfter(ahora)) {
-            s.setFase(FASE_PROGRAMADA);
-            s.setSegundosRestantes(ChronoUnit.SECONDS.between(ahora, inicio));
-            return;
-        }
-
         if ("abierta".equals(s.getEstado())) {
             s.setFase(FASE_EN_CURSO);
             LocalDateTime referencia = pujoFechaRepository.findUltimaFechaBySubastaId(s.getIdentificador())
-                .orElse(inicio);
-            if (referencia == null) {
-                s.setSegundosRestantes(null);
-                return;
-            }
+                .orElse(ahora);
             LocalDateTime cierre = referencia.plusMinutes(MINUTOS_INACTIVIDAD);
             long segundos = ChronoUnit.SECONDS.between(ahora, cierre);
             s.setSegundosRestantes(Math.max(0L, segundos));
             return;
         }
 
-        // cerrada en BD = aún no abierta por el dueño, no significa finalizada
+        if (inicio != null && inicio.isAfter(ahora)) {
+            s.setFase(FASE_PROGRAMADA);
+            s.setSegundosRestantes(ChronoUnit.SECONDS.between(ahora, inicio));
+            return;
+        }
+
+        // cerrada en BD = aún no iniciada por el dueño/admin
         s.setFase(FASE_PROGRAMADA);
-        s.setSegundosRestantes(0L);
+        s.setSegundosRestantes(inicio != null && inicio.isAfter(ahora)
+                ? ChronoUnit.SECONDS.between(ahora, inicio) : 0L);
     }
 
     private LocalDateTime inicioSubasta(Subasta s) {
