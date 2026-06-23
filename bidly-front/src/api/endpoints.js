@@ -17,6 +17,8 @@ export const Auth = {
     api.post('/auth/send-verification', { email }, { auth: false }),
   verifyCode: (email, code) =>
     api.post('/auth/verify-code', { email, code }, { auth: false }),
+  uploadDni: (clienteId, formData) =>
+    upload(`/clientes/${clienteId}/dni-fotos`, formData),
 };
 
 // ─── SUBASTAS ────────────────────────────────────────────────────────────────
@@ -123,7 +125,7 @@ export const Productos = {
     api.patch(`/productos/${id}/disponible`, { disponible }),
   fotos: (id) => api.get(`/productos/${id}/fotos`),
   agregarFotos: (id, formData) => upload(`/productos/${id}/fotos`, formData),
-  eliminar: (id) => api.delete(`/productos/${id}`),
+  eliminar: (id) => api.del(`/productos/${id}`),
 };
 
 // ─── REGISTRO DE SUBASTA ─────────────────────────────────────────────────────

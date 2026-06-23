@@ -4,7 +4,7 @@ import { View, Text, ScrollView, StyleSheet, ActivityIndicator, Alert, Touchable
 import { Ionicons } from '@expo/vector-icons';
 import { Screen, Header, Title, SectionLabel, Btn, Card, LiveBadge, Tag, ImgBox, BottomBar, Row, Display } from '../components/ui';
 import { colors } from '../theme/theme';
-import { Subastas, Pujas, Asistentes, Productos, Items } from '../api/endpoints';
+import { Subastas, Pujas, Asistentes, Productos, Items, Clientes } from '../api/endpoints';
 import { BASE_URL } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 
@@ -50,6 +50,23 @@ function formatCountdown(seconds) {
   const s = seconds % 60;
   if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+function mensajeError(e, proximaPuja, maxPuja, moneda) {
+  const code = e?.data?.code;
+  const min = e?.data?.minimoAceptable ?? proximaPuja;
+  const max = e?.data?.maximoAceptable ?? maxPuja;
+  switch (code) {
+    case 'MIN_BID':      return `La oferta mínima es ${formatImporte(min, moneda)}.`;
+    case 'MAX_BID':      return `El tope para esta subasta es ${formatImporte(max, moneda)}.`;
+    case 'NO_PAYMENT':   return 'Necesitás un medio de pago verificado para pujar.';
+    case 'CATEGORY':     return 'Tu categoría no permite esta subasta.';
+    case 'FORBIDDEN':    return 'No estás inscripto en esta subasta.';
+    case 'AUCTION_CLOSED':
+    case 'ITEM_SOLD':    return 'La subasta ya cerró.';
+    case 'RACE':         return 'Alguien pujó más rápido. Mirá el nuevo monto.';
+    default:             return e?.data?.error || e?.message || 'Error al registrar la puja.';
+  }
 }
 
 // ─── PRODUCTO SCREEN ──────────────────────────────────────────────────────────
@@ -199,6 +216,7 @@ export function ProductoScreen({ navigation, route }) {
               comision: primerItem.comision,
               fecha: subasta.fecha,
               hora: subasta.hora,
+              categoriaSubasta: subasta.categoria,
             })}
           />
         </BottomBar>
@@ -220,10 +238,12 @@ export function SubastaEnVivoScreen({ navigation, route }) {
     comision = 0,
     fecha,
     hora,
+    categoriaSubasta,
   } = route.params || {};
 
   const [pujas, setPujas] = useState([]);
   const [asistenteId, setAsistenteId] = useState(null);
+  const [tieneAcceso, setTieneAcceso] = useState(null);
   const [loadingPujas, setLoadingPujas] = useState(true);
   const [pujando, setPujando] = useState(false);
   const [pollingError, setPollingError] = useState(false);
@@ -250,13 +270,23 @@ export function SubastaEnVivoScreen({ navigation, route }) {
     return () => clearInterval(tick);
   }, [fecha, hora]);
 
-  // Inscribir al usuario como asistente (solo si tiene cuenta).
+  // Inscribir al usuario como asistente y verificar acceso (solo si tiene cuenta).
   useEffect(() => {
     if (!user?.clienteId || !subastaId) return;
+
     Asistentes.inscribir(user.clienteId, subastaId)
       .then((a) => { if (mounted.current) setAsistenteId(a.identificador); })
       .catch(() => {});
-  }, [user, subastaId]);
+
+    const RANK = { comun: 1, especial: 2, plata: 3, oro: 4, platino: 5 };
+    const categoryOk = (RANK[user.categoria] ?? 0) >= (RANK[categoriaSubasta] ?? 0);
+    Clientes.mediosPago(user.clienteId)
+      .then((medios) => {
+        const tieneVerificado = (medios || []).some((m) => m.verificado === 'si');
+        if (mounted.current) setTieneAcceso(categoryOk && tieneVerificado);
+      })
+      .catch(() => { if (mounted.current) setTieneAcceso(false); });
+  }, [user, subastaId, categoriaSubasta]);
 
   // Cargar pujas y refrescar cada 5 segundos.
   // Detecta automáticamente cuando el ítem fue adjudicado y navega al resultado.
@@ -306,7 +336,7 @@ export function SubastaEnVivoScreen({ navigation, route }) {
     return () => clearInterval(interval);
   }, [cargarPujas]);
 
-  // Calcular puja actual y próximo importe.
+  // Calcular puja actual, próximo importe y tope máximo.
   const pujaActual = pujas.length > 0 ? pujas[0].importe : null;
   const minIncremento = precioBase > 0
     ? Math.ceil(Number(precioBase) * 0.01 * 100) / 100
@@ -314,6 +344,12 @@ export function SubastaEnVivoScreen({ navigation, route }) {
   const proximaPuja = pujaActual != null
     ? Number(pujaActual) + minIncremento
     : Number(precioBase);
+  const CATS_SIN_LIMITE = new Set(['oro', 'platino']);
+  const maxPuja = CATS_SIN_LIMITE.has(categoriaSubasta)
+    ? null
+    : pujaActual != null
+      ? Number(pujaActual) + Number(precioBase) * 0.20
+      : Number(precioBase) * 1.20;
 
   const onPujar = async () => {
     // Invitado: mostrar aviso y redirigir al login.
@@ -336,10 +372,8 @@ export function SubastaEnVivoScreen({ navigation, route }) {
       await Pujas.pujar(asistenteId, itemId, proximaPuja);
       cargarPujas();
     } catch (e) {
-      Alert.alert(
-        'No se pudo pujar',
-        e.data?.error || e.message || 'Error al registrar la puja.',
-      );
+      Alert.alert('No se pudo pujar', mensajeError(e, proximaPuja, maxPuja, moneda));
+      if (['MIN_BID', 'RACE'].includes(e?.data?.code)) cargarPujas();
     } finally {
       setPujando(false);
     }
@@ -395,7 +429,7 @@ export function SubastaEnVivoScreen({ navigation, route }) {
                 {pujaActual != null ? formatImporte(pujaActual, moneda) : formatImporte(precioBase, moneda)}
               </Text>
               <Text style={{ color: colors.muted, fontSize: 12.5, marginTop: 2 }}>
-                Próxima mínima: {formatImporte(proximaPuja, moneda)}
+                Mínima: {formatImporte(proximaPuja, moneda)}{maxPuja != null ? `  ·  Tope: ${formatImporte(maxPuja, moneda)}` : '  ·  Sin tope'}
               </Text>
             </>
           )}
@@ -411,6 +445,13 @@ export function SubastaEnVivoScreen({ navigation, route }) {
           <Card el style={{ marginTop: 10, backgroundColor: 'rgba(255,193,7,0.08)', borderColor: colors.gold, borderWidth: 1 }}>
             <Text style={{ color: colors.gold, fontWeight: '700', textAlign: 'center', fontSize: 13 }}>
               Estás viendo como invitado. Creá una cuenta para pujar.
+            </Text>
+          </Card>
+        )}
+        {!user?.isGuest && tieneAcceso === false && (
+          <Card el style={{ marginTop: 10, backgroundColor: 'rgba(255,59,48,0.10)', borderColor: '#ff3b30', borderWidth: 1 }}>
+            <Text style={{ color: '#ff3b30', fontWeight: '700', textAlign: 'center', fontSize: 13 }}>
+              No podés pujar en esta subasta. Verificá tu medio de pago o tu categoría.
             </Text>
           </Card>
         )}
@@ -444,7 +485,9 @@ export function SubastaEnVivoScreen({ navigation, route }) {
       </ScrollView>
 
       <BottomBar>
-        {esLidero ? (
+        {!user?.isGuest && tieneAcceso === false ? (
+          <Btn title="Solo lectura — sin acceso" kind="ghost" disabled />
+        ) : esLidero ? (
           <Btn title="Ya sos el mayor postor" kind="ghost" disabled />
         ) : (
           <Btn
