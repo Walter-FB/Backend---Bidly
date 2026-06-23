@@ -5,8 +5,9 @@ import Constants from 'expo-constants';
 // Base URL of the Spring Boot API.
 // Android emulator reaches host machine via 10.0.2.2; iOS simulator via localhost.
 // Override here or via app.json -> expo.extra.apiBaseUrl.
+// Siempre HTTPS en producción: PATCH/POST por HTTP reciben 301 y en móvil la request queda colgada.
 export const BASE_URL =
-  (Constants?.expoConfig?.extra?.apiBaseUrl) || 'http://backend-bidly.up.railway.app/api';
+  (Constants?.expoConfig?.extra?.apiBaseUrl) || 'https://backend-bidly.up.railway.app/api';
 
 const TOKEN_KEY = '@bidly_token';
 
@@ -32,7 +33,18 @@ export async function request(path, { method = 'GET', body, auth = true, headers
   });
 
   const text = await res.text();
-  const data = text ? JSON.parse(text) : null;
+  let data = null;
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      if (!res.ok) {
+        const err = new Error(`HTTP ${res.status}`);
+        err.status = res.status;
+        throw err;
+      }
+    }
+  }
 
   if (!res.ok) {
     const message = (data && (data.message || data.error)) || `HTTP ${res.status}`;

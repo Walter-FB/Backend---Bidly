@@ -209,8 +209,14 @@ export function DashboardAdminScreen() {
             await cfg.fn();
             await Promise.all([loadRevisiones(), loadSubastas()]);
             if (selId === subastaId && accion !== 'aprobar') await refreshContexto();
+            if (mounted.current && accion === 'aprobar') {
+              Alert.alert('Listo', 'Subasta aprobada. Ya es visible en el home.');
+            }
           } catch (e) {
-            Alert.alert('Error', e.message || 'No se pudo completar la acción.');
+            const msg = e.status === 301
+              ? 'Error de conexión (HTTP→HTTPS). Recargá la app con la última versión.'
+              : (e.message || 'No se pudo completar la acción.');
+            Alert.alert('Error', msg);
           } finally {
             if (mounted.current) setCtrl(false);
           }
