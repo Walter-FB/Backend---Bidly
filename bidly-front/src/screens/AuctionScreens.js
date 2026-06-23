@@ -546,6 +546,7 @@ export function GanasteScreen({ navigation, route }) {
         <Btn
           title="Continuar al pago"
           onPress={() => navigation.navigate('MedioPago', {
+            registroId: route.params?.registroId,
             subastaId, itemId, moneda, importe, comision, titulo,
           })}
         />
@@ -593,7 +594,6 @@ export function SubastaAdminScreen({ navigation, route }) {
   const [pujas, setPujas] = useState([]);
   const [asistentes, setAsistentes] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [cambiandoEstado, setCambiandoEstado] = useState(false);
   const [successMsg, setSuccessMsg] = useState(null);
   const [fotoAmpliada, setFotoAmpliada] = useState(false);
   const mounted = useRef(true);
@@ -641,27 +641,6 @@ export function SubastaAdminScreen({ navigation, route }) {
     const interval = setInterval(cargarPujas, 5000);
     return () => clearInterval(interval);
   }, [cargarPujas]);
-
-  const onToggleEstado = async () => {
-    if (!subasta || cambiandoEstado) return;
-    const nuevoEstado = subasta.estado === 'abierta' ? 'cerrada' : 'abierta';
-    const esInicio = nuevoEstado === 'abierta';
-    setCambiandoEstado(true);
-    try {
-      const updated = await Subastas.actualizarEstado(subastaId, nuevoEstado);
-      if (mounted.current) {
-        setSubasta(updated);
-        setSuccessMsg(esInicio ? 'Puja iniciada — en vivo' : 'Subasta cerrada');
-      }
-    } catch (e) {
-      const msg = e.data?.code === 'NOT_APPROVED'
-        ? 'Tu subasta aún no fue aprobada por un administrador.'
-        : (e.message || (esInicio ? 'No se pudo iniciar la puja.' : 'No se pudo cerrar la subasta.'));
-      Alert.alert('Error', msg);
-    } finally {
-      if (mounted.current) setCambiandoEstado(false);
-    }
-  };
 
   if (loading) {
     return (
@@ -801,25 +780,13 @@ export function SubastaAdminScreen({ navigation, route }) {
       </ScrollView>
 
       <BottomBar>
-        {enVivo ? (
-          <View style={{ flexDirection: 'row', gap: 10, flex: 1 }}>
-            <Btn title="Puja iniciada" kind="ghost" style={{ flex: 1 }} disabled />
-            <Btn
-              title={cambiandoEstado ? 'Actualizando…' : 'Cerrar'}
-              kind="danger"
-              style={{ flex: 1 }}
-              onPress={onToggleEstado}
-              disabled={cambiandoEstado}
-            />
-          </View>
-        ) : (
-          <Btn
-            title={cambiandoEstado ? 'Actualizando…' : 'Iniciar puja'}
-            kind="primary"
-            onPress={onToggleEstado}
-            disabled={cambiandoEstado}
-          />
-        )}
+        <Card el style={{ padding: 14, width: '100%' }}>
+          <Text style={{ color: colors.muted, fontSize: 13, textAlign: 'center', lineHeight: 19 }}>
+            {enVivo
+              ? 'Subasta en vivo. El cierre de la puja lo gestiona el panel de administración.'
+              : 'La puja solo puede iniciarse desde el panel de administración, una vez aprobada tu subasta.'}
+          </Text>
+        </Card>
       </BottomBar>
 
       <ImageLightbox

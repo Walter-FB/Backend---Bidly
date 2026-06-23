@@ -8,7 +8,7 @@ import { SplashScreen, LoginScreen, FotoDNIScreen, RegistroScreen, VerificarEmai
 import { FiltrosScreen, NotificacionesScreen } from '../screens/HomeScreens';
 import { ProductoScreen, SubastaEnVivoScreen, GanasteScreen, SubastaFinalizadaScreen, SubastaAdminScreen } from '../screens/AuctionScreens';
 import { MedioPagoScreen, SeguroScreen, ConfirmarPagoScreen, PagoConfirmadoScreen, MultaScreen, ReembolsoScreen } from '../screens/PaymentScreens';
-import { MisComprasScreen, HistorialScreen, PublicarScreen, DatosGanadorScreen, DatosPersonalesScreen, CrearSubastaScreen, MisProductosScreen } from '../screens/AccountScreens';
+import { MisComprasScreen, HistorialScreen, PublicarScreen, DatosGanadorScreen, CompraDetalleScreen, DatosPersonalesScreen, CrearSubastaScreen, MisProductosScreen } from '../screens/AccountScreens';
 import { DashboardAdminScreen } from '../screens/AdminScreens';
 
 const Stack = createNativeStackNavigator();
@@ -48,6 +48,7 @@ export default function RootNavigator() {
           <Stack.Screen name="Reembolso" component={ReembolsoScreen} />
           {/* account / seller */}
           <Stack.Screen name="MisCompras" component={MisComprasScreen} />
+          <Stack.Screen name="CompraDetalle" component={CompraDetalleScreen} />
           <Stack.Screen name="Historial" component={HistorialScreen} />
           <Stack.Screen name="Publicar" component={PublicarScreen} />
           <Stack.Screen name="DatosGanador" component={DatosGanadorScreen} />

@@ -10,7 +10,7 @@ import { AuctionCard } from './HomeScreens';
 import { useAuth } from '../context/AuthContext';
 import { BASE_URL, getToken } from '../api/client';
 import { Clientes, Personas, RegistroSubasta, Subastas, Productos, Subastadores, Catalogos } from '../api/endpoints';
-import { tituloSubasta, subtituloSubasta, formatFechaSubasta, esSubastaFinalizada, tagEstadoSubasta } from '../utils/subasta';
+import { tituloSubasta, subtituloSubasta, formatFechaSubasta, esSubastaFinalizada, esSubastaEnCursoVendedor, esMiSubasta, tagEstadoSubasta } from '../utils/subasta';
 
 const COMISION_BIDLY = 0.10;
 
@@ -70,6 +70,9 @@ function mapRegistro(r) {
     importe: r.importe,
     comision: r.comision,
     reembolsada: r.reembolsada,
+    subastaId: r.subasta?.identificador,
+    productoId: r.producto,
+    moneda: r.subasta?.moneda || 'pesos',
   };
 }
 
@@ -196,7 +199,7 @@ export function MisComprasScreen({ navigation }) {
         {filtrados.map((r) => (
           <TouchableOpacity
             key={r.id}
-            onPress={() => navigation.navigate('Reembolso', { registroId: r.id, importe: r.importe, titulo: r.title })}
+            onPress={() => navigation.navigate('CompraDetalle', r)}
           >
             <ListRow item={r} />
           </TouchableOpacity>
@@ -241,7 +244,7 @@ export function HistorialScreen({ navigation }) {
           {registros
             .filter((r) => tab === 'reemb' ? r.reembolsada === 'si' : true)
             .map((r) => (
-              <TouchableOpacity key={r.id} onPress={() => navigation.navigate('DatosGanador', { registroId: r.registroId })}>
+              <TouchableOpacity key={r.id} onPress={() => navigation.navigate('CompraDetalle', r)}>
                 <ListRow item={r} />
               </TouchableOpacity>
             ))}
@@ -285,8 +288,10 @@ export function MisSubastasScreen({ navigation, route }) {
     return () => clearTimeout(t);
   }, [route.params?.creada]);
 
-  const filtradas = subastas.filter((a) => {
-    if (tab === 'curso') return !esSubastaFinalizada(a);
+  const mias = subastas.filter((a) => esMiSubasta(a, user?.clienteId));
+
+  const filtradas = mias.filter((a) => {
+    if (tab === 'curso') return esSubastaEnCursoVendedor(a);
     if (tab === 'fin') return esSubastaFinalizada(a);
     return true;
   });
@@ -309,15 +314,19 @@ export function MisSubastasScreen({ navigation, route }) {
         <Title>Mis subastas</Title>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginVertical: 12 }}>
           <View style={{ flexDirection: 'row', gap: 9 }}>
-            <Chip label={`En curso · ${subastas.filter(a => !esSubastaFinalizada(a)).length}`} active={tab === 'curso'} dot={tab === 'curso'} onPress={() => setTab('curso')} />
+            <Chip label={`En curso · ${mias.filter(esSubastaEnCursoVendedor).length}`} active={tab === 'curso'} dot={tab === 'curso'} onPress={() => setTab('curso')} />
             <Chip label="Finalizadas" active={tab === 'fin'} onPress={() => setTab('fin')} />
-            <Chip label={`Todas · ${subastas.length}`} active={tab === 'todas'} onPress={() => setTab('todas')} />
+            <Chip label={`Todas · ${mias.length}`} active={tab === 'todas'} onPress={() => setTab('todas')} />
           </View>
         </ScrollView>
         {loading && <ActivityIndicator color={colors.blue} style={{ marginTop: 20 }} />}
         {!loading && filtradas.length === 0 && (
           <Text style={{ color: colors.muted, textAlign: 'center', marginTop: 20 }}>
-            Aún no tenés subastas.{'\n'}Presioná "Nueva subasta" para comenzar.
+            {tab === 'curso'
+              ? 'No tenés subastas en vivo.\nLa puja la inicia un administrador cuando aprueba tu solicitud.'
+              : tab === 'fin'
+                ? 'No tenés subastas finalizadas.'
+                : 'Aún no tenés subastas.\nPresioná "Nueva subasta" para comenzar.'}
           </Text>
         )}
         <View style={{ gap: 14 }}>
@@ -991,6 +1000,82 @@ export function PublicarScreen({ navigation }) {
       <View style={{ flexDirection: 'row', gap: 12, paddingHorizontal: 22, paddingBottom: 28, paddingTop: 14 }}>
         <Btn title="Borrador" kind="ghost" onPress={onBorrador} style={{ flex: 1 }} />
         <Btn title={loading ? 'Publicando…' : 'Publicar'} onPress={onPublicar} disabled={loading} style={{ flex: 1 }} />
+      </View>
+    </Screen>
+  );
+}
+
+// ─── COMPRA DETALLE (acceso al pago post-subasta) ─────────────────────────────
+export function CompraDetalleScreen({ navigation, route }) {
+  const {
+    registroId, title, date, sub, importe, comision, reembolsada,
+    subastaId, productoId, moneda = 'pesos',
+  } = route.params || {};
+
+  const total = importe != null
+    ? Number(importe) + Number(comision || 0)
+    : null;
+  const simbolo = moneda === 'dolares' ? 'U$D' : '$';
+  const puedePagar = reembolsada !== 'si';
+
+  const irAPago = () => {
+    navigation.navigate('MedioPago', {
+      registroId,
+      subastaId,
+      itemId: productoId,
+      importe,
+      comision,
+      moneda,
+      titulo: title,
+    });
+  };
+
+  return (
+    <Screen>
+      <Header />
+      <ScrollView contentContainerStyle={{ paddingHorizontal: 22, paddingBottom: 110 }} showsVerticalScrollIndicator={false}>
+        <Title>Mi compra</Title>
+        <Sub>Registro #{registroId || '—'}</Sub>
+        <Card el style={{ marginTop: 12, gap: 8 }}>
+          <Display style={{ fontSize: 16, lineHeight: 20 }}>{title || 'Artículo'}</Display>
+          {sub ? <Text style={{ color: colors.muted, fontSize: 13 }}>{sub}</Text> : null}
+          {date ? <Text style={{ color: colors.faint, fontSize: 12 }}>{date}</Text> : null}
+        </Card>
+        <SectionLabel>Importes</SectionLabel>
+        <Card el>
+          {importe != null && (
+            <Row k="Puja ganadora" v={`${simbolo} ${Number(importe).toLocaleString('es-AR')}`} />
+          )}
+          {Number(comision) > 0 && (
+            <Row k="Comisión" v={`${simbolo} ${Number(comision).toLocaleString('es-AR')}`} />
+          )}
+          {total != null && (
+            <View style={{ borderTopWidth: 1, borderTopColor: colors.border, marginTop: 8, paddingTop: 6 }}>
+              <Row k="Total" v={`${simbolo} ${total.toLocaleString('es-AR')}`} vc={colors.green} bold />
+            </View>
+          )}
+        </Card>
+        {reembolsada === 'si' && (
+          <Card el style={{ marginTop: 12, borderColor: colors.red, borderWidth: 1 }}>
+            <Text style={{ color: colors.red, fontWeight: '700', textAlign: 'center' }}>
+              Esta compra fue reembolsada
+            </Text>
+          </Card>
+        )}
+      </ScrollView>
+      <View style={{ gap: 10, paddingHorizontal: 22, paddingBottom: 28, paddingTop: 14 }}>
+        {puedePagar && (
+          <Btn title="Continuar al pago" onPress={irAPago} />
+        )}
+        <Btn
+          title="Solicitar reembolso"
+          kind={puedePagar ? 'ghost' : 'primary'}
+          onPress={() => navigation.navigate('Reembolso', {
+            registroId,
+            importe: total ?? importe,
+            titulo: title,
+          })}
+        />
       </View>
     </Screen>
   );
