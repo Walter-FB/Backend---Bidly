@@ -15,7 +15,7 @@ from app.models.item_catalogo import ItemCatalogo
 from app.models.producto import Producto
 from app.models.foto import Foto
 from app.schemas.subasta import SubastaCreate, SubastaEstadoUpdate, SesionResponse
-from app.services import subasta_service, subasta_estado_service, subasta_revision_service
+from app.services import subasta_service, subasta_estado_service, subasta_revision_service, notificacion_service
 from app.services.subasta_sesion_service import segundos_restantes
 from app.serializers import item_to_dict
 
@@ -96,6 +96,18 @@ def crear_subasta(body: SubastaCreate, db: Session = Depends(get_db)):
 
     db.commit()
     db.refresh(s)
+
+    from app.models.cliente import Cliente
+    cliente = db.query(Cliente).filter(Cliente.identificador == body.subastador).first()
+    if cliente:
+        notificacion_service.crear(
+            cliente.identificador,
+            "subasta_creada",
+            "Tu subasta fue creada y está pendiente de revisión",
+            db,
+        )
+        db.commit()
+
     return subasta_service.enrich(s, db)
 
 

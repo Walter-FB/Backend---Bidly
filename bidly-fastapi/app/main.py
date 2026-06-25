@@ -17,6 +17,14 @@ async def lifespan(app: FastAPI):
         conn.execute(text("ALTER TABLE subasta_estado_admin DROP CONSTRAINT IF EXISTS chk_subasta_estado_admin_estado"))
         conn.execute(text("ALTER TABLE subasta_estado_admin ALTER COLUMN estado DROP NOT NULL"))
         conn.execute(text("ALTER TABLE subasta_revision ALTER COLUMN solicitante DROP NOT NULL"))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS cliente_push_tokens (
+                id SERIAL PRIMARY KEY,
+                cliente INTEGER UNIQUE NOT NULL REFERENCES clientes(identificador),
+                token VARCHAR NOT NULL,
+                creado_en TIMESTAMP DEFAULT NOW()
+            )
+        """))
         conn.commit()
     from app.services.scheduler import scheduler
     scheduler.start()

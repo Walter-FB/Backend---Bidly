@@ -119,6 +119,13 @@ def add_medio_pago(id: int, body: MedioPagoCreate, db: Session = Depends(get_db)
     db.add(mp)
     db.commit()
     db.refresh(mp)
+
+    from app.services import notificacion_service
+    tipo_normalizado = _normalizar_tipo(body.tipo)
+    nombre_tipo = "tarjeta" if tipo_normalizado == "tarjeta" else "cuenta bancaria" if tipo_normalizado == "cuenta" else "medio de pago"
+    notificacion_service.crear(id, "medio_pago_agregado", f"Se agregó un {nombre_tipo} a tu cuenta", db)
+    db.commit()
+
     return mp
 
 

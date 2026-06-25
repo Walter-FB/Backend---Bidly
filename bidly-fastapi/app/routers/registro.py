@@ -121,4 +121,10 @@ def update_reembolso(id: int, body: ReembolsoUpdate, db: Session = Depends(get_d
         ree = Reembolso(registro=id, reembolsada=body.reembolsada)
         db.add(ree)
     db.commit()
+
+    if body.reembolsada == "si" and r.cliente:
+        from app.services import notificacion_service
+        notificacion_service.crear(r.cliente, "reembolso", "Tu pago fue reembolsado exitosamente", db)
+        db.commit()
+
     return _enrich_registro(r, db)
