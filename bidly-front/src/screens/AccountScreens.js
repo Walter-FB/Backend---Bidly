@@ -699,6 +699,21 @@ export function CrearSubastaScreen({ navigation, route }) {
   const [itemsSeleccionados, setItemsSeleccionados] = useState(productoInicial);
   const [loading, setLoading] = useState(false);
   const [exito, setExito] = useState(null);
+
+  // Recibir producto seleccionado desde MisProductosScreen (evita pasar función como param).
+  useEffect(() => {
+    const prod = route.params?.productoSeleccionado;
+    if (!prod) return;
+    setItemsSeleccionados((prev) => {
+      if (prev.find((i) => i.productoId === prod.identificador)) return prev;
+      return [...prev, {
+        productoId: prod.identificador,
+        titulo: prod.descripcionCatalogo || `Producto #${prod.identificador}`,
+        precioBase: '',
+      }];
+    });
+    navigation.setParams({ productoSeleccionado: undefined });
+  }, [route.params?.productoSeleccionado]);
   const exitoScale = useRef(new Animated.Value(0.6)).current;
   const exitoOpacity = useRef(new Animated.Value(0)).current;
   const set = (k) => (v) => setF((s) => ({ ...s, [k]: v }));
@@ -736,7 +751,11 @@ export function CrearSubastaScreen({ navigation, route }) {
       Animated.timing(exitoOpacity, { toValue: 1, duration: 280, useNativeDriver: true }),
     ]).start();
     setTimeout(() => {
-      irAMisSubastas(navigation, { creada: subasta.identificador, tituloCreada: titulo });
+      try {
+        irAMisSubastas(navigation, { creada: subasta.identificador, tituloCreada: titulo });
+      } catch {
+        navigation.goBack();
+      }
     }, 1600);
   };
 
@@ -744,9 +763,9 @@ export function CrearSubastaScreen({ navigation, route }) {
     if (itemsSeleccionados.length === 0) {
       return Alert.alert('Sin productos', 'Agregá al menos un producto a la subasta.');
     }
-    const sinPrecio = itemsSeleccionados.find((i) => !String(i.precioBase).trim());
+    const sinPrecio = itemsSeleccionados.find((i) => !String(i.precioBase).trim() || parseFloat(i.precioBase) <= 0 || isNaN(parseFloat(i.precioBase)));
     if (sinPrecio) {
-      return Alert.alert('Precio faltante', 'Completá el precio base de cada producto.');
+      return Alert.alert('Precio faltante', 'Completá el precio base de cada producto con un valor mayor a 0.');
     }
     setLoading(true);
     try {
@@ -853,7 +872,7 @@ export function CrearSubastaScreen({ navigation, route }) {
           </Text>
           <TouchableOpacity
             style={{ marginTop: 12 }}
-            onPress={() => navigation.navigate('MisProductos', { onSeleccionar: agregarProducto })}
+            onPress={() => navigation.navigate('MisProductos', { modoSeleccion: true })}
           >
             <Text style={{ color: colors.blue, fontWeight: '700', fontSize: 13 }}>Elegir de mis productos →</Text>
           </TouchableOpacity>
@@ -916,7 +935,7 @@ export function CrearSubastaScreen({ navigation, route }) {
 
       <TouchableOpacity
         style={cs.addProductoBtn}
-        onPress={() => navigation.navigate('MisProductos', { onSeleccionar: agregarProducto })}
+        onPress={() => navigation.navigate('MisProductos', { modoSeleccion: true })}
         activeOpacity={0.8}
       >
         <Ionicons name="add-circle-outline" size={20} color={colors.blue} />
@@ -1291,8 +1310,7 @@ export function DatosPersonalesScreen({ navigation }) {
 // ─── MIS PRODUCTOS SCREEN ────────────────────────────────────────────────────
 export function MisProductosScreen({ navigation, route }) {
   const { user } = useAuth();
-  const onSeleccionar = route.params?.onSeleccionar;
-  const modoSeleccion = !!onSeleccionar;
+  const modoSeleccion = !!route.params?.modoSeleccion;
   const [productos, setProductos] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -1310,8 +1328,7 @@ export function MisProductosScreen({ navigation, route }) {
   }, [navigation, user]);
 
   const seleccionar = (p) => {
-    onSeleccionar(p);
-    navigation.goBack();
+    navigation.navigate('CrearSubasta', { productoSeleccionado: p });
   };
 
   const confirmarEliminar = (p) => {

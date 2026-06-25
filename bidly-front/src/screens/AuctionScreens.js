@@ -44,9 +44,10 @@ async function buscarRegistroId(clienteId, subastaId, productoId) {
 }
 
 function mensajeError(e, proximaPuja, maxPuja, moneda) {
-  const code = e?.data?.code;
-  const min = e?.data?.minimoAceptable ?? proximaPuja;
-  const max = e?.data?.maximoAceptable ?? maxPuja;
+  const detail = e?.data?.detail ?? e?.data;
+  const code = detail?.code;
+  const min = detail?.minimoAceptable ?? proximaPuja;
+  const max = detail?.maximoAceptable ?? maxPuja;
   switch (code) {
     case 'MIN_BID':      return `La oferta mínima es ${formatImporte(min, moneda)}.`;
     case 'MAX_BID':      return `El tope para esta subasta es ${formatImporte(max, moneda)}.`;
@@ -58,7 +59,7 @@ function mensajeError(e, proximaPuja, maxPuja, moneda) {
     case 'ITEM_NOT_ACTIVE':
       return 'Este ítem ya no está en subasta. Volvé atrás y entrá al ítem activo.';
     case 'RACE':         return 'Alguien pujó más rápido. Mirá el nuevo monto.';
-    default:             return e?.data?.error || e?.message || 'Error al registrar la puja.';
+    default:             return detail?.error || detail?.message || e?.message || 'Error al registrar la puja.';
   }
 }
 
@@ -359,7 +360,7 @@ export function SubastaEnVivoScreen({ navigation, route }) {
           ganadora.asistente?.identificador === asistenteIdRef.current;
 
         if (yoGane) {
-          buscarRegistroId(user.clienteId, subastaId, productoId)
+          buscarRegistroId(user?.clienteId, subastaId, productoId)
             .then((registroId) => {
               if (!mounted.current) return;
               navigation.replace('Ganaste', {
@@ -371,7 +372,8 @@ export function SubastaEnVivoScreen({ navigation, route }) {
                 comision,
                 registroId,
               });
-            });
+            })
+            .catch(() => { navegado.current = false; });
         } else {
           navigation.replace('SubastaFinalizada', {
             titulo,
