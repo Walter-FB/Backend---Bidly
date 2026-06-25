@@ -92,7 +92,7 @@ def crear_subasta(body: SubastaCreate, db: Session = Depends(get_db)):
     db.add(sm)
 
     subasta_estado_service.crear_estado_pendiente(s.identificador, db)
-    subasta_revision_service.registrar_nueva(s, solicitante_id=None, db=db)
+    subasta_revision_service.registrar_nueva(s, solicitante_id=body.subastador, db=db)
 
     db.commit()
     db.refresh(s)
