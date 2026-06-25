@@ -1,0 +1,32 @@
+{
+  "expo": {
+    "name": "BIDLY",
+    "slug": "bidly",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "bidly",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0b1022",
+    "splash": {
+      "image": "./assets/icon.png",
+      "backgroundColor": "#0b1022",
+      "resizeMode": "contain"
+    },
+    "ios": {
+      "supportsTablet": false
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#0b1022"
+      }
+    },
+    "extra": {
+      "apiBaseUrl": "https://backend-bidly.up.railway.app/api"
+    },
+    "plugins": [
+      "expo-font"
+    ]
+  }
+}

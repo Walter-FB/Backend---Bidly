@@ -1,0 +1,256 @@
+-- =============================================
+-- SubastaApp - Script PostgreSQL
+-- Convertido desde SQL Server
+-- =============================================
+
+-- TABLA: paises
+CREATE TABLE paises (
+    numero INT NOT NULL,
+    nombre VARCHAR(250) NOT NULL,
+    nombreCorto VARCHAR(250) NULL,
+    capital VARCHAR(250) NOT NULL,
+    nacionalidad VARCHAR(250) NOT NULL,
+    idiomas VARCHAR(150) NOT NULL,
+    CONSTRAINT pk_paises PRIMARY KEY (numero)
+);
+
+-- TABLA: personas
+CREATE TABLE personas (
+    identificador SERIAL NOT NULL,
+    documento VARCHAR(20) NOT NULL,
+    nombre VARCHAR(150) NOT NULL,
+    direccion VARCHAR(250),
+    estado VARCHAR(15) CONSTRAINT chkEstado CHECK (estado IN ('activo', 'inactivo')),
+    foto BYTEA,
+    CONSTRAINT pk_personas PRIMARY KEY (identificador)
+);
+
+-- TABLA: empleados
+CREATE TABLE empleados (
+    identificador INT NOT NULL,
+    cargo VARCHAR(100),
+    sector INT NULL,
+    CONSTRAINT pk_empleados PRIMARY KEY (identificador)
+);
+
+-- TABLA: sectores
+CREATE TABLE sectores (
+    identificador SERIAL NOT NULL,
+    nombreSector VARCHAR(150) NOT NULL,
+    codigoSector VARCHAR(10) NULL,
+    responsableSector INT NULL,
+    CONSTRAINT pk_sectores PRIMARY KEY (identificador),
+    CONSTRAINT fk_sectores_empleados FOREIGN KEY (responsableSector) REFERENCES empleados(identificador)
+);
+
+-- TABLA: seguros
+CREATE TABLE seguros (
+    nroPoliza VARCHAR(30) NOT NULL,
+    compania VARCHAR(150) NOT NULL,
+    polizaCombinada VARCHAR(2) CONSTRAINT chkPolizaCombinada CHECK (polizaCombinada IN ('si', 'no')),
+    importe DECIMAL(18,2) NOT NULL CONSTRAINT chkImporte CHECK (importe > 0),
+    CONSTRAINT pk_seguro PRIMARY KEY (nroPoliza)
+);
+
+-- TABLA: clientes
+CREATE TABLE clientes (
+    identificador INT NOT NULL,
+    numeroPais INT,
+    admitido VARCHAR(2) CONSTRAINT chkAdmitido CHECK (admitido IN ('si', 'no')),
+    categoria VARCHAR(10) CONSTRAINT chkCategoria CHECK (categoria IN ('comun', 'especial', 'plata', 'oro', 'platino')),
+    verificador INT NOT NULL,
+    -- campos de autenticacion (no estaban en SQL Server original)
+    email VARCHAR(200) UNIQUE,
+    passwordHash VARCHAR(300),
+    CONSTRAINT pk_clientes PRIMARY KEY (identificador),
+    CONSTRAINT fk_clientes_personas FOREIGN KEY (identificador) REFERENCES personas(identificador),
+    CONSTRAINT fk_clientes_empleados FOREIGN KEY (verificador) REFERENCES empleados(identificador),
+    CONSTRAINT fk_clientes_paises FOREIGN KEY (numeroPais) REFERENCES paises(numero)
+);
+
+-- TABLA: duenios
+CREATE TABLE duenios (
+    identificador INT NOT NULL,
+    numeroPais INT,
+    verificacionFinanciera VARCHAR(2) CONSTRAINT chkVF CHECK (verificacionFinanciera IN ('si', 'no')),
+    verificacionJudicial VARCHAR(2) CONSTRAINT chkVJ CHECK (verificacionJudicial IN ('si', 'no')),
+    calificacionRiesgo INT CONSTRAINT chkCR CHECK (calificacionRiesgo IN (1,2,3,4,5,6)),
+    verificador INT NOT NULL,
+    CONSTRAINT pk_duenios PRIMARY KEY (identificador),
+    CONSTRAINT fk_duenios_personas FOREIGN KEY (identificador) REFERENCES personas(identificador),
+    CONSTRAINT fk_duenios_empleados FOREIGN KEY (verificador) REFERENCES empleados(identificador)
+);
+
+-- TABLA: subastadores
+CREATE TABLE subastadores (
+    identificador INT NOT NULL,
+    matricula VARCHAR(15),
+    region VARCHAR(50),
+    CONSTRAINT pk_subastadores PRIMARY KEY (identificador),
+    CONSTRAINT fk_subastadores_personas FOREIGN KEY (identificador) REFERENCES personas(identificador)
+);
+
+-- TABLA: subastas
+CREATE TABLE subastas (
+    identificador SERIAL NOT NULL,
+    -- las subastas tienen al menos 10 dias de anticipacion al momento de crearlas
+    fecha DATE CONSTRAINT chkFecha CHECK (fecha > CURRENT_DATE + INTERVAL '10 days'),
+    hora TIME NOT NULL,
+    estado VARCHAR(10) CONSTRAINT chkES CHECK (estado IN ('abierta', 'cerrada')),
+    subastador INT NULL,
+    -- direccion donde se desarrolla el evento
+    ubicacion VARCHAR(350) NULL,
+    capacidadAsistentes INT NULL,
+    -- caracteristica del lugar
+    tieneDeposito VARCHAR(2) CONSTRAINT chkTD CHECK (tieneDeposito IN ('si', 'no')),
+    seguridadPropia VARCHAR(2) CONSTRAINT chkSP CHECK (seguridadPropia IN ('si', 'no')),
+    categoria VARCHAR(10) CONSTRAINT chkCS CHECK (categoria IN ('comun', 'especial', 'plata', 'oro', 'platino')),
+    -- campo agregado: moneda de la subasta (requerido por el TPO)
+    moneda VARCHAR(10) CONSTRAINT chkMoneda CHECK (moneda IN ('pesos', 'dolares')) DEFAULT 'pesos',
+    CONSTRAINT pk_subastas PRIMARY KEY (identificador),
+    CONSTRAINT fk_subastas_subastadores FOREIGN KEY (subastador) REFERENCES subastadores(identificador)
+);
+
+-- TABLA: productos
+CREATE TABLE productos (
+    identificador SERIAL NOT NULL,
+    fecha DATE,
+    disponible VARCHAR(2) CONSTRAINT chkD CHECK (disponible IN ('si', 'no')),
+    -- se obtiene despues que un empleado realiza la revision
+    descripcionCatalogo VARCHAR(500) NULL DEFAULT 'No Posee',
+    -- url que apunta a un documento PDF firmado con la descripcion del producto
+    descripcionCompleta VARCHAR(300) NOT NULL,
+    revisor INT NOT NULL,
+    duenio INT NOT NULL,
+    seguro VARCHAR(30) NULL,
+    CONSTRAINT pk_productos PRIMARY KEY (identificador),
+    CONSTRAINT fk_productos_empleados FOREIGN KEY (revisor) REFERENCES empleados(identificador),
+    CONSTRAINT fk_productos_duenios FOREIGN KEY (duenio) REFERENCES duenios(identificador),
+    CONSTRAINT fk_productos_seguros FOREIGN KEY (seguro) REFERENCES seguros(nroPoliza)
+);
+
+-- TABLA: fotos
+CREATE TABLE fotos (
+    identificador SERIAL NOT NULL,
+    producto INT NOT NULL,
+    foto BYTEA NOT NULL,
+    CONSTRAINT pk_fotos PRIMARY KEY (identificador),
+    CONSTRAINT fk_fotos_productos FOREIGN KEY (producto) REFERENCES productos(identificador)
+);
+
+-- TABLA: catalogos
+CREATE TABLE catalogos (
+    identificador SERIAL NOT NULL,
+    descripcion VARCHAR(250) NOT NULL,
+    subasta INT NULL,
+    responsable INT NOT NULL,
+    CONSTRAINT pk_catalogos PRIMARY KEY (identificador),
+    CONSTRAINT fk_catalogos_empleados FOREIGN KEY (responsable) REFERENCES empleados(identificador),
+    CONSTRAINT fk_catalogos_subastas FOREIGN KEY (subasta) REFERENCES subastas(identificador)
+);
+
+-- TABLA: itemsCatalogo
+CREATE TABLE itemsCatalogo (
+    identificador SERIAL NOT NULL,
+    catalogo INT NOT NULL,
+    producto INT NOT NULL,
+    precioBase DECIMAL(18,2) NOT NULL CONSTRAINT chkPB CHECK (precioBase > 0.01),
+    comision DECIMAL(18,2) NOT NULL CONSTRAINT chkC CHECK (comision > 0.01),
+    subastado VARCHAR(2) CONSTRAINT chkS CHECK (subastado IN ('si', 'no')),
+    CONSTRAINT pk_itemsCatalogo PRIMARY KEY (identificador),
+    CONSTRAINT fk_itemsCatalogo_catalogos FOREIGN KEY (catalogo) REFERENCES catalogos(identificador),
+    CONSTRAINT fk_itemsCatalogo_productos FOREIGN KEY (producto) REFERENCES productos(identificador)
+);
+
+-- TABLA: asistentes
+CREATE TABLE asistentes (
+    identificador SERIAL NOT NULL,
+    numeroPostor INT NOT NULL,
+    cliente INT NOT NULL,
+    subasta INT NOT NULL,
+    CONSTRAINT pk_asistentes PRIMARY KEY (identificador),
+    CONSTRAINT fk_asistentes_clientes FOREIGN KEY (cliente) REFERENCES clientes(identificador),
+    CONSTRAINT fk_asistentes_subasta FOREIGN KEY (subasta) REFERENCES subastas(identificador)
+);
+
+-- TABLA: pujos
+CREATE TABLE pujos (
+    identificador SERIAL NOT NULL,
+    asistente INT NOT NULL,
+    item INT NOT NULL,
+    importe DECIMAL(18,2) NOT NULL CONSTRAINT chkI CHECK (importe > 0.01),
+    ganador VARCHAR(2) CONSTRAINT chkG CHECK (ganador IN ('si', 'no')) DEFAULT 'no',
+    fechaHora TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT pk_pujos PRIMARY KEY (identificador),
+    CONSTRAINT fk_pujos_asistentes FOREIGN KEY (asistente) REFERENCES asistentes(identificador),
+    CONSTRAINT fk_pujos_itemsCatalogo FOREIGN KEY (item) REFERENCES itemsCatalogo(identificador)
+);
+
+-- TABLA: registroDeSubasta
+CREATE TABLE registroDeSubasta (
+    identificador SERIAL NOT NULL,
+    subasta INT NOT NULL,
+    duenio INT NOT NULL,
+    producto INT NOT NULL,
+    cliente INT NOT NULL,
+    importe DECIMAL(18,2) NOT NULL CONSTRAINT chkImportePagado CHECK (importe > 0.01),
+    comision DECIMAL(18,2) NOT NULL CONSTRAINT chkComisionPagada CHECK (comision > 0.01),
+    CONSTRAINT pk_registroDeSubasta PRIMARY KEY (identificador),
+    CONSTRAINT fk_registroDeSubasta_subastas FOREIGN KEY (subasta) REFERENCES subastas(identificador),
+    CONSTRAINT fk_registroDeSubasta_duenios FOREIGN KEY (duenio) REFERENCES duenios(identificador),
+    CONSTRAINT fk_registroDeSubasta_producto FOREIGN KEY (producto) REFERENCES productos(identificador),
+    CONSTRAINT fk_registroDeSubasta_cliente FOREIGN KEY (cliente) REFERENCES clientes(identificador)
+);
+
+-- =============================================
+-- TABLAS AGREGADAS (requeridas por el TPO)
+-- =============================================
+
+-- TABLA: mediosDePago
+-- El TPO exige que cada cliente registre al menos un medio de pago
+CREATE TABLE mediosDePago (
+    identificador SERIAL NOT NULL,
+    cliente INT NOT NULL,
+    tipo VARCHAR(10) CONSTRAINT chkTipo CHECK (tipo IN ('tarjeta', 'cuenta', 'cheque')),
+    -- para tarjeta
+    numeroTarjeta VARCHAR(20),
+    vencimiento VARCHAR(7),
+    titular VARCHAR(150),
+    -- para cuenta bancaria
+    numeroCuenta VARCHAR(50),
+    banco VARCHAR(150),
+    -- para cheque certificado
+    numeroCheque VARCHAR(30),
+    montoCheque DECIMAL(18,2),
+    -- estado de verificacion por la empresa
+    verificado VARCHAR(2) CONSTRAINT chkVerif CHECK (verificado IN ('si', 'no')) DEFAULT 'no',
+    CONSTRAINT pk_mediosDePago PRIMARY KEY (identificador),
+    CONSTRAINT fk_mediosDePago_clientes FOREIGN KEY (cliente) REFERENCES clientes(identificador)
+);
+
+-- TABLA: multas
+-- El TPO indica que si no se paga, se genera una multa del 10%
+CREATE TABLE multas (
+    identificador SERIAL NOT NULL,
+    cliente INT NOT NULL,
+    pujo INT NOT NULL,
+    importe DECIMAL(18,2) NOT NULL,
+    pagada VARCHAR(2) CONSTRAINT chkPagada CHECK (pagada IN ('si', 'no')) DEFAULT 'no',
+    fechaGenerada TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT pk_multas PRIMARY KEY (identificador),
+    CONSTRAINT fk_multas_clientes FOREIGN KEY (cliente) REFERENCES clientes(identificador),
+    CONSTRAINT fk_multas_pujos FOREIGN KEY (pujo) REFERENCES pujos(identificador)
+);
+
+-- TABLA: notificaciones
+-- La app notifica en tiempo real a los usuarios
+CREATE TABLE notificaciones (
+    identificador SERIAL NOT NULL,
+    cliente INT NOT NULL,
+    tipo VARCHAR(20) CONSTRAINT chkTipoNot CHECK (tipo IN ('lider', 'perdiste', 'ganaste', 'multa', 'subasta_por_cerrar')),
+    mensaje VARCHAR(500),
+    leida VARCHAR(2) CONSTRAINT chkLeida CHECK (leida IN ('si', 'no')) DEFAULT 'no',
+    fechaHora TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT pk_notificaciones PRIMARY KEY (identificador),
+    CONSTRAINT fk_notificaciones_clientes FOREIGN KEY (cliente) REFERENCES clientes(identificador)
+);

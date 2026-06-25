@@ -1,0 +1,5 @@
+*.zip
+*.docx
+.env
+target/
+src/main/resources/application-local.properties
