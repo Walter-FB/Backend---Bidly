@@ -52,14 +52,20 @@ def register(body: RegisterRequest, db: Session = Depends(get_db)):
     if existing:
         raise HTTPException(409, detail={"message": "Email ya registrado", "code": "EMAIL_TAKEN"})
 
+    if not body.documento:
+        raise HTTPException(400, detail={"message": "El número de documento es obligatorio", "code": "DOCUMENTO_REQUERIDO"})
+
     # Usar el primer empleado disponible como verificador
     empleado = db.query(Empleado).filter(Empleado.identificador == EMPLEADO_SISTEMA).first()
     verificador_id = empleado.identificador if empleado else EMPLEADO_SISTEMA
 
+    # El front manda nombre y apellido por separado; la DB solo tiene "nombre".
+    nombre_completo = " ".join(p for p in [body.nombre, body.apellido] if p).strip() or body.nombre
+
     persona = Persona(
-        nombre=body.nombre,
+        nombre=nombre_completo,
         documento=body.documento,
-        direccion=body.direccion,
+        direccion=body.direccion or body.domicilio,
         estado="activo",
     )
     db.add(persona)

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional
 from decimal import Decimal
 
@@ -30,18 +30,18 @@ class MedioPagoCreate(BaseModel):
 
 
 class MedioPagoResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
     identificador: int
     cliente: Optional[int] = None
     tipo: Optional[str] = None
-    numerotarjeta: Optional[str] = None
+    numerotarjeta: Optional[str] = Field(default=None, serialization_alias="numeroTarjeta")
     vencimiento: Optional[str] = None
     titular: Optional[str] = None
-    numerocuenta: Optional[str] = None
+    numerocuenta: Optional[str] = Field(default=None, serialization_alias="numeroCuenta")
     banco: Optional[str] = None
-    numerocheque: Optional[str] = None
-    montocheque: Optional[Decimal] = None
+    numerocheque: Optional[str] = Field(default=None, serialization_alias="numeroCheque")
+    montocheque: Optional[Decimal] = Field(default=None, serialization_alias="montoCheque")
     verificado: Optional[str] = None
 
 

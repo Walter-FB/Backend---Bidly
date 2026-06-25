@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional
 from decimal import Decimal
 
@@ -17,9 +17,9 @@ class SeguroUpdate(BaseModel):
 
 
 class SeguroResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
-    nropoliza: str
+    nropoliza: str = Field(serialization_alias="nroPoliza")
     compania: Optional[str] = None
-    polizacombinada: Optional[str] = None
+    polizacombinada: Optional[str] = Field(default=None, serialization_alias="polizaCombinada")
     importe: Optional[Decimal] = None

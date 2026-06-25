@@ -154,6 +154,8 @@ export const RegistroSubasta = {
   obtener: (id) => api.get(`/registro-subasta/${id}`),
   porCliente: (clienteId) => api.get(`/registro-subasta/cliente/${clienteId}`),
   porSubasta: (subastaId) => api.get(`/registro-subasta/subasta/${subastaId}`),
+  pagar: (id, medioPagoId) =>
+    api.post(`/registro-subasta/${id}/pagar`, { medioPagoId }),
   reembolso: (id, reembolsada) =>
     api.patch(`/registro-subasta/${id}/reembolso`, { reembolsada }),
 };

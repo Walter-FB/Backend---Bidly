@@ -20,8 +20,11 @@ class RegisterRequest(BaseModel):
     password: str
     verificationToken: str
     nombre: Optional[str] = None
+    apellido: Optional[str] = None
     documento: Optional[str] = None
+    # El front envía "domicilio"; lo aceptamos como alias de direccion.
     direccion: Optional[str] = None
+    domicilio: Optional[str] = None
     numeroPais: Optional[int] = None
 
 

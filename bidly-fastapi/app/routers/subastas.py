@@ -8,6 +8,7 @@ from app.models.subasta import Subasta
 from app.models.subasta_moneda import SubastaMoneda
 from app.models.subasta_sesion import SubastaSesion
 from app.models.subasta_revision import SubastaRevision
+from app.models.subasta_estado_admin import SubastaEstadoAdmin
 from app.models.asistente import Asistente
 from app.models.catalogo import Catalogo
 from app.models.item_catalogo import ItemCatalogo
@@ -16,6 +17,7 @@ from app.models.foto import Foto
 from app.schemas.subasta import SubastaCreate, SubastaEstadoUpdate, SesionResponse
 from app.services import subasta_service, subasta_estado_service, subasta_revision_service
 from app.services.subasta_sesion_service import segundos_restantes
+from app.serializers import item_to_dict
 
 router = APIRouter()
 
@@ -31,6 +33,7 @@ def _build_sesion_response(sesion: SubastaSesion) -> dict:
     }
 
 
+@router.get("")
 @router.get("/")
 def listar_subastas(
     estado: Optional[str] = None,
@@ -68,6 +71,7 @@ def get_subasta(id: int, db: Session = Depends(get_db)):
     return subasta_service.enrich(s, db)
 
 
+@router.post("", status_code=201)
 @router.post("/", status_code=201)
 def crear_subasta(body: SubastaCreate, db: Session = Depends(get_db)):
     s = Subasta(
@@ -106,12 +110,7 @@ def get_catalogo(id: int, db: Session = Depends(get_db)):
     )
     if not item:
         raise HTTPException(404, "Sin items en el catálogo")
-    data = {col.name: getattr(item, col.name) for col in item.__table__.columns}
-    prod = db.query(Producto).filter(Producto.identificador == item.producto).first()
-    if prod:
-        data["descripcionCatalogo"] = prod.descripcioncatalogo
-        data["descripcionCompleta"] = prod.descripcioncompleta
-    return data
+    return item_to_dict(item, db)
 
 
 @router.get("/{id}/catalogos")
@@ -123,15 +122,7 @@ def get_catalogos(id: int, db: Session = Depends(get_db)):
         .order_by(ItemCatalogo.identificador)
         .all()
     )
-    result = []
-    for item in items:
-        data = {col.name: getattr(item, col.name) for col in item.__table__.columns}
-        prod = db.query(Producto).filter(Producto.identificador == item.producto).first()
-        if prod:
-            data["descripcionCatalogo"] = prod.descripcioncatalogo
-            data["descripcionCompleta"] = prod.descripcioncompleta
-        result.append(data)
-    return result
+    return [item_to_dict(item, db) for item in items]
 
 
 @router.get("/{id}/estado")
@@ -175,7 +166,20 @@ def update_estado(id: int, body: SubastaEstadoUpdate, db: Session = Depends(get_
     if rev and rev.estado not in ("aprobada",):
         raise HTTPException(400, detail={"message": "La subasta debe estar aprobada", "code": "NOT_APPROVED"})
 
-    s.estado = body.estado
+    # Mapear el estado pedido a la transición real de la máquina de estados:
+    # 'abierta' -> iniciar (crea sesión + timer + estado_subasta='iniciada')
+    # 'cerrada' -> finalizar (borra sesión + estado_subasta='finalizada')
+    estado_admin = db.query(SubastaEstadoAdmin).filter(SubastaEstadoAdmin.subasta == id).first()
+    if not estado_admin:
+        subasta_estado_service.crear_estado_pendiente(id, db)
+
+    if body.estado == "abierta":
+        subasta_estado_service.iniciar_subasta(id, db)
+    elif body.estado == "cerrada":
+        subasta_estado_service.finalizar_subasta(id, db)
+    else:
+        s.estado = body.estado
+
     db.commit()
     db.refresh(s)
     return subasta_service.enrich(s, db)

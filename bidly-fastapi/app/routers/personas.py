@@ -30,7 +30,9 @@ def update_persona(id: int, body: PersonaUpdate, db: Session = Depends(get_db)):
     p = db.query(Persona).filter(Persona.identificador == id).first()
     if not p:
         raise HTTPException(404, "Persona no encontrada")
-    for k, v in body.model_dump().items():
+    # Update parcial: solo aplicar los campos enviados, para no pisar con NULL
+    # columnas NOT NULL (nombre, documento).
+    for k, v in body.model_dump(exclude_unset=True).items():
         setattr(p, k, v)
     db.commit()
     db.refresh(p)

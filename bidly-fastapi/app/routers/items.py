@@ -5,17 +5,13 @@ from app.database import get_db
 from app.models.item_catalogo import ItemCatalogo
 from app.models.producto import Producto
 from app.services.item_adjudicacion_service import adjudicar_manual
+from app.serializers import item_to_dict
 
 router = APIRouter()
 
 
 def _enrich_item(item: ItemCatalogo, db: Session) -> dict:
-    data = {col.name: getattr(item, col.name) for col in item.__table__.columns}
-    prod = db.query(Producto).filter(Producto.identificador == item.producto).first()
-    if prod:
-        data["descripcionCatalogo"] = prod.descripcioncatalogo
-        data["descripcionCompleta"] = prod.descripcioncompleta
-    return data
+    return item_to_dict(item, db)
 
 
 @router.get("/{id}")

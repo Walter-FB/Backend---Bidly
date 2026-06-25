@@ -15,17 +15,16 @@ from app.models.medio_pago import MedioPago
 from app.models.subasta_estado_admin import SubastaEstadoAdmin
 from app.schemas.puja import PujaCreate
 from app.services import notificacion_service, subasta_sesion_service
+from app.serializers import puja_to_dict
 
 router = APIRouter()
 
 
 def _build_puja(p: Puja, db: Session) -> dict:
-    data = {col.name: getattr(p, col.name) for col in p.__table__.columns}
-    fecha = db.query(PujoFecha).filter(PujoFecha.pujo == p.identificador).first()
-    data["fechaHora"] = fecha.fechahora if fecha else None
-    return data
+    return puja_to_dict(p, db)
 
 
+@router.get("")
 @router.get("/")
 def listar_pujas(
     item: Optional[int] = None,
@@ -42,6 +41,7 @@ def listar_pujas(
     return [_build_puja(p, db) for p in q.all()]
 
 
+@router.post("", status_code=201)
 @router.post("/", status_code=201)
 def colocar_puja(body: PujaCreate, db: Session = Depends(get_db)):
     asistente_id = body.asistente.identificador
@@ -97,8 +97,12 @@ def colocar_puja(body: PujaCreate, db: Session = Depends(get_db)):
     precio_base = Decimal(str(item.preciobase))
     ultima_imp  = Decimal(str(ultima.importe)) if ultima else Decimal("0")
 
+    # Referencia para el tope: en la primera puja es el precio base; luego, la
+    # última puja. El mínimo es 1% por encima de la referencia (o el precio base
+    # para la primera puja) y el máximo es 20% por encima de la referencia.
+    referencia = max(ultima_imp, precio_base)
     minimo = max(ultima_imp + precio_base * Decimal("0.01"), precio_base)
-    maximo = ultima_imp + precio_base * Decimal("0.20")
+    maximo = referencia + precio_base * Decimal("0.20")
 
     if importe < minimo:
         raise HTTPException(
@@ -155,5 +159,5 @@ def get_ganador(item_id: int, db: Session = Depends(get_db)):
         .first()
     )
     if not puja:
-        raise HTTPException(404, "No hay ganador aún")
+        return None
     return _build_puja(puja, db)

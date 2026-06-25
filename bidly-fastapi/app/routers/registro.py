@@ -7,23 +7,47 @@ from app.database import get_db
 from app.models.registro_subasta import RegistroDeSubasta
 from app.models.registro_pago import RegistroPago
 from app.models.reembolso import Reembolso
+from app.models.subasta import Subasta
+from app.models.persona import Persona
+from app.models.credencial import Credencial
 from app.schemas.registro_subasta import RegistroCreate, PagarRequest, ReembolsoUpdate
+from app.services import subasta_service
 
 router = APIRouter()
 
 
 def _enrich_registro(r: RegistroDeSubasta, db: Session) -> dict:
-    data = {col.name: getattr(r, col.name) for col in r.__table__.columns}
     pago = db.query(RegistroPago).filter(RegistroPago.registro == r.identificador).first()
     ree  = db.query(Reembolso).filter(Reembolso.registro == r.identificador).first()
-    data["estadoPago"]   = pago.estado if pago else "pendiente"
-    data["medioPago"]    = pago.medio_pago if pago else None
-    data["importeTotal"] = float(pago.importe_total) if pago and pago.importe_total else None
-    data["fechaPago"]    = pago.fecha_pago.isoformat() if pago and pago.fecha_pago else None
-    data["reembolsada"]  = ree.reembolsada if ree else "no"
-    return data
+
+    # El front espera subasta y cliente como objetos anidados (no enteros).
+    subasta_obj = db.query(Subasta).filter(Subasta.identificador == r.subasta).first()
+    persona = db.query(Persona).filter(Persona.identificador == r.cliente).first()
+    cred    = db.query(Credencial).filter(Credencial.cliente == r.cliente).first()
+
+    return {
+        "identificador": r.identificador,
+        "subastaId": r.subasta,
+        "subasta": subasta_service.enrich(subasta_obj, db) if subasta_obj else {"identificador": r.subasta},
+        "duenio": r.duenio,
+        "producto": r.producto,
+        "clienteId": r.cliente,
+        "cliente": {
+            "identificador": r.cliente,
+            "nombre": persona.nombre if persona else None,
+            "email": cred.email if cred else None,
+        },
+        "importe": r.importe,
+        "comision": r.comision,
+        "estadoPago":   pago.estado if pago else "pendiente",
+        "medioPago":    pago.medio_pago if pago else None,
+        "importeTotal": float(pago.importe_total) if pago and pago.importe_total else None,
+        "fechaPago":    pago.fecha_pago.isoformat() if pago and pago.fecha_pago else None,
+        "reembolsada":  ree.reembolsada if ree else "no",
+    }
 
 
+@router.post("", status_code=201)
 @router.post("/", status_code=201)
 def crear_registro(body: RegistroCreate, db: Session = Depends(get_db)):
     r = RegistroDeSubasta(**body.model_dump())

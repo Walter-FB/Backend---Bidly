@@ -27,6 +27,7 @@ def get_subastador(id: int, db: Session = Depends(get_db)):
     return _enrich_subastador(s, db)
 
 
+@router.post("")
 @router.post("/")
 def crear_subastador(body: SubastadorCreate, db: Session = Depends(get_db)):
     existing = db.query(Subastador).filter(Subastador.identificador == body.identificador).first()

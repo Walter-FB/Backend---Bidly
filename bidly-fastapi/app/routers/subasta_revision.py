@@ -4,15 +4,34 @@ from typing import List, Optional
 
 from app.database import get_db
 from app.models.subasta_revision import SubastaRevision
+from app.models.subasta import Subasta
 from app.schemas.subasta_revision import SubastaRevisionResponse, RechazarRequest
-from app.services import subasta_estado_service, subasta_revision_service, notificacion_service
+from app.services import (
+    subasta_estado_service, subasta_revision_service, notificacion_service, subasta_service,
+)
 
 router = APIRouter()
 
 
+def _enrich_revision(rev: SubastaRevision, db: Session) -> dict:
+    s = db.query(Subasta).filter(Subasta.identificador == rev.subasta).first()
+    return {
+        "identificador": rev.identificador,
+        "estado": rev.estado,
+        "solicitante": rev.solicitante,
+        "observacion": rev.observacion,
+        "fechaSolicitud": rev.fechasolicitud,
+        "fechaRevision": rev.fecharevision,
+        "subastaId": rev.subasta,
+        "subasta": subasta_service.enrich(s, db) if s else None,
+    }
+
+
+@router.get("")
 @router.get("/")
 def listar(estado: Optional[str] = None, db: Session = Depends(get_db)):
-    return subasta_revision_service.listar(estado, db)
+    revs = subasta_revision_service.listar(estado, db)
+    return [_enrich_revision(r, db) for r in revs]
 
 
 @router.get("/pendientes/count")

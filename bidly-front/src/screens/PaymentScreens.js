@@ -360,7 +360,7 @@ export function ConfirmarPagoScreen({ navigation, route }) {
   const {
     subastaId, itemId, importe = 0, comision = 0,
     importeSeguro = 0, moneda = 'ARS',
-    medioPagoLabel, titulo,
+    medioPagoLabel, medioPagoId, titulo,
   } = route.params || {};
 
   const [pagando, setPagando] = useState(false);
@@ -394,6 +394,15 @@ export function ConfirmarPagoScreen({ navigation, route }) {
           );
         }
         registroId = candidato?.identificador;
+      }
+      // Persistir el pago en el backend (marca el registro como pagado).
+      if (registroId && medioPagoId) {
+        try {
+          await RegistroSubasta.pagar(registroId, medioPagoId);
+        } catch (errPago) {
+          // No bloqueamos la confirmación si el medio de pago no es válido server-side.
+          console.warn('No se pudo registrar el pago:', errPago?.message);
+        }
       }
       navigation.navigate('PagoConfirmado', {
         registroId,

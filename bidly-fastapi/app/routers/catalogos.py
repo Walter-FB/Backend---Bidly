@@ -9,19 +9,16 @@ from app.models.item_catalogo import ItemCatalogo
 from app.models.producto import Producto
 from app.models.empleado import EMPLEADO_SISTEMA
 from app.schemas.catalogo import CatalogoCreate, CatalogoResponse, ItemCatalogoCreate, ItemCatalogoResponse
+from app.serializers import item_to_dict
 
 router = APIRouter()
 
 
 def _enrich_item(item: ItemCatalogo, db: Session) -> dict:
-    data = {col.name: getattr(item, col.name) for col in item.__table__.columns}
-    prod = db.query(Producto).filter(Producto.identificador == item.producto).first()
-    if prod:
-        data["descripcionCatalogo"] = prod.descripcioncatalogo
-        data["descripcionCompleta"] = prod.descripcioncompleta
-    return data
+    return item_to_dict(item, db)
 
 
+@router.post("", response_model=CatalogoResponse, status_code=201)
 @router.post("/", response_model=CatalogoResponse, status_code=201)
 def crear_catalogo(body: CatalogoCreate, db: Session = Depends(get_db)):
     c = Catalogo(

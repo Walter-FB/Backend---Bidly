@@ -8,15 +8,13 @@ from app.models.puja import Puja
 from app.models.pujo_fecha import PujoFecha
 from app.schemas.asistente import InscribirRequest, AsistenteResponse
 from app.schemas.puja import PujaResponse
+from app.serializers import puja_to_dict
 
 router = APIRouter()
 
 
 def _build_puja_response(p: Puja, db: Session) -> dict:
-    data = {col.name: getattr(p, col.name) for col in p.__table__.columns}
-    fecha = db.query(PujoFecha).filter(PujoFecha.pujo == p.identificador).first()
-    data["fechaHora"] = fecha.fechahora if fecha else None
-    return data
+    return puja_to_dict(p, db)
 
 
 @router.get("/{id}", response_model=AsistenteResponse)

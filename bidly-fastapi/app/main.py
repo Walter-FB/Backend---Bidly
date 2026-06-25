@@ -2,6 +2,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config import settings
@@ -42,6 +44,35 @@ class MaxBodySizeMiddleware(BaseHTTPMiddleware):
 
 
 app.add_middleware(MaxBodySizeMiddleware, max_size=settings.MAX_REQUEST_SIZE_BYTES)
+
+
+# ── Manejo de errores compatible con el frontend ──────────────────────────────
+# El front (api/client.js) lee message/error/code/etc. en el NIVEL SUPERIOR del
+# body (estilo Spring Boot), no anidados bajo "detail" como hace FastAPI por
+# defecto. Aplanamos las respuestas de error para respetar ese contrato.
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    detail = exc.detail
+    if isinstance(detail, dict):
+        content = dict(detail)
+        content.setdefault("message", content.get("error") or "Error")
+        content.setdefault("error", content.get("message"))
+    else:
+        content = {"message": str(detail), "error": str(detail)}
+    return JSONResponse(status_code=exc.status_code, content=content, headers=getattr(exc, "headers", None))
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    return JSONResponse(
+        status_code=422,
+        content={
+            "message": "Datos inválidos en la solicitud",
+            "error": "Validation error",
+            "code": "VALIDATION_ERROR",
+            "detail": [{"campo": ".".join(str(x) for x in e.get("loc", [])), "msg": e.get("msg")} for e in exc.errors()],
+        },
+    )
 
 
 # Registrar routers

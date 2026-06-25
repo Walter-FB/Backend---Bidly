@@ -12,10 +12,10 @@ from app.models.catalogo import Catalogo
 from app.models.producto import Producto
 from app.models.asistente import Asistente
 
-FASE_PENDIENTE  = "PENDIENTE"
-FASE_PROGRAMADA = "PROGRAMADA"
-FASE_EN_CURSO   = "EN_CURSO"
-FASE_FINALIZADA = "FINALIZADA"
+FASE_PENDIENTE  = "pendiente"
+FASE_PROGRAMADA = "programada"
+FASE_EN_CURSO   = "en_curso"
+FASE_FINALIZADA = "finalizada"
 TIMEOUT_SEG = 1800
 
 

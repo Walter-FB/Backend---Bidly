@@ -11,6 +11,7 @@ from app.models.producto import Producto
 from app.models.foto import Foto
 from app.models.empleado import Empleado, EMPLEADO_SISTEMA
 from app.models.item_catalogo import ItemCatalogo
+from app.models.duenio import Duenio
 from app.schemas.producto import ProductoCreate, DisponibleUpdate, ProductoResponse
 
 router = APIRouter()
@@ -19,6 +20,25 @@ router = APIRouter()
 def _get_revisor_aleatorio(db: Session) -> int:
     emp = db.query(Empleado).order_by(func.random()).first()
     return emp.identificador if emp else EMPLEADO_SISTEMA
+
+
+def _ensure_duenio(persona_id: int, db: Session) -> int:
+    """Garantiza que exista una fila en `duenios` para esta persona.
+    Al registrarse, un usuario solo existe en personas/clientes; cuando publica
+    un producto pasa a ser dueño, y productos.duenio es FK NOT NULL a duenios.
+    """
+    d = db.query(Duenio).filter(Duenio.identificador == persona_id).first()
+    if not d:
+        d = Duenio(
+            identificador=persona_id,
+            verificacionfinanciera="no",
+            verificacionjudicial="no",
+            calificacionriesgo=3,
+            verificador=_get_revisor_aleatorio(db),
+        )
+        db.add(d)
+        db.flush()
+    return persona_id
 
 
 @router.get("/{id}", response_model=ProductoResponse)
@@ -34,15 +54,17 @@ def get_productos_duenio(duenio_id: int, db: Session = Depends(get_db)):
     return db.query(Producto).filter(Producto.duenio == duenio_id).all()
 
 
+@router.post("", response_model=ProductoResponse, status_code=201)
 @router.post("/", response_model=ProductoResponse, status_code=201)
 def crear_producto(body: ProductoCreate, db: Session = Depends(get_db)):
+    duenio_id = _ensure_duenio(body.duenio, db)
     p = Producto(
         fecha=date.today(),
         disponible=body.disponible or "si",
         descripcioncatalogo=body.descripcionCatalogo,
         descripcioncompleta=body.descripcionCompleta,
         revisor=_get_revisor_aleatorio(db),
-        duenio=body.duenio,
+        duenio=duenio_id,
         seguro=body.seguro,
     )
     db.add(p)

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional
 from decimal import Decimal
 from datetime import date
@@ -9,11 +9,11 @@ class MultaUpdate(BaseModel):
 
 
 class MultaResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
     identificador: int
     cliente: Optional[int] = None
     pujo: Optional[int] = None
     importe: Optional[Decimal] = None
     pagada: Optional[str] = None
-    fechagenerada: Optional[date] = None
+    fechagenerada: Optional[date] = Field(default=None, serialization_alias="fechaGenerada")

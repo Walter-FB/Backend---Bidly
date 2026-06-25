@@ -271,12 +271,13 @@ export function FiltrosScreen({ navigation, route }) {
         </View>
         <SectionLabel>Categoría</SectionLabel>
         <View style={{ flexDirection: 'row', gap: 9, flexWrap: 'wrap' }}>
-          {['', 'Arte', 'Relojes', 'Audio', 'Deportes'].map((c) => (
-            <Chip key={c || 'todas'} label={c || 'Todas'} active={cat === c} onPress={() => setCat(c)} />
+          {[['', 'Todas'], ['comun', 'Común'], ['especial', 'Especial'], ['plata', 'Plata'], ['oro', 'Oro'], ['platino', 'Platino']].map(([k, l]) => (
+            <Chip key={k || 'todas'} label={l} active={cat === k} onPress={() => setCat(k)} />
           ))}
         </View>
         <SectionLabel>Moneda</SectionLabel>
         <View style={{ flexDirection: 'row', gap: 9 }}>
+          <Chip label="Todas" active={mon === ''} onPress={() => setMon('')} />
           <Chip label="Pesos $" active={mon === 'pesos'} dot={mon === 'pesos'} onPress={() => setMon('pesos')} />
           <Chip label="Dólares U$D" active={mon === 'dolares'} dot={mon === 'dolares'} onPress={() => setMon('dolares')} />
         </View>
