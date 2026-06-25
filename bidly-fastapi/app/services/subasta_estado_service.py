@@ -8,7 +8,6 @@ from app.models.subasta_sesion import SubastaSesion
 def crear_estado_pendiente(subasta_id: int, db: Session) -> None:
     admin = SubastaEstadoAdmin(
         subasta=subasta_id,
-        estado="pendiente",
         estado_subasta="pendiente",
         alguna_vez_abierta=False,
     )
