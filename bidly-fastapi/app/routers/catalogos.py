@@ -24,7 +24,7 @@ def crear_catalogo(body: CatalogoCreate, db: Session = Depends(get_db)):
     c = Catalogo(
         descripcion=body.descripcion,
         subasta=body.subasta,
-        responsable=body.responsable or EMPLEADO_SISTEMA,
+        responsable=EMPLEADO_SISTEMA,
     )
     db.add(c)
     db.commit()
