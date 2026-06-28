@@ -307,9 +307,9 @@ export function MisSubastasScreen({ navigation, route }) {
     setToast(`"${titulo}" creada correctamente`);
     setTab('todas');
     cargar();
-    navigation.setParams({ creada: undefined, tituloCreada: undefined });
-    const t = setTimeout(() => setToast(null), 4500);
-    return () => clearTimeout(t);
+    const clearParams = () => navigation.setParams({ creada: undefined, tituloCreada: undefined });
+    const t = setTimeout(() => { setToast(null); clearParams(); }, 3000);
+    return () => { clearTimeout(t); clearParams(); };
   }, [route.params?.creada]);
 
   useEffect(() => {

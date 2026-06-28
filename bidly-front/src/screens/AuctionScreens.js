@@ -525,23 +525,36 @@ export function SubastaEnVivoScreen({ navigation, route }) {
         {!user?.isGuest && asistenteId && !esLidero && (
           <Card el style={{ marginTop: 12 }}>
             <Text style={{ color: colors.muted, fontSize: 11, fontWeight: '800', letterSpacing: 1 }}>TU OFERTA</Text>
-            <Field
-              value={montoIngresado}
-              onChangeText={setMontoIngresado}
-              keyboardType="decimal-pad"
-              style={{ fontSize: 22, fontWeight: '800', color: montoInvalido ? colors.red : '#fff', marginTop: 6 }}
-            />
-            <Text style={{ color: montoMenorQueMin || montoMayorQueMax ? colors.red : colors.muted, fontSize: 12, marginTop: 4 }}>
+            <View style={st.stepRow}>
+              <TouchableOpacity
+                style={[st.stepBtn, montoNum <= proximaPuja + 0.001 && st.stepBtnDisabled]}
+                onPress={() => {
+                  const next = Math.round((montoNum - minIncremento) * 100) / 100;
+                  if (next >= proximaPuja - 0.001) setMontoIngresado(String(next));
+                }}
+                disabled={!montoValido || montoNum <= proximaPuja + 0.001}
+              >
+                <Text style={st.stepBtnText}>−</Text>
+              </TouchableOpacity>
+              <Text style={{ fontSize: 26, fontWeight: '800', color: montoInvalido ? colors.red : '#fff' }}>
+                {montoValido ? formatImporte(montoNum, moneda) : '—'}
+              </Text>
+              <TouchableOpacity
+                style={[st.stepBtn, (maxPuja != null && montoNum >= maxPuja - 0.001) && st.stepBtnDisabled]}
+                onPress={() => {
+                  const next = Math.round((montoNum + minIncremento) * 100) / 100;
+                  if (maxPuja == null || next <= maxPuja + 0.001) setMontoIngresado(String(next));
+                }}
+                disabled={!montoValido || (maxPuja != null && montoNum >= maxPuja - 0.001)}
+              >
+                <Text style={st.stepBtnText}>+</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={{ color: colors.muted, fontSize: 12, marginTop: 8, textAlign: 'center' }}>
               {maxPuja != null
                 ? `Mín: ${formatImporte(proximaPuja, moneda)}  ·  Máx: ${formatImporte(maxPuja, moneda)}`
                 : `Mín: ${formatImporte(proximaPuja, moneda)}  ·  Sin tope`}
             </Text>
-            {montoMenorQueMin && (
-              <Text style={{ color: colors.red, fontSize: 12, marginTop: 2 }}>El monto está por debajo del mínimo permitido.</Text>
-            )}
-            {montoMayorQueMax && (
-              <Text style={{ color: colors.red, fontSize: 12, marginTop: 2 }}>El monto supera el tope máximo.</Text>
-            )}
           </Card>
         )}
 
@@ -925,4 +938,14 @@ const st = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.45)', borderRadius: 6,
     padding: 5,
   },
+  stepRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12,
+  },
+  stepBtn: {
+    width: 48, height: 48, borderRadius: 24,
+    backgroundColor: colors.cardEl, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: colors.border,
+  },
+  stepBtnDisabled: { opacity: 0.3 },
+  stepBtnText: { color: '#fff', fontSize: 26, fontWeight: '700', lineHeight: 30 },
 });
