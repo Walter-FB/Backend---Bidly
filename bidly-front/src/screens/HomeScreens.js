@@ -1,6 +1,7 @@
 // BIDLY — Home, Filtros, Notificaciones (+ shared AuctionCard).
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Alert } from 'react-native';
+import { useNotifBadge } from '../hooks/useNotifBadge';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen, Header, Title, Sub, SectionLabel, Btn, Chip, Card, Field, LiveBadge, Tag, ImgBox, Display } from '../components/ui';
@@ -47,11 +48,19 @@ function mapSubasta(s) {
 // ─── HOME TOP BAR ─────────────────────────────────────────────────────────────
 function HomeTopBar({ navigation }) {
   const insets = useSafeAreaInsets();
+  const { unreadCount } = useNotifBadge();
   return (
     <View style={[s.topbar, { paddingTop: insets.top + 8 }]}>
       <Display style={{ color: colors.blueLogo, fontSize: 20 }}>BIDLY</Display>
       <TouchableOpacity onPress={() => navigation.navigate('Notificaciones')}>
-        <Ionicons name="notifications-outline" size={21} color="#fff" />
+        <View>
+          <Ionicons name="notifications-outline" size={21} color="#fff" />
+          {unreadCount > 0 && (
+            <View style={s.badge}>
+              <Text style={s.badgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
+            </View>
+          )}
+        </View>
       </TouchableOpacity>
     </View>
   );
@@ -94,6 +103,34 @@ export function AuctionCard({ a, onPress }) {
         {a.lead
           ? <Tag label="✓ Liderando" color={colors.green} fill={colors.green} />
           : <Btn title="Ver subasta" onPress={onPress} style={{ paddingVertical: 9, paddingHorizontal: 18 }} />}
+      </View>
+    </Card>
+  );
+}
+
+// ─── PROXIMA CARD ─────────────────────────────────────────────────────────────
+function ProximaCard({ a, onPress }) {
+  return (
+    <Card el style={{ padding: 14 }}>
+      <View style={{ flexDirection: 'row', gap: 12 }}>
+        <ImgBox style={{ width: 74, height: 74 }} size={26} src={a.portadaUrl} />
+        <View style={{ flex: 1 }}>
+          <Display style={{ fontSize: 15 }} numberOfLines={1}>{a.title}</Display>
+          <Text style={{ color: colors.muted, fontSize: 12, marginTop: 2 }}>{a.cat}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 8 }}>
+            <Ionicons name="calendar-outline" size={13} color={colors.blue} />
+            <Text style={{ color: colors.blue, fontSize: 12, fontWeight: '700' }}>
+              {a.fecha ? a.fecha : '—'}{a.hora ? `  ·  ${a.hora.slice(0, 5)}hs` : ''}
+            </Text>
+          </View>
+        </View>
+      </View>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+          <Ionicons name="time-outline" size={14} color={colors.gold} />
+          <Text style={{ color: colors.gold, fontSize: 13, fontWeight: '800' }}>{a.time}</Text>
+        </View>
+        <Btn title="Ver detalles" onPress={onPress} style={{ paddingVertical: 9, paddingHorizontal: 18 }} />
       </View>
     </Card>
   );
@@ -142,9 +179,24 @@ export function HomeScreen({ navigation }) {
       } catch { /* silencioso */ }
     };
     refreshDetalle();
-    const id = setInterval(refreshDetalle, 15000);
+    const id = setInterval(refreshDetalle, 10000);
     return () => { cancelled = true; clearInterval(id); };
   }, [tab, subastas.length]);
+
+  // En tab Próximamente, refrescar el countdown cada 30 segundos.
+  useEffect(() => {
+    if (tab !== 'prox') return;
+    let cancelled = false;
+    const refresh = async () => {
+      try {
+        const resultado = await Subastas.listar({});
+        if (cancelled) return;
+        setSubastas((resultado || []).map(mapSubasta));
+      } catch { /* silencioso */ }
+    };
+    const id = setInterval(refresh, 30000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [tab]);
 
   // Recibir filtros aplicados desde FiltrosScreen
   useEffect(() => {
@@ -157,11 +209,16 @@ export function HomeScreen({ navigation }) {
     return unsubscribe;
   }, [navigation]);
 
+  const esProxima = (a) => a.estadoSubasta === 'esperando' || a.fase === 'programada';
+
   const subrastasFiltradas = subastas.filter((a) => {
     if (tab === 'vivo') return esSubastaEnVivo(a);
     if (tab === 'term') return esSubastaFinalizada(a);
+    if (tab === 'prox') return esProxima(a);
     return true;
   });
+
+  const tituloTab = { vivo: 'En vivo', term: 'Finalizadas', prox: 'Próximamente', todas: 'Todas' };
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
@@ -183,6 +240,7 @@ export function HomeScreen({ navigation }) {
           <View style={{ flexDirection: 'row', gap: 9 }}>
             <Chip label="Todas" active={tab === 'todas'} onPress={() => setTab('todas')} />
             <Chip label="En vivo" active={tab === 'vivo'} dot onPress={() => setTab('vivo')} />
+            <Chip label="Próximamente" active={tab === 'prox'} onPress={() => setTab('prox')} />
             <Chip label="Terminadas" active={tab === 'term'} onPress={() => setTab('term')} />
           </View>
         </ScrollView>
@@ -194,7 +252,7 @@ export function HomeScreen({ navigation }) {
       >
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
           <Display style={{ fontSize: 18 }}>
-            {tab === 'vivo' ? 'En vivo' : tab === 'term' ? 'Finalizadas' : 'Todas'} · {subrastasFiltradas.length}
+            {tituloTab[tab] || 'Todas'} · {subrastasFiltradas.length}
           </Display>
           <Text style={{ color: colors.muted, fontSize: 13 }}>Más recientes ↓</Text>
         </View>
@@ -218,16 +276,24 @@ export function HomeScreen({ navigation }) {
           <View style={{ gap: 14 }}>
             {subrastasFiltradas.length === 0 ? (
               <Text style={{ color: colors.muted, textAlign: 'center', marginTop: 30 }}>
-                No hay subastas disponibles.
+                {tab === 'prox' ? 'No hay subastas programadas por el momento.' : 'No hay subastas disponibles.'}
               </Text>
             ) : (
-              subrastasFiltradas.map((a) => (
-                <AuctionCard
-                  key={a.id}
-                  a={a}
-                  onPress={() => navigation.navigate('Producto', { subastaId: a.id, subasta: a })}
-                />
-              ))
+              subrastasFiltradas.map((a) =>
+                tab === 'prox' ? (
+                  <ProximaCard
+                    key={a.id}
+                    a={a}
+                    onPress={() => navigation.navigate('Producto', { subastaId: a.id, subasta: a })}
+                  />
+                ) : (
+                  <AuctionCard
+                    key={a.id}
+                    a={a}
+                    onPress={() => navigation.navigate('Producto', { subastaId: a.id, subasta: a })}
+                  />
+                )
+              )
             )}
           </View>
         )}
@@ -291,26 +357,40 @@ export function FiltrosScreen({ navigation, route }) {
 }
 
 // ─── NOTIFICACIONES SCREEN ────────────────────────────────────────────────────
-export function NotificacionesScreen() {
+export function NotificacionesScreen({ navigation }) {
   const { user } = useAuth();
   const [notifs, setNotifs] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const cargar = () => {
     if (!user?.clienteId) { setLoading(false); return; }
     Notificaciones.porCliente(user.clienteId)
       .then((data) => setNotifs(Array.isArray(data) ? data : data ? [data] : []))
       .catch(() => setNotifs([]))
       .finally(() => setLoading(false));
-  }, [user]);
+  };
+
+  useEffect(() => { cargar(); }, [user]);
 
   const mapNotif = (n, i) => ({
     key: n.identificador ?? i,
-    t: n.tipo || 'Notificación',
+    id: n.identificador,
+    tipo: n.tipo || '',
+    t: tipoLabel(n.tipo),
     d: n.mensaje || '',
     a: n.fechaHora ? new Date(n.fechaHora).toLocaleString('es-AR') : '',
     unread: n.leida === false || n.leida === 'no',
   });
+
+  const tocarNotif = async (n) => {
+    if (n.unread && n.id) {
+      Notificaciones.marcarLeida(n.id).catch(() => {});
+      setNotifs((prev) => prev.map((x) => x.identificador === n.id ? { ...x, leida: 'si' } : x));
+    }
+    if (n.tipo === 'ganaste') {
+      navigation.navigate('Main', { screen: 'Subastas', params: { initialTab: 'ganadas' } });
+    }
+  };
 
   const lista = notifs.map(mapNotif);
 
@@ -324,23 +404,51 @@ export function NotificacionesScreen() {
       )}
       <View style={{ gap: 12, marginTop: 8 }}>
         {lista.map((n) => (
-          <Card key={n.key} el={n.unread} style={{ opacity: n.unread ? 1 : 0.7 }}>
-            <View style={{ flexDirection: 'row', gap: 12 }}>
-              <View style={s.notifIcon}><Ionicons name="notifications-outline" size={18} color={colors.blue} /></View>
-              <View style={{ flex: 1 }}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                  <Display style={{ fontSize: 13.5, flex: 1 }}>{n.t}</Display>
-                  {n.unread && <View style={{ width: 8, height: 8, borderRadius: 8, backgroundColor: colors.blue, marginTop: 3 }} />}
+          <TouchableOpacity key={n.key} activeOpacity={0.82} onPress={() => tocarNotif(n)}>
+            <Card el={n.unread} style={{ opacity: n.unread ? 1 : 0.7 }}>
+              <View style={{ flexDirection: 'row', gap: 12 }}>
+                <View style={s.notifIcon}>
+                  <Ionicons name={iconoNotif(n.tipo)} size={18} color={colors.blue} />
                 </View>
-                <Text style={{ color: colors.muted, fontSize: 13, marginVertical: 4, lineHeight: 18 }}>{n.d}</Text>
-                <Text style={{ color: colors.faint, fontSize: 11.5 }}>{n.a}</Text>
+                <View style={{ flex: 1 }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                    <Display style={{ fontSize: 13.5, flex: 1 }}>{n.t}</Display>
+                    {n.unread && <View style={{ width: 8, height: 8, borderRadius: 8, backgroundColor: colors.red, marginTop: 3 }} />}
+                  </View>
+                  <Text style={{ color: colors.muted, fontSize: 13, marginVertical: 4, lineHeight: 18 }}>{n.d}</Text>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Text style={{ color: colors.faint, fontSize: 11.5 }}>{n.a}</Text>
+                    {n.tipo === 'ganaste' && (
+                      <Text style={{ color: colors.blue, fontSize: 12, fontWeight: '700' }}>Ir a pagar →</Text>
+                    )}
+                  </View>
+                </View>
               </View>
-            </View>
-          </Card>
+            </Card>
+          </TouchableOpacity>
         ))}
       </View>
     </Screen>
   );
+}
+
+function tipoLabel(tipo) {
+  const labels = {
+    ganaste: '¡Ganaste una subasta!',
+    lider: 'Vas al frente',
+    perdiste: 'Te superaron',
+    subasta_creada: 'Nueva subasta',
+    subasta_por_cerrar: 'Subasta por cerrar',
+  };
+  return labels[tipo] || tipo || 'Notificación';
+}
+
+function iconoNotif(tipo) {
+  if (tipo === 'ganaste') return 'trophy-outline';
+  if (tipo === 'lider') return 'trending-up-outline';
+  if (tipo === 'perdiste') return 'arrow-down-outline';
+  if (tipo === 'subasta_creada') return 'add-circle-outline';
+  return 'notifications-outline';
 }
 
 
@@ -351,4 +459,7 @@ const s = StyleSheet.create({
   filterBtn: { width: 46, height: 46, borderRadius: 12, backgroundColor: colors.card, borderWidth: 1,
     borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
   notifIcon: { width: 38, height: 38, borderRadius: 10, backgroundColor: colors.blueSoft, alignItems: 'center', justifyContent: 'center' },
+  badge: { position: 'absolute', top: -5, right: -7, minWidth: 16, height: 16, borderRadius: 8,
+    backgroundColor: colors.red, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 },
+  badgeText: { color: '#fff', fontSize: 9, fontWeight: '800' },
 });

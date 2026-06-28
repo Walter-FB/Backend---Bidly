@@ -390,7 +390,7 @@ export function SubastaEnVivoScreen({ navigation, route }) {
 
   useEffect(() => {
     cargarPujas();
-    const interval = setInterval(cargarPujas, 5000);
+    const interval = setInterval(cargarPujas, 1000);
     return () => clearInterval(interval);
   }, [cargarPujas]);
 
@@ -751,11 +751,11 @@ export function SubastaAdminScreen({ navigation, route }) {
   // Carga inicial
   useEffect(() => { cargarSubasta(); }, [cargarSubasta]);
 
-  // Polling de pujas del ítem activo cada 5 segundos
+  // Polling de pujas del ítem activo cada 1 segundo
   useEffect(() => {
     if (!itemActivo) return;
     cargarPujas();
-    const interval = setInterval(cargarPujas, 5000);
+    const interval = setInterval(cargarPujas, 1000);
     return () => clearInterval(interval);
   }, [cargarPujas]);
 

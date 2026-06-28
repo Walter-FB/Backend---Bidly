@@ -189,6 +189,15 @@ def update_estado(id: int, body: SubastaEstadoUpdate, db: Session = Depends(get_
     if body.estado == "abierta":
         subasta_estado_service.iniciar_subasta(id, db)
     elif body.estado == "cerrada":
+        from app.services import item_adjudicacion_service
+        items_pendientes = (
+            db.query(ItemCatalogo)
+            .join(Catalogo, ItemCatalogo.catalogo == Catalogo.identificador)
+            .filter(Catalogo.subasta == id, ItemCatalogo.subastado == "no")
+            .all()
+        )
+        for item in items_pendientes:
+            item_adjudicacion_service.adjudicar_manual(item.identificador, db)
         subasta_estado_service.finalizar_subasta(id, db)
     else:
         s.estado = body.estado
