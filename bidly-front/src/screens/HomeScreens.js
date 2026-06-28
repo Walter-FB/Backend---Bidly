@@ -108,6 +108,34 @@ export function AuctionCard({ a, onPress }) {
   );
 }
 
+// ─── PROXIMA CARD ─────────────────────────────────────────────────────────────
+function ProximaCard({ a, onPress }) {
+  return (
+    <Card el style={{ padding: 14 }}>
+      <View style={{ flexDirection: 'row', gap: 12 }}>
+        <ImgBox style={{ width: 74, height: 74 }} size={26} src={a.portadaUrl} />
+        <View style={{ flex: 1 }}>
+          <Display style={{ fontSize: 15 }} numberOfLines={1}>{a.title}</Display>
+          <Text style={{ color: colors.muted, fontSize: 12, marginTop: 2 }}>{a.cat}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 8 }}>
+            <Ionicons name="calendar-outline" size={13} color={colors.blue} />
+            <Text style={{ color: colors.blue, fontSize: 12, fontWeight: '700' }}>
+              {a.fecha ? a.fecha : '—'}{a.hora ? `  ·  ${a.hora.slice(0, 5)}hs` : ''}
+            </Text>
+          </View>
+        </View>
+      </View>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+          <Ionicons name="time-outline" size={14} color={colors.gold} />
+          <Text style={{ color: colors.gold, fontSize: 13, fontWeight: '800' }}>{a.time}</Text>
+        </View>
+        <Btn title="Ver detalles" onPress={onPress} style={{ paddingVertical: 9, paddingHorizontal: 18 }} />
+      </View>
+    </Card>
+  );
+}
+
 // ─── HOME SCREEN ─────────────────────────────────────────────────────────────
 export function HomeScreen({ navigation }) {
   const [tab, setTab] = useState('vivo');
@@ -151,9 +179,24 @@ export function HomeScreen({ navigation }) {
       } catch { /* silencioso */ }
     };
     refreshDetalle();
-    const id = setInterval(refreshDetalle, 15000);
+    const id = setInterval(refreshDetalle, 10000);
     return () => { cancelled = true; clearInterval(id); };
   }, [tab, subastas.length]);
+
+  // En tab Próximamente, refrescar el countdown cada 30 segundos.
+  useEffect(() => {
+    if (tab !== 'prox') return;
+    let cancelled = false;
+    const refresh = async () => {
+      try {
+        const resultado = await Subastas.listar({});
+        if (cancelled) return;
+        setSubastas((resultado || []).map(mapSubasta));
+      } catch { /* silencioso */ }
+    };
+    const id = setInterval(refresh, 30000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [tab]);
 
   // Recibir filtros aplicados desde FiltrosScreen
   useEffect(() => {
@@ -166,11 +209,16 @@ export function HomeScreen({ navigation }) {
     return unsubscribe;
   }, [navigation]);
 
+  const esProxima = (a) => a.estadoSubasta === 'esperando' || a.fase === 'programada';
+
   const subrastasFiltradas = subastas.filter((a) => {
     if (tab === 'vivo') return esSubastaEnVivo(a);
     if (tab === 'term') return esSubastaFinalizada(a);
+    if (tab === 'prox') return esProxima(a);
     return true;
   });
+
+  const tituloTab = { vivo: 'En vivo', term: 'Finalizadas', prox: 'Próximamente', todas: 'Todas' };
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
@@ -192,6 +240,7 @@ export function HomeScreen({ navigation }) {
           <View style={{ flexDirection: 'row', gap: 9 }}>
             <Chip label="Todas" active={tab === 'todas'} onPress={() => setTab('todas')} />
             <Chip label="En vivo" active={tab === 'vivo'} dot onPress={() => setTab('vivo')} />
+            <Chip label="Próximamente" active={tab === 'prox'} onPress={() => setTab('prox')} />
             <Chip label="Terminadas" active={tab === 'term'} onPress={() => setTab('term')} />
           </View>
         </ScrollView>
@@ -203,7 +252,7 @@ export function HomeScreen({ navigation }) {
       >
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
           <Display style={{ fontSize: 18 }}>
-            {tab === 'vivo' ? 'En vivo' : tab === 'term' ? 'Finalizadas' : 'Todas'} · {subrastasFiltradas.length}
+            {tituloTab[tab] || 'Todas'} · {subrastasFiltradas.length}
           </Display>
           <Text style={{ color: colors.muted, fontSize: 13 }}>Más recientes ↓</Text>
         </View>
@@ -227,16 +276,24 @@ export function HomeScreen({ navigation }) {
           <View style={{ gap: 14 }}>
             {subrastasFiltradas.length === 0 ? (
               <Text style={{ color: colors.muted, textAlign: 'center', marginTop: 30 }}>
-                No hay subastas disponibles.
+                {tab === 'prox' ? 'No hay subastas programadas por el momento.' : 'No hay subastas disponibles.'}
               </Text>
             ) : (
-              subrastasFiltradas.map((a) => (
-                <AuctionCard
-                  key={a.id}
-                  a={a}
-                  onPress={() => navigation.navigate('Producto', { subastaId: a.id, subasta: a })}
-                />
-              ))
+              subrastasFiltradas.map((a) =>
+                tab === 'prox' ? (
+                  <ProximaCard
+                    key={a.id}
+                    a={a}
+                    onPress={() => navigation.navigate('Producto', { subastaId: a.id, subasta: a })}
+                  />
+                ) : (
+                  <AuctionCard
+                    key={a.id}
+                    a={a}
+                    onPress={() => navigation.navigate('Producto', { subastaId: a.id, subasta: a })}
+                  />
+                )
+              )
             )}
           </View>
         )}
