@@ -83,8 +83,13 @@ def enrich(subasta: Subasta, db: Session) -> dict:
         elapsed = (datetime.utcnow() - sesion.timer_desde).total_seconds()
         data["segundosRestantes"] = max(0, int(TIMEOUT_SEG - elapsed))
     elif estado_sub == "esperando":
-        data["fase"]              = FASE_PROGRAMADA
-        data["segundosRestantes"] = None
+        data["fase"] = FASE_PROGRAMADA
+        try:
+            inicio = datetime.combine(subasta.fecha, subasta.hora)
+            secs = (inicio - datetime.utcnow()).total_seconds()
+            data["segundosRestantes"] = max(0, int(secs))
+        except Exception:
+            data["segundosRestantes"] = None
     else:
         data["fase"]              = FASE_PENDIENTE
         data["segundosRestantes"] = None
