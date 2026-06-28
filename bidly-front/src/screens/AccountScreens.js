@@ -11,6 +11,7 @@ import { useAuth } from '../context/AuthContext';
 import { BASE_URL, getToken } from '../api/client';
 import { Clientes, Personas, RegistroSubasta, Subastas, Productos, Subastadores, Catalogos } from '../api/endpoints';
 import { tituloSubasta, subtituloSubasta, formatFechaSubasta, esSubastaFinalizada, esSubastaEnCursoVendedor, esMiSubasta, tagEstadoSubasta } from '../utils/subasta';
+import { useNotifBadge } from '../hooks/useNotifBadge';
 
 const COMISION_BIDLY = 0.10;
 
@@ -270,7 +271,8 @@ function irAGanaste(navigation, g) {
 export function MisSubastasScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
-  const [tab, setTab] = useState('curso');
+  const { unreadCount } = useNotifBadge();
+  const [tab, setTab] = useState(route.params?.initialTab || 'curso');
   const [subastas, setSubastas] = useState([]);
   const [ganadas, setGanadas] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -310,6 +312,10 @@ export function MisSubastasScreen({ navigation, route }) {
     return () => clearTimeout(t);
   }, [route.params?.creada]);
 
+  useEffect(() => {
+    if (route.params?.initialTab) setTab(route.params.initialTab);
+  }, [route.params?.initialTab]);
+
   const mias = subastas.filter((a) => esMiSubasta(a, user?.clienteId));
   const ganadasActivas = ganadas.filter((g) => g.reembolsada !== 'si');
 
@@ -324,7 +330,14 @@ export function MisSubastasScreen({ navigation, route }) {
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 22, height: 52 }}>
         <Display style={{ color: colors.blueLogo, fontSize: 20 }}>BIDLY</Display>
         <TouchableOpacity onPress={() => navigation.navigate('Notificaciones')}>
-          <Ionicons name="notifications-outline" size={21} color="#fff" />
+          <View>
+            <Ionicons name="notifications-outline" size={21} color="#fff" />
+            {unreadCount > 0 && (
+              <View style={s.badge}>
+                <Text style={s.badgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
+              </View>
+            )}
+          </View>
         </TouchableOpacity>
       </View>
       <ScrollView contentContainerStyle={{ paddingHorizontal: 22, paddingBottom: 170 }} showsVerticalScrollIndicator={false}>
@@ -1440,6 +1453,9 @@ const s = StyleSheet.create({
   photoEmpty: { borderWidth: 1.5, borderStyle: 'dashed', borderColor: colors.border, backgroundColor: colors.card, borderRadius: 12 },
   winnerAvatar: { width: 46, height: 46, borderRadius: 23, backgroundColor: colors.cardEl, alignItems: 'center', justifyContent: 'center' },
   dpIcon: { width: 40, height: 40, borderRadius: 10, backgroundColor: 'rgba(59,130,246,0.12)', alignItems: 'center', justifyContent: 'center' },
+  badge: { position: 'absolute', top: -5, right: -7, minWidth: 16, height: 16, borderRadius: 8,
+    backgroundColor: colors.red, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 },
+  badgeText: { color: '#fff', fontSize: 9, fontWeight: '800' },
   toastOk: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     backgroundColor: 'rgba(55,214,111,0.12)', borderWidth: 1, borderColor: colors.green,

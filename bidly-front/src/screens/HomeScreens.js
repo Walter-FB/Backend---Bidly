@@ -1,6 +1,7 @@
 // BIDLY — Home, Filtros, Notificaciones (+ shared AuctionCard).
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Alert } from 'react-native';
+import { useNotifBadge } from '../hooks/useNotifBadge';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen, Header, Title, Sub, SectionLabel, Btn, Chip, Card, Field, LiveBadge, Tag, ImgBox, Display } from '../components/ui';
@@ -47,11 +48,19 @@ function mapSubasta(s) {
 // ─── HOME TOP BAR ─────────────────────────────────────────────────────────────
 function HomeTopBar({ navigation }) {
   const insets = useSafeAreaInsets();
+  const { unreadCount } = useNotifBadge();
   return (
     <View style={[s.topbar, { paddingTop: insets.top + 8 }]}>
       <Display style={{ color: colors.blueLogo, fontSize: 20 }}>BIDLY</Display>
       <TouchableOpacity onPress={() => navigation.navigate('Notificaciones')}>
-        <Ionicons name="notifications-outline" size={21} color="#fff" />
+        <View>
+          <Ionicons name="notifications-outline" size={21} color="#fff" />
+          {unreadCount > 0 && (
+            <View style={s.badge}>
+              <Text style={s.badgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
+            </View>
+          )}
+        </View>
       </TouchableOpacity>
     </View>
   );
@@ -291,26 +300,40 @@ export function FiltrosScreen({ navigation, route }) {
 }
 
 // ─── NOTIFICACIONES SCREEN ────────────────────────────────────────────────────
-export function NotificacionesScreen() {
+export function NotificacionesScreen({ navigation }) {
   const { user } = useAuth();
   const [notifs, setNotifs] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const cargar = () => {
     if (!user?.clienteId) { setLoading(false); return; }
     Notificaciones.porCliente(user.clienteId)
       .then((data) => setNotifs(Array.isArray(data) ? data : data ? [data] : []))
       .catch(() => setNotifs([]))
       .finally(() => setLoading(false));
-  }, [user]);
+  };
+
+  useEffect(() => { cargar(); }, [user]);
 
   const mapNotif = (n, i) => ({
     key: n.identificador ?? i,
-    t: n.tipo || 'Notificación',
+    id: n.identificador,
+    tipo: n.tipo || '',
+    t: tipoLabel(n.tipo),
     d: n.mensaje || '',
     a: n.fechaHora ? new Date(n.fechaHora).toLocaleString('es-AR') : '',
     unread: n.leida === false || n.leida === 'no',
   });
+
+  const tocarNotif = async (n) => {
+    if (n.unread && n.id) {
+      Notificaciones.marcarLeida(n.id).catch(() => {});
+      setNotifs((prev) => prev.map((x) => x.identificador === n.id ? { ...x, leida: 'si' } : x));
+    }
+    if (n.tipo === 'ganaste') {
+      navigation.navigate('Main', { screen: 'Subastas', params: { initialTab: 'ganadas' } });
+    }
+  };
 
   const lista = notifs.map(mapNotif);
 
@@ -324,23 +347,51 @@ export function NotificacionesScreen() {
       )}
       <View style={{ gap: 12, marginTop: 8 }}>
         {lista.map((n) => (
-          <Card key={n.key} el={n.unread} style={{ opacity: n.unread ? 1 : 0.7 }}>
-            <View style={{ flexDirection: 'row', gap: 12 }}>
-              <View style={s.notifIcon}><Ionicons name="notifications-outline" size={18} color={colors.blue} /></View>
-              <View style={{ flex: 1 }}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                  <Display style={{ fontSize: 13.5, flex: 1 }}>{n.t}</Display>
-                  {n.unread && <View style={{ width: 8, height: 8, borderRadius: 8, backgroundColor: colors.blue, marginTop: 3 }} />}
+          <TouchableOpacity key={n.key} activeOpacity={0.82} onPress={() => tocarNotif(n)}>
+            <Card el={n.unread} style={{ opacity: n.unread ? 1 : 0.7 }}>
+              <View style={{ flexDirection: 'row', gap: 12 }}>
+                <View style={s.notifIcon}>
+                  <Ionicons name={iconoNotif(n.tipo)} size={18} color={colors.blue} />
                 </View>
-                <Text style={{ color: colors.muted, fontSize: 13, marginVertical: 4, lineHeight: 18 }}>{n.d}</Text>
-                <Text style={{ color: colors.faint, fontSize: 11.5 }}>{n.a}</Text>
+                <View style={{ flex: 1 }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                    <Display style={{ fontSize: 13.5, flex: 1 }}>{n.t}</Display>
+                    {n.unread && <View style={{ width: 8, height: 8, borderRadius: 8, backgroundColor: colors.red, marginTop: 3 }} />}
+                  </View>
+                  <Text style={{ color: colors.muted, fontSize: 13, marginVertical: 4, lineHeight: 18 }}>{n.d}</Text>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Text style={{ color: colors.faint, fontSize: 11.5 }}>{n.a}</Text>
+                    {n.tipo === 'ganaste' && (
+                      <Text style={{ color: colors.blue, fontSize: 12, fontWeight: '700' }}>Ir a pagar →</Text>
+                    )}
+                  </View>
+                </View>
               </View>
-            </View>
-          </Card>
+            </Card>
+          </TouchableOpacity>
         ))}
       </View>
     </Screen>
   );
+}
+
+function tipoLabel(tipo) {
+  const labels = {
+    ganaste: '¡Ganaste una subasta!',
+    lider: 'Vas al frente',
+    perdiste: 'Te superaron',
+    subasta_creada: 'Nueva subasta',
+    subasta_por_cerrar: 'Subasta por cerrar',
+  };
+  return labels[tipo] || tipo || 'Notificación';
+}
+
+function iconoNotif(tipo) {
+  if (tipo === 'ganaste') return 'trophy-outline';
+  if (tipo === 'lider') return 'trending-up-outline';
+  if (tipo === 'perdiste') return 'arrow-down-outline';
+  if (tipo === 'subasta_creada') return 'add-circle-outline';
+  return 'notifications-outline';
 }
 
 
@@ -351,4 +402,7 @@ const s = StyleSheet.create({
   filterBtn: { width: 46, height: 46, borderRadius: 12, backgroundColor: colors.card, borderWidth: 1,
     borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
   notifIcon: { width: 38, height: 38, borderRadius: 10, backgroundColor: colors.blueSoft, alignItems: 'center', justifyContent: 'center' },
+  badge: { position: 'absolute', top: -5, right: -7, minWidth: 16, height: 16, borderRadius: 8,
+    backgroundColor: colors.red, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 },
+  badgeText: { color: '#fff', fontSize: 9, fontWeight: '800' },
 });

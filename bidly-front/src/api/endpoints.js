@@ -200,6 +200,7 @@ export const Items = {
 export const Notificaciones = {
   obtener: (id) => api.get(`/notificaciones/${id}`),
   porCliente: (clienteId) => api.get(`/notificaciones/cliente/${clienteId}`),
+  marcarLeida: (id) => api.patch(`/notificaciones/${id}/leer`, {}),
 };
 
 export default {
