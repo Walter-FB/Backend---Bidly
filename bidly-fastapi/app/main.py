@@ -64,8 +64,8 @@ app.add_middleware(MaxBodySizeMiddleware, max_size=settings.MAX_REQUEST_SIZE_BYT
 
 # ── Manejo de errores compatible con el frontend ──────────────────────────────
 # El front (api/client.js) lee message/error/code/etc. en el NIVEL SUPERIOR del
-# body (estilo Spring Boot), no anidados bajo "detail" como hace FastAPI por
-# defecto. Aplanamos las respuestas de error para respetar ese contrato.
+# body, no anidados bajo "detail" como hace FastAPI por defecto.
+# Aplanamos las respuestas de error para respetar ese contrato.
 @app.exception_handler(StarletteHTTPException)
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     detail = exc.detail

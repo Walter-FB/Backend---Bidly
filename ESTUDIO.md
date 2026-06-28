@@ -241,7 +241,7 @@ Solo subastas con revisión `aprobada` son visibles en el home del frontend (par
 
 ## 13. Serialización y contrato con el frontend
 
-El frontend fue construido originalmente para un backend Spring Boot que devolvía objetos con relaciones anidadas en camelCase. El backend FastAPI mantiene ese contrato a través de `serializers.py`:
+El frontend espera objetos con relaciones anidadas en camelCase. El backend FastAPI mantiene ese contrato a través de `serializers.py`:
 
 - `item_to_dict()` → devuelve `producto` como objeto anidado con `descripcionCatalogo`, `descripcionCompleta`
 - `puja_to_dict()` → devuelve `asistente` como objeto con `numeroPostor`

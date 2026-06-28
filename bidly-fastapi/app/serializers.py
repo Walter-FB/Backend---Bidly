@@ -1,7 +1,7 @@
 """
 Serializadores compartidos.
 
-El frontend (React Native, sin cambios desde la versión Spring Boot) espera
+El frontend (React Native) espera
 objetos en camelCase y con relaciones ANIDADAS (p. ej. item.producto.identificador,
 puja.asistente.numeroPostor). La serialización ORM cruda devolvía columnas planas
 en minúscula y las FK como enteros, rompiendo el contrato. Estos helpers producen

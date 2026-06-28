@@ -1,4 +1,4 @@
-// BIDLY — demo data used until the Spring Boot endpoints are wired.
+// BIDLY — demo data used until the FastAPI endpoints are wired.
 // Replace these with calls from src/api/endpoints.js inside each screen's useEffect.
 export const AUCTIONS = [
   { id: 481, title: 'Reloj vintage Omega', cat: 'Relojes · Usado', puja: '12.500', ppl: 18, time: '2h 14m', lead: true },

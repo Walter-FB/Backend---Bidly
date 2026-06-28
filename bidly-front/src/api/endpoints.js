@@ -1,4 +1,4 @@
-// BIDLY — mapa de endpoints hacia el backend Spring Boot (puerto 8083).
+// BIDLY — mapa de endpoints hacia el backend FastAPI (puerto 8083).
 // Todos los paths son relativos al BASE_URL definido en client.js.
 import api, { setToken, upload } from './client';
 

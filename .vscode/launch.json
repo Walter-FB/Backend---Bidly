@@ -1,14 +1,3 @@
 {
-    "configurations": [
-        {
-            "type": "java",
-            "name": "Spring Boot-BidlyBackendApplication<bidly-backend>",
-            "request": "launch",
-            "cwd": "${workspaceFolder}",
-            "mainClass": "com.bidly.bidly_backend.BidlyBackendApplication",
-            "projectName": "bidly-backend",
-            "args": "",
-            "envFile": "${workspaceFolder}/.env"
-        }
-    ]
+    "configurations": []
 }

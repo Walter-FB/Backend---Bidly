@@ -1,6 +1,6 @@
 # BIDLY — App de subastas (React Native + Expo)
 
-Front-end completo de las 24 pantallas, listo para conectar a tu backend **Spring Boot**.
+Front-end completo de las 24 pantallas, listo para conectar al backend **FastAPI** (Python).
 
 ## Stack
 - **Expo (managed)** + React Native 0.74
@@ -16,16 +16,6 @@ npm install
 npm start         # luego escaneá el QR con Expo Go, o presioná 'a' / 'i'
 ```
 
-## Conexión a Spring Boot
-1. Configurá la URL base del backend en **`app.json`** → `expo.extra.apiBaseUrl`
-   (o editá `BASE_URL` en `src/api/client.js`).
-   - Emulador Android → `http://10.0.2.2:8080/api`
-   - Simulador iOS → `http://localhost:8080/api`
-   - Dispositivo físico → `http://<IP-de-tu-PC>:8080/api`
-2. Todos los endpoints están centralizados en **`src/api/endpoints.js`**. Ajustá los paths
-   para que coincidan con tus `@RequestMapping`/`@GetMapping` de Spring.
-3. El token JWT se guarda automáticamente al hacer login/registro y se envía en
-   `Authorization: Bearer <token>` en cada request autenticado.
 
 ### Mapa de botones → endpoints
 | Pantalla | Acción | Servicio |

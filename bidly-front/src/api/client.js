@@ -1,4 +1,4 @@
-// BIDLY — HTTP client with JWT (AsyncStorage) for Spring Boot backend.
+// BIDLY — HTTP client with JWT (AsyncStorage) for FastAPI backend.
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 
