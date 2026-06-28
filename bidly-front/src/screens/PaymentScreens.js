@@ -4,7 +4,7 @@ import { View, Text, ScrollView, TouchableOpacity, Switch, StyleSheet, ActivityI
 import { Ionicons } from '@expo/vector-icons';
 import { Screen, Header, Title, Sub, SectionLabel, Btn, Chip, Card, Field, BottomBar, Row, Display, Tag } from '../components/ui';
 import { colors } from '../theme/theme';
-import { Clientes, Items, Multas, RegistroSubasta, Seguros } from '../api/endpoints';
+import { Clientes, Items, Multas, RegistroSubasta } from '../api/endpoints';
 import { useAuth } from '../context/AuthContext';
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
@@ -278,34 +278,19 @@ export function SeguroScreen({ navigation, route }) {
 
   const [on, setOn] = useState(false);
   const [valor, setValor] = useState(importe ? String(importe) : '');
-  const [contratando, setContratando] = useState(false);
 
   const porcentajeSeguro = 0.025; // 2.5% del valor asegurado
   const importeSeguro = valor ? (Number(valor) * porcentajeSeguro).toFixed(2) : '0';
 
-  const onContratar = async () => {
+  const onContratar = () => {
     if (!valor || Number(valor) <= 0) {
       return Alert.alert('Valor', 'Ingresá el valor a asegurar.');
     }
-    setContratando(true);
-    try {
-      const poliza = await Seguros.crear({
-        nroPoliza: `POL-${Date.now()}`,
-        compania: 'BIDLY Seguros',
-        polizaCombinada: 'no',
-        importe: Number(importeSeguro),
-      });
-      navigation.navigate('ConfirmarPago', {
-        ...params,
-        seguroNroPoliza: poliza.nroPoliza,
-        importeSeguro: Number(importeSeguro),
-      });
-    } catch {
-      // Si falla la creación del seguro, continuamos sin él
-      navigation.navigate('ConfirmarPago', { ...params, importeSeguro: Number(importeSeguro) });
-    } finally {
-      setContratando(false);
-    }
+    navigation.navigate('ConfirmarPago', {
+      ...params,
+      seguroNroPoliza: `POL-${Date.now()}`,
+      importeSeguro: Number(importeSeguro),
+    });
   };
 
   const onOmitir = () => {
@@ -345,7 +330,7 @@ export function SeguroScreen({ navigation, route }) {
       <View style={{ flexDirection: 'row', gap: 12, paddingHorizontal: 22, paddingBottom: 28, paddingTop: 14 }}>
         <Btn title="Omitir" kind="ghost" onPress={onOmitir} style={{ flex: 1 }} />
         {on ? (
-          <Btn title={contratando ? 'Contratando…' : 'Contratar'} onPress={onContratar} disabled={contratando} style={{ flex: 1 }} />
+          <Btn title="Contratar" onPress={onContratar} style={{ flex: 1 }} />
         ) : (
           <Btn title="Continuar" onPress={onOmitir} style={{ flex: 1 }} />
         )}
