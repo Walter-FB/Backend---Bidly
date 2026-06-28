@@ -24,17 +24,20 @@ Si una tarea requiere cambiar la estructura de alguna tabla de esta lista (agreg
 
 Las alternativas permitidas sin preguntar son:
 Crear una tabla nueva que no esté en la lista de arriba y relacionarla con las existentes via foreign key.
-Modificar código Java/frontend sin tocar el DDL de las tablas listadas.
+Modificar código Python/frontend sin tocar el DDL de las tablas listadas.
 
 ---
 
 Arquitectura
-Backend: Spring Boot 3.5 (Java 21), JPA/Hibernate, PostgreSQL, puerto 8083
-Frontend: React Native Expo SDK 54, React Navigation 6
-DB local: PostgreSQL en localhost:5432
+Backend: FastAPI (Python 3), SQLAlchemy ORM, psycopg2, Uvicorn, APScheduler — carpeta bidly-fastapi/
+Frontend: React Native Expo SDK 54, React Navigation 6 — carpeta bidly-front/
+Puerto backend: 8083
+Deploy: Railway → https://backend-bidly.up.railway.app/api
+DB local: PostgreSQL en localhost:5432, base "railway"
 DB Railway: trolley.proxy.rlwy.net:53193/railway
 DDL de referencia: EstructuraActual.sql en la raíz del repo
-Documentación completa: DOCUMENTACION.md en la raíz del repo — leer antes de explorar archivos
+Documentación técnica completa: "Base datos BIDLY  ESTUDIO.md" y MAPA_FUNCIONALIDADES.md en la raíz del repo
+NO hay Spring Boot, NO hay Java, NO hay JPA en este proyecto.
 
 ---
 

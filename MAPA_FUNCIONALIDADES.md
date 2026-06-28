@@ -1,216 +1,329 @@
 # BIDLY — Mapa de Funcionalidades
-> Dónde está implementada cada función del sistema.
+
+> Generado exclusivamente leyendo el código fuente.
 
 ---
 
 ## AUTENTICACIÓN
 
-| Funcionalidad | Archivo Frontend | Línea aprox. | Archivo Backend |
-|--------------|-----------------|--------------|-----------------|
-| Pantalla de login | `AuthScreens.js` | `LoginScreen` | `AuthController.java` → `POST /auth/login` |
-| Pantalla de registro | `AuthScreens.js` | `RegistroScreen` | `AuthController.java` → `POST /auth/register` |
-| Enviar código por email | `AuthScreens.js` | `RegistroScreen.onSubmit` | `AuthController.java` → `POST /auth/send-verification` + `EmailService.java` |
-| Verificar código de 6 dígitos | `AuthScreens.js` | `VerificarEmailScreen` | `AuthController.java` → `POST /auth/verify-code` |
-| Crear contraseña | `AuthScreens.js` | `CrearPasswordScreen` | `AuthController.java` → `POST /auth/register` |
-| Estado global del usuario | `context/AuthContext.js` | todo el archivo | — |
-| Guardar/leer token | `context/AuthContext.js` | `login()`, boot | `AsyncStorage @bidly_token` |
-| Validar sesión al arrancar | `context/AuthContext.js` | boot flow | `AuthController.java` → `GET /auth/me` |
-| Login como invitado | `context/AuthContext.js` | `loginAsGuest()` | — (solo local) |
-| Logout | `context/AuthContext.js` | `logout()` | — (limpia AsyncStorage) |
+### Registro de usuario
+- **Pantalla:** FotoDNI → Registro → VerificarEmail → CrearPassword
+- **Backend:** `POST /api/auth/send-verification` → `POST /api/auth/verify-code` → `POST /api/auth/register`
+- **Qué hace:** Sube fotos de DNI, ingresa datos personales, verifica email con código de 6 dígitos (10 min), crea contraseña. Genera Persona + Cliente + Credencial + UsuarioRol("postor") en la DB.
+- **Estado:** FUNCIONA
+
+### Login
+- **Pantalla:** Login
+- **Backend:** `POST /api/auth/login`
+- **Qué hace:** Email + contraseña → devuelve token UUID que se guarda en AsyncStorage. Incluye rol del usuario.
+- **Estado:** FUNCIONA
+
+### Modo invitado
+- **Pantalla:** Login → botón "Entrar como invitado"
+- **Qué hace:** Acceso solo lectura. Puede ver subastas pero no pujar.
+- **Estado:** FUNCIONA
+
+### Logout
+- **Frontend:** `Auth.logout()` → borra token de AsyncStorage
+- **Estado:** FUNCIONA
+
+### Restaurar sesión al arrancar
+- **Backend:** `GET /api/auth/me`
+- **Qué hace:** Al abrir la app, valida el token contra el backend. Si el servidor reinició, limpia la sesión.
+- **Estado:** FUNCIONA (limitación: el store es en memoria, se pierde al reiniciar el servidor)
+
+### Verificación de identidad (DNI)
+- **Backend:** `POST /api/clientes/{id}/dni-fotos`
+- **Qué hace:** Sube frente y dorso del DNI en FormData. Se guarda en base64 en `dni_verificacion`.
+- **Estado:** FUNCIONA (sube en segundo plano al completar el registro; si falla, no bloquea)
 
 ---
 
-## HOME Y LISTA DE SUBASTAS
+## SUBASTAS — VISTA PÚBLICA
 
-| Funcionalidad | Archivo | Línea aprox. |
-|--------------|---------|--------------|
-| Pantalla principal con tabs | `HomeScreens.js` | `HomeScreen` ~140 |
-| Barra superior con logo y badge | `HomeScreens.js` | `HomeTopBar` ~49 |
-| Tarjeta de subasta (AuctionCard) | `HomeScreens.js` | `AuctionCard` ~70 |
-| Tarjeta de subasta próxima | `HomeScreens.js` | `ProximaCard` ~112 |
-| Cargar lista de subastas | `HomeScreens.js` | `cargarSubastas()` ~147 |
-| Filtrar por tab (En vivo / Próximas / Terminadas) | `HomeScreens.js` | `subrastasFiltradas` ~214 |
-| Polling de detalle en tab "En vivo" (cada 10s) | `HomeScreens.js` | useEffect ~166 |
-| Polling de countdown en tab "Próximamente" (cada 30s) | `HomeScreens.js` | useEffect ~187 |
-| Recibir filtros desde FiltrosScreen | `HomeScreens.js` | navigation listener ~203 |
-| Pantalla de filtros (modal) | `HomeScreens.js` | `FiltrosScreen` ~306 |
-| Pantalla de notificaciones | `HomeScreens.js` | `NotificacionesScreen` ~360 |
-| Mapeo de tipo → ícono de notificación | `HomeScreens.js` | `iconoNotif()` ~446 |
-| Mapeo de subasta del backend al shape de la card | `HomeScreens.js` | `mapSubasta()` ~21 |
-| Símbolo de moneda (pesos/dolares) | `HomeScreens.js` | `simboloMoneda()` ~17 |
+### Listar subastas
+- **Pantalla:** HomeScreen (tabs: En vivo / Próximas / Terminadas / Todas)
+- **Backend:** `GET /api/subastas?estado=abierta|cerrada&categoria=&moneda=pesos|dolares&publico=true`
+- **Qué hace:** Muestra subastas filtradas. Solo las aprobadas son visibles con `publico=true`. Refresca el detalle cada 10 s (tab En vivo) y 30 s (tab Próximas).
+- **Estado:** FUNCIONA
 
----
+### Filtrar subastas
+- **Pantalla:** FiltrosScreen (modal)
+- **Qué hace:** Filtros por estado, categoría y moneda. Al aplicar, navega de vuelta al Home con los filtros como params.
+- **Estado:** FUNCIONA
 
-## SUBASTAS — DETALLE Y PUJA
+### Ver detalle de subasta
+- **Pantalla:** ProductoScreen
+- **Backend:** `GET /api/subastas/{id}`, `GET /api/subastas/{id}/catalogos`, `GET /api/subastas/{id}/sesion`
+- **Qué hace:** Muestra foto de portada, precio base, countdown, descripción, lista de ítems del catálogo.
+- **Estado:** FUNCIONA
 
-| Funcionalidad | Archivo | Línea aprox. |
-|--------------|---------|--------------|
-| Detalle de subasta (fotos, precio, catálogo) | `AuctionScreens.js` | `ProductoScreen` ~67 |
-| Galería de fotos con lightbox | `AuctionScreens.js` | `ProductoScreen` ~143 |
-| Determinar ítem activo (sesión o primer pendiente) | `AuctionScreens.js` | `ProductoScreen` useEffect ~91 |
-| **Subasta en vivo (pantalla principal de puja)** | `AuctionScreens.js` | `SubastaEnVivoScreen` ~259 |
-| Inscribirse como asistente al entrar | `AuctionScreens.js` | `Asistentes.inscribir` ~335 |
-| Polling de pujas cada 1 segundo | `AuctionScreens.js` | `cargarPujas` ~342 + useEffect ~391 |
-| Detección automática de ganador | `AuctionScreens.js` | `cargarPujas` → `ganadora` ~350 |
-| Countdown sincronizado con servidor | `AuctionScreens.js` | `syncTimer` ~298 + tick ~317 |
-| Cálculo de incremento mínimo (1% del precio base) | `AuctionScreens.js` | `minIncremento` ~399 |
-| Cálculo de tope máximo por categoría | `AuctionScreens.js` | `maxPuja` ~405 |
-| Botones +/− para ajustar el monto | `AuctionScreens.js` | stepRow ~528 |
-| Validación del monto ingresado | `AuctionScreens.js` | `montoInvalido` ~432 |
-| Ejecutar puja | `AuctionScreens.js` | `onPujar()` ~434 |
-| Mensajes de error de puja (MIN_BID, MAX_BID, etc.) | `AuctionScreens.js` | `mensajeError()` ~46 |
-| Pantalla "Ganaste" | `AuctionScreens.js` | `GanasteScreen` ~639 |
-| Pantalla "Subasta finalizada" (perdiste) | `AuctionScreens.js` | `SubastaFinalizadaScreen` ~689 |
-| **Panel del subastador** | `AuctionScreens.js` | `SubastaAdminScreen` ~719 |
-| Polling de pujas en panel admin (cada 1s) | `AuctionScreens.js` | `cargarPujas` + useEffect ~767 |
-| Adjudicar ítem (operación atómica) | `AuctionScreens.js` | botón "Adjudicar" → `Items.adjudicar` | 
+### Foto de portada de subasta
+- **Backend:** `GET /api/subastas/{id}/portada`
+- **Qué hace:** Devuelve la foto del primer ítem del catálogo en bytes (JPEG).
+- **Estado:** FUNCIONA
 
 ---
 
-## CUENTA — PERFIL Y MIS SUBASTAS
+## SUBASTAS — EN VIVO (PUJAS)
 
-| Funcionalidad | Archivo | Línea aprox. |
-|--------------|---------|--------------|
-| Pantalla de perfil | `AccountScreens.js` | `PerfilScreen` ~81 |
-| Mis compras (historial de victorias) | `AccountScreens.js` | `MisComprasScreen` ~166 |
-| Historial de subastas | `AccountScreens.js` | `HistorialScreen` ~214 |
-| **Mis subastas como vendedor** | `AccountScreens.js` | `MisSubastasScreen` ~271 |
-| Tab "Ganadas" (subastas ganadas como postor) | `AccountScreens.js` | `MisSubastasScreen` tab 'ganadas' ~374 |
-| Toast al crear subasta exitosamente | `AccountScreens.js` | `MisSubastasScreen` toast ~305 |
-| **Crear subasta — paso 1 (fecha/hora/categoría)** | `AccountScreens.js` | `CrearSubastaScreen` paso 1 ~821 |
-| **Crear subasta — paso 2 (productos y precios)** | `AccountScreens.js` | `CrearSubastaScreen` paso 2 ~864 |
-| Selector de fecha custom (calendario) | `AccountScreens.js` | `CalendarPicker` ~492 |
-| Selector de hora (HH:MM) | `AccountScreens.js` | `TimeSelector` ~615 |
-| Preview de comisión Bidly (10%) y ganancia neta | `AccountScreens.js` | `CrearSubastaScreen` ~926 |
-| Lógica de creación: subastador→subasta→catálogo→ítems | `AccountScreens.js` | `onCrear()` ~775 |
-| Animación de éxito al crear subasta | `AccountScreens.js` | `animarExitoYRedirigir()` ~758 |
-| **Publicar producto** | `AccountScreens.js` | `PublicarScreen` ~988 |
-| Elegir fotos del dispositivo | `AccountScreens.js` | `elegirFoto()` ~995 |
-| Subir fotos al backend (XHR multipart) | `AccountScreens.js` | `onPublicar()` → XHR loop ~1030 |
-| Lista de mis productos | `AccountScreens.js` | `MisProductosScreen` ~1324 |
-| Modo selección de producto para subasta | `AccountScreens.js` | `MisProductosScreen` `modoSeleccion` ~1326 |
-| Eliminar producto con confirmación | `AccountScreens.js` | `confirmarEliminar()` ~1347 |
-| Datos personales (readonly) | `AccountScreens.js` | `DatosPersonalesScreen` ~1270 |
-| Datos del ganador de una venta | `AccountScreens.js` | `DatosGanadorScreen` ~1204 |
-| Detalle de una compra (con opción de pago/reembolso) | `AccountScreens.js` | `CompraDetalleScreen` ~1125 |
-| Mapeo de RegistroSubasta al shape de la lista | `AccountScreens.js` | `mapRegistro()` ~57 |
-| Colores de categoría de usuario | `AccountScreens.js` | `CATEGORIAS_COLOR` ~49 |
+### Subasta en tiempo real
+- **Pantalla:** SubastaEnVivoScreen
+- **Backend:** `GET /api/pujos?item={id}` (polling 1 s), `GET /api/subastas/{id}/sesion` (sync timer 10 s)
+- **Qué hace:** Muestra puja actual, countdown local calculado desde baseline del backend, historial de pujas, botón de pujar.
+- **Estado:** FUNCIONA
 
----
+### Inscribirse como asistente
+- **Backend:** `POST /api/asistentes/inscribir` con `{ clienteId, subastaId }`
+- **Qué hace:** Al entrar a SubastaEnVivo, se auto-inscribe. Si ya está inscripto, devuelve el existente (idempotente). Asigna `numeropostor` correlativo.
+- **Estado:** FUNCIONA
 
-## PAGO Y POST-SUBASTA
+### Colocar puja
+- **Backend:** `POST /api/pujos` con `{ asistente: {identificador}, item: {identificador}, importe }`
+- **Validaciones:** asistente inscripto, ítem activo en sesión, subasta iniciada, tiene medio de pago, importe dentro del rango (mín: última puja + 1% precio base, máx: referencia + 20% precio base). Sin tope para `oro`/`platino`.
+- **Efecto:** Resetea el timer de 30 min. Notifica al lider actual y al desplazado.
+- **Estado:** FUNCIONA
 
-| Funcionalidad | Archivo | Línea aprox. |
-|--------------|---------|--------------|
-| Elegir medio de pago | `PaymentScreens.js` | `MedioPagoScreen` ~105 |
-| Agregar nueva tarjeta inline | `PaymentScreens.js` | `onAgregarTarjeta()` ~127 |
-| Enmascarar número de tarjeta (últimos 4 dígitos) | `PaymentScreens.js` | `maskCard()` ~37 |
-| Formatear número de tarjeta (grupos de 4) | `PaymentScreens.js` | `formatCardNumber()` ~70 |
-| Formatear vencimiento (MM/AA con auto-slash) | `PaymentScreens.js` | `formatCardExpiry()` ~44 |
-| Validar vencimiento (mes 01-12) | `PaymentScreens.js` | `isValidCardExpiry()` ~50 |
-| Pantalla de seguro opcional (2.5%) | `PaymentScreens.js` | `SeguroScreen` ~275 |
-| Confirmar pago (resumen total) | `PaymentScreens.js` | `ConfirmarPagoScreen` ~343 |
-| Buscar registroId para marcar pago | `PaymentScreens.js` | `onPagar()` → busca por subastaId+productoId ~362 |
-| Pago confirmado (recibo) | `PaymentScreens.js` | `PagoConfirmadoScreen` ~436 |
-| Pantalla de multa pendiente | `PaymentScreens.js` | `MultaScreen` ~468 |
-| Solicitar reembolso | `PaymentScreens.js` | `ReembolsoScreen` ~539 |
-| Helper formatear importe con símbolo de moneda | `PaymentScreens.js` | `formatImporte()` ~12 |
+### Detectar ganador automáticamente
+- **Qué hace:** El frontend poll de pujas detecta cuando aparece una puja con `ganador === "si"` y navega automáticamente a `Ganaste` o `SubastaFinalizada`.
+- **Estado:** FUNCIONA
+
+### Ver subasta como subastador
+- **Pantalla:** SubastaAdminScreen
+- **Qué hace:** Vista del propietario de la subasta. Ve el ítem activo, pujas, lista de todos los ítems. No puede iniciar la puja desde aquí (solo desde DashboardAdmin).
+- **Estado:** FUNCIONA
 
 ---
 
-## NOTIFICACIONES Y BADGE
+## SUBASTAS — ADMINISTRACIÓN
 
-| Funcionalidad | Archivo | Línea aprox. |
-|--------------|---------|--------------|
-| Hook de badge de notificaciones | `hooks/useNotifBadge.js` | `useNotifBadge()` ~8 |
-| Polling de notificaciones (cada 30s) | `hooks/useNotifBadge.js` | useEffect ~27 |
-| Vibrar al recibir notificación nueva | `hooks/useNotifBadge.js` | `Vibration.vibrate(200)` ~19 |
-| Badge rojo en la campana (top bar) | `HomeScreens.js` | `HomeTopBar` ~55 |
-| Badge rojo en tab Subastas | `AccountScreens.js` | `MisSubastasScreen` ~336 |
-| Marcar notificación como leída al tocarla | `HomeScreens.js` | `tocarNotif()` ~385 |
-| Navegar al pago desde notificación "ganaste" | `HomeScreens.js` | `tocarNotif()` ~391 |
+### Dashboard Admin
+- **Pantalla:** DashboardAdminScreen (solo rol `admin`)
+- **Tabs:** "Subastas" + "Solicitudes a confirmar"
+- **Estado:** FUNCIONA
 
----
+### Listar y filtrar subastas (admin)
+- **Qué hace:** Muestra todas las subastas con filtros: Todas / Abiertas / Cerradas / Con ítems. Refresca cada 5 s cuando hay una seleccionada.
+- **Estado:** FUNCIONA
 
-## NAVEGACIÓN
+### Ver solicitudes de revisión
+- **Backend:** `GET /api/subasta-revision?estado=pendiente`, `GET /api/subasta-revision/pendientes/count`
+- **Qué hace:** Muestra subastas pendientes de aprobación con contador de badge.
+- **Estado:** FUNCIONA
 
-| Funcionalidad | Archivo | Línea aprox. |
-|--------------|---------|--------------|
-| Árbol principal de navegación | `navigation/RootNavigator.js` | todo el archivo |
-| Lógica auth/guest/main | `navigation/RootNavigator.js` | usa `user` de AuthContext |
-| Barra de tabs inferior | `navigation/TabNavigator.js` | todo el archivo |
-| Bloqueo de tabs para invitados | `navigation/TabNavigator.js` | `GuestBlockScreen` |
-| Navegar a "Mis Subastas" reseteando el stack | `AccountScreens.js` | `irAMisSubastas()` ~18 |
+### Aprobar subasta
+- **Backend:** `PATCH /api/subasta-revision/{subastaId}/aprobar`
+- **Efecto:** Revisión pasa a `aprobada`, subasta_estado_admin pasa a `esperando`. El scheduler la iniciará automáticamente cuando llegue la fecha/hora.
+- **Estado:** FUNCIONA
 
----
+### Pausar subasta
+- **Backend:** `PATCH /api/subasta-revision/{subastaId}/pausar`
+- **Efecto:** Si estaba iniciada, la finaliza. Si no, la cierra. Revisión pasa a `pausada`.
+- **Estado:** FUNCIONA
 
-## API — CAPA DE RED
+### Rechazar subasta
+- **Backend:** `PATCH /api/subasta-revision/{subastaId}/rechazar` con `{ observacion }`
+- **Efecto:** Revisión pasa a `rechazada`. Notifica a todos los asistentes.
+- **Estado:** FUNCIONA
 
-| Funcionalidad | Archivo | Función |
-|--------------|---------|---------|
-| Cliente HTTP base (fetch + token) | `api/client.js` | `request()` |
-| Agregar token Bearer a cada request | `api/client.js` | `request()` → headers |
-| Subida de archivos (multipart) | `api/client.js` | `upload()` |
-| Todos los endpoints de Auth | `api/endpoints.js` | módulo `Auth` |
-| Todos los endpoints de Subastas | `api/endpoints.js` | módulo `Subastas` |
-| Todos los endpoints de Pujas | `api/endpoints.js` | módulo `Pujas` |
-| Todos los endpoints de Asistentes | `api/endpoints.js` | módulo `Asistentes` |
-| Todos los endpoints de Clientes | `api/endpoints.js` | módulo `Clientes` |
-| Todos los endpoints de Productos | `api/endpoints.js` | módulo `Productos` |
-| Todos los endpoints de Catálogos | `api/endpoints.js` | módulo `Catalogos` |
-| Todos los endpoints de RegistroSubasta | `api/endpoints.js` | módulo `RegistroSubasta` |
-| Todos los endpoints de Notificaciones | `api/endpoints.js` | módulo `Notificaciones` |
+### Iniciar puja (admin)
+- **Backend:** `PATCH /api/subastas/{id}/estado` con `{ estado: "abierta" }`
+- **Requiere:** Revisión aprobada, subasta en estado `esperando`.
+- **Efecto:** Crea SubastaSesion, inicia timer, subasta pasa a `iniciada`.
+- **Estado:** FUNCIONA
 
----
+### Cerrar subasta manualmente (admin)
+- **Backend:** `PATCH /api/subastas/{id}/estado` con `{ estado: "cerrada" }`
+- **Efecto:** Adjudica todos los ítems pendientes, finaliza la subasta, borra sesión.
+- **Estado:** FUNCIONA
 
-## COMPONENTES UI REUTILIZABLES
-
-| Componente | Archivo | Dónde se define |
-|-----------|---------|-----------------|
-| Todos los componentes base | `components/ui.js` | todo el archivo |
-| Paleta de colores | `theme/theme.js` | objeto `colors` |
-| Helpers de subasta (título, estado, fase) | `utils/subasta.js` | `tituloSubasta`, `tagEstadoSubasta`, `esSubastaFinalizada`, etc. |
-| Helpers de tiempo (countdown, etiqueta) | `utils/tiempo.js` | `etiquetaTiempoSubasta`, `esSubastaEnVivo` |
+### Adjudicar ítem activo manualmente (admin)
+- **Backend:** `PATCH /api/items/{id}/adjudicar`
+- **Efecto:** Marca ganador de ese ítem, crea RegistroDeSubasta + RegistroPago + Reembolso, avanza al siguiente ítem.
+- **Estado:** FUNCIONA
 
 ---
 
-## BACKEND — ARCHIVOS POR DOMINIO
+## SUBASTAS — AUTOMATISMOS (scheduler)
 
-| Dominio | Controller | Modelos principales | Repositorios |
-|---------|-----------|---------------------|--------------|
-| Auth | `AuthController.java` | `Persona`, `Cliente`, `Credencial` | `CredencialRepository`, `ClienteRepository`, `PersonaRepository` |
-| Subastas | `SubastaController.java` | `Subasta`, `SubastaMoneda` | `SubastaRepository`, `SubastaMonedaRepository` |
-| Catálogos | `CatalogoController.java` | `Catalogo` | `CatalogoRepository` |
-| Ítems | `ItemCatalogoController.java` | `ItemCatalogo` | `ItemCatalogoRepository` |
-| Productos | `ProductoController.java` | `Producto`, `Foto` | `ProductoRepository`, `FotoRepository` |
-| Pujas | `PujaController.java` | `Puja`, `PujoFecha` | `PujaRepository`, `PujoFechaRepository` |
-| Asistentes | `AsistenteController.java` | `Asistente` | `AsistenteRepository` |
-| Subastadores | `SubastadorController.java` | `Subastador` | `SubastadorRepository` |
-| Clientes | `ClienteController.java` | `Cliente` | `ClienteRepository` |
-| Personas | `PersonaController.java` | `Persona` | `PersonaRepository` |
-| Registro post-subasta | `RegistroController.java` | `RegistroDeSubasta`, `Reembolso` | `RegistroRepository`, `ReembolsoRepository` |
-| Medios de pago | `ClienteController.java` | `MedioPago` | `MedioPagoRepository` |
-| Notificaciones | `NotificacionController.java` | `Notificacion` | `NotificacionRepository` |
-| Multas | `MultaController.java` | `Multa` | `MultaRepository` |
-| Seguros | `SeguroController.java` | `Seguro` | `SeguroRepository` |
-| Email | — | — | `EmailService.java` |
-| Config CORS | — | — | `CorsConfig.java` |
-| Config seguridad | — | — | `SecurityConfig.java` |
+### Auto-inicio de subastas
+- **Job:** `iniciar_subastas_programadas` (cada 30 s)
+- **Condición:** Estado `esperando`, revisión `aprobada`, `fecha + hora <= NOW()`
+- **Estado:** FUNCIONA
+
+### Auto-finalización de ítems por inactividad
+- **Job:** `finalizar_items_vencidos` (cada 60 s)
+- **Condición:** Subasta `iniciada`, sin pujas por 1800 s (30 min) desde la última puja (o desde que se inició la sesión si no hubo pujas)
+- **Estado:** FUNCIONA
 
 ---
 
-## OPERACIONES ATÓMICAS CRÍTICAS
+## CREACIÓN DE CONTENIDO
 
-Estas son las operaciones más delicadas porque tocan múltiples tablas:
+### Publicar producto
+- **Pantalla:** PublicarScreen
+- **Backend:** `POST /api/productos`, luego `POST /api/productos/{id}/fotos` (XHR, FormData)
+- **Qué hace:** Crea producto con título, descripción, categoría, estado. Sube hasta 6 fotos. Al terminar pregunta si quiere crear una subasta con ese producto.
+- **Estado:** FUNCIONA
 
-| Operación | Dónde | Qué tablas toca |
-|-----------|-------|-----------------|
-| **Adjudicar ítem** | `ItemCatalogoController.java` → `PATCH /items/{id}/adjudicar` | `pujos` (ganador='si') + `itemscatalogo` (subastado='si') + `registroDeSubasta` (INSERT) + `reembolsos` (INSERT) |
-| **Registrar puja** | `PujaController.java` → `POST /pujos` | `pujos` (INSERT) + `pujo_fecha` (INSERT) |
-| **Registrar usuario** | `AuthController.java` → `POST /auth/register` | `personas` (INSERT) + `clientes` (INSERT) + `credenciales` (INSERT) |
-| **Crear subasta completa** | Frontend `CrearSubastaScreen.onCrear()` | llama: `/subastadores` + `/subastas` + `/catalogos` + `/catalogos/{id}/items` |
-| **Publicar producto** | Frontend `PublicarScreen.onPublicar()` | llama: `/productos` (crea producto, auto-crea duenio si no existe) + `/productos/{id}/fotos` (sube BLOBs) |
+### Mis productos
+- **Pantalla:** MisProductosScreen
+- **Backend:** `GET /api/productos/duenio/{clienteId}`
+- **Qué hace:** Lista los productos propios. Puede eliminarlos (`DELETE /api/productos/{id}`). Tiene modo selección para agregar a subasta.
+- **Estado:** FUNCIONA
+
+### Crear subasta (2 pasos)
+- **Pantalla:** CrearSubastaScreen
+- **Paso 1:** Fecha (calendario nativo), hora (picker), ubicación, categoría, moneda
+- **Paso 2:** Selecciona productos de "Mis Productos", define precio base por ítem (muestra comisión 10% y ganancia neta)
+- **Backend:**
+  1. `POST /api/subastadores` (crea subastador si no existe, idempotente)
+  2. `POST /api/subastas`
+  3. `POST /api/catalogos`
+  4. `POST /api/catalogos/{id}/items` por cada producto
+- **Estado:** FUNCIONA
 
 ---
 
-*Mapa generado el 2026-06-28 — rama SOBRADO*
+## PAGOS (post-subasta)
+
+### Medios de pago
+- **Pantalla:** MedioPagoScreen (también desde Perfil)
+- **Backend:** `GET /api/clientes/{id}/medios-pago`, `POST /api/clientes/{id}/medios-pago`
+- **Tipos:** tarjeta (crédito/débito), cuenta bancaria, cheque
+- **Estado:** FUNCIONA
+
+### Confirmar pago
+- **Pantalla:** ConfirmarPagoScreen
+- **Backend:** `POST /api/registro-subasta/{id}/pagar` con `{ medioPagoId }`
+- **Estado:** FUNCIONA
+
+### Seguros
+- **Backend:** `GET/POST/PUT /api/seguros/{nroPoliza}`
+- **Pantalla:** SeguroScreen
+- **Estado:** FUNCIONA
+
+### Multas
+- **Backend:** `GET /api/multas/{id}`, `PATCH /api/multas/{id}` con `{ pagada: "si" }`
+- **Pantalla:** MultaScreen
+- **Estado:** FUNCIONA
+
+### Reembolso
+- **Backend:** `PATCH /api/registro-subasta/{id}/reembolso` con `{ reembolsada }`
+- **Pantalla:** ReembolsoScreen
+- **Estado:** FUNCIONA
+
+---
+
+## PERFIL Y CUENTA
+
+### Ver perfil
+- **Pantalla:** PerfilScreen
+- **Backend:** `GET /api/clientes/{id}`, `GET /api/personas/{id}`
+- **Muestra:** Nombre, email, categoría (comun/especial/plata/oro/platino), menú de navegación
+- **Estado:** FUNCIONA
+
+### Ver datos personales
+- **Pantalla:** DatosPersonalesScreen
+- **Muestra:** nombre, email, domicilio, DNI, categoría, estado de admisión
+- **Estado:** FUNCIONA (solo lectura por ahora)
+
+### Mis compras
+- **Pantalla:** MisComprasScreen
+- **Backend:** `GET /api/registro-subasta/cliente/{clienteId}`
+- **Muestra:** Subastas ganadas + reembolsos con detalle de importe y estado
+- **Estado:** FUNCIONA
+
+### Historial
+- **Pantalla:** HistorialScreen
+- **Igual a MisCompras** pero desde el tab de navegación
+- **Estado:** FUNCIONA
+
+### Mis subastas (como vendedor)
+- **Pantalla:** MisSubastasScreen
+- **Backend:** `GET /api/subastadores/{id}/subastas`, `GET /api/registro-subasta/cliente/{id}`
+- **Tabs:** En curso / Finalizadas / Ganadas / Todas
+- **Estado:** FUNCIONA
+
+---
+
+## NOTIFICACIONES
+
+### Ver notificaciones
+- **Pantalla:** NotificacionesScreen (campanita en el header)
+- **Backend:** `GET /api/notificaciones/cliente/{clienteId}`
+- **Badge:** hook `useNotifBadge` cuenta las no leídas y muestra número rojo
+- **Estado:** FUNCIONA
+
+### Marcar como leída
+- **Backend:** `PATCH /api/notificaciones/{id}/leer`
+- **Estado:** FUNCIONA
+
+### Push notifications
+- **Backend:** `POST /api/notificaciones/push-token` con `{ cliente, token }`
+- **Qué hace:** Registra el token Expo Push del dispositivo. Las notificaciones se envían con `httpx` a `exp.host/--/expo-push/api/v2/push/send`.
+- **Estado:** FUNCIONA
+
+---
+
+## FUNCIONALIDADES INCOMPLETAS / PENDIENTES
+
+| Funcionalidad | Estado | Dónde está |
+|---|---|---|
+| Búsqueda de subastas | UI placeholder (`Alert.alert("Próximamente")`) | HomeScreen.js |
+| Recuperación de contraseña | UI placeholder | LoginScreen |
+| Borradores de producto | UI placeholder | PublicarScreen |
+| Hash de contraseñas | No implementado — se guarda texto plano | auth.py / routers/auth.py |
+| Admitir cliente manualmente | PATCH `/clientes/{id}/admitido` existe, sin UI | routers/clientes.py |
+| Cambio de categoría de cliente | PATCH `/clientes/{id}/categoria` existe, sin UI | routers/clientes.py |
+| Marcar entrega como completada | `Alert.alert("Entrega registrada")` sin llamada al backend | DatosGanadorScreen |
+| Editar datos personales | UI muestra datos pero no tiene formulario de edición | DatosPersonalesScreen |
+
+---
+
+## RESUMEN DE ROLES Y PERMISOS
+
+| Acción | Invitado | Postor | Admin |
+|---|---|---|---|
+| Ver subastas públicas | ✓ | ✓ | ✓ |
+| Ver detalle de subasta | ✓ | ✓ | ✓ |
+| Pujar en subasta | ✗ | ✓* | ✓* |
+| Crear subasta | ✗ | ✓ | ✓ |
+| Publicar producto | ✗ | ✓ | ✓ |
+| Aprobar/rechazar subastas | ✗ | ✗ | ✓ |
+| Iniciar/cerrar puja | ✗ | ✗ | ✓ |
+| Dashboard Admin | ✗ | ✗ | ✓ |
+| Ver mis compras | ✗ | ✓ | ✓ |
+| Agregar medio de pago | ✗ | ✓ | ✓ |
+
+*Requiere estar inscripto como asistente y tener al menos un medio de pago registrado.
+
+---
+
+## FLUJOS PRINCIPALES DE PUNTA A PUNTA
+
+### Flujo del comprador
+```
+Login → Home → ver subasta en vivo → ProductoScreen → SubastaEnVivo
+→ [inscripción automática como asistente]
+→ pujar → [timer se resetea] → [scheduler o timer expira] → ganador detectado
+→ Ganaste → MedioPago → ConfirmarPago → PagoConfirmado
+```
+
+### Flujo del vendedor
+```
+Publicar → sube producto + fotos → CrearSubasta (2 pasos) → subasta pendiente
+→ [admin aprueba en DashboardAdmin] → subasta pasa a "esperando"
+→ [scheduler la inicia en la fecha/hora] o [admin la inicia manualmente]
+→ SubastaEnVivo activa → scheduler adjudica ítems al expirar el timer
+→ subasta finalizada → RegistroDeSubasta creado por cada ítem con puja
+```
+
+### Flujo del admin
+```
+DashboardAdmin → tab "Solicitudes" → ver pendientes → Aprobar / Pausar / Rechazar
+→ tab "Subastas" → seleccionar subasta aprobada → "Iniciar puja"
+→ monitorear pujas del ítem activo (refresh cada 5 s)
+→ "Adjudicar ítem activo" (manual) o dejar que el scheduler lo haga
+→ "Cerrar" para finalizar la subasta
+```
