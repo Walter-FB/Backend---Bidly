@@ -32,7 +32,7 @@ Arquitectura
 Backend: FastAPI (Python 3), SQLAlchemy ORM, psycopg2, Uvicorn, APScheduler — carpeta bidly-fastapi/
 Frontend: React Native Expo SDK 54, React Navigation 6 — carpeta bidly-front/
 Puerto backend: 8083
-Deploy: Railway → https://backend-bidly.up.railway.app/api
+Deploy: Railway → https://backend-bidly-copy-production.up.railway.app/api
 DB local: PostgreSQL en localhost:5432, base "railway"
 DB Railway: trolley.proxy.rlwy.net:53193/railway
 DDL de referencia: EstructuraActual.sql en la raíz del repo

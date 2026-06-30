@@ -23,7 +23,7 @@
       }
     },
     "extra": {
-      "apiBaseUrl": "https://backend-bidly.up.railway.app/api"
+      "apiBaseUrl": "https://backend-bidly-copy-production.up.railway.app/api"
     },
     "plugins": [
       "expo-font"

@@ -4,7 +4,7 @@ import Constants from 'expo-constants';
 
 // Siempre HTTPS en Railway. En local: app.json → expo.extra.apiBaseUrl (ej. http://192.168.x.x:8083/api)
 export const BASE_URL =
-  (Constants?.expoConfig?.extra?.apiBaseUrl) || 'https://backend-bidly.up.railway.app/api';
+  (Constants?.expoConfig?.extra?.apiBaseUrl) || 'https://backend-bidly-copy-production.up.railway.app/api';
 
 const TOKEN_KEY = '@bidly_token';
 const DEFAULT_TIMEOUT_MS = 60000;

@@ -15,7 +15,7 @@ import { Auth } from '../api/endpoints';
 export function SplashScreen() {
   return (
     <View style={st.splash}>
-      <Display style={{ color: colors.blueLogo, fontSize: 52 }}>BIDLY</Display>
+      <Display style={{ color: colors.blueLogo, fontSize: 52 }}>BIDL</Display>
       <Text style={st.tagline}>APLICACIÓN DE SUBASTAS</Text>
       <ActivityIndicator size="large" color={colors.blue} style={{ marginTop: 34 }} />
     </View>
