@@ -8,7 +8,7 @@ from decimal import Decimal
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from app.models.pagos import MedioPago, Reembolso
+from app.models.pagos import MedioPago, Reembolso, RegistroPago
 from app.models.registro_subasta import RegistroDeSubasta
 
 
@@ -33,13 +33,17 @@ def saldo_total(cliente_id: int, db: Session) -> Decimal:
 
 
 def comprometido(cliente_id: int, db: Session) -> Decimal:
-    """Compras (adjudicadas) del cliente que no fueron reembolsadas."""
+    """Compras que el cliente todavía DEBE (adjudicadas y no pagadas). Lo ya pagado
+    o reembolsado no reduce el disponible: no es plata comprometida pendiente."""
     registros = db.query(RegistroDeSubasta).filter(RegistroDeSubasta.cliente == cliente_id).all()
     total = Decimal("0")
     for r in registros:
         ree = db.query(Reembolso).filter(Reembolso.registro == r.identificador).first()
         if ree and ree.reembolsada == "si":
             continue
+        pago = db.query(RegistroPago).filter(RegistroPago.registro == r.identificador).first()
+        if pago and pago.estado == "pagado":
+            continue  # ya pagada → saldada, no cuenta como comprometido
         total += _d(r.importe)
     return total
 

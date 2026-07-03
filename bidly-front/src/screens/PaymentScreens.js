@@ -181,10 +181,11 @@ export function MedioPagoScreen({ navigation, route }) {
         <Sub>{esFlujoPago ? 'Elegí un medio para continuar con el pago.' : 'Administrá tus medios (tarjeta, cuenta o cheque) para pujar.'}</Sub>
 
         {saldoInfo && medios.length > 0 && (
-          <Card el style={{ marginBottom: 12 }}>
-            <Row k="Saldo total" v={`$${Number(saldoInfo.saldoTotal).toLocaleString('es-AR')}`} />
-            <Row k="Comprometido (compras)" v={`$${Number(saldoInfo.comprometido).toLocaleString('es-AR')}`} />
-            <Row k="Disponible para pujar" v={`$${Number(saldoInfo.disponible).toLocaleString('es-AR')}`} vc={colors.green} bold />
+          <Card el style={{ marginBottom: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Text style={{ color: colors.muted, fontSize: 13, fontWeight: '700' }}>Disponible para pujar</Text>
+            <Text style={{ color: colors.green, fontSize: 18, fontWeight: '800' }}>
+              ${Number(saldoInfo.disponible).toLocaleString('es-AR')}
+            </Text>
           </Card>
         )}
 
