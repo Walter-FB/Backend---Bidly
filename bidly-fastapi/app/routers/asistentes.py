@@ -9,6 +9,7 @@ from app.models.pujo_fecha import PujoFecha
 from app.schemas.asistente import InscribirRequest, AsistenteResponse
 from app.schemas.puja import PujaResponse
 from app.serializers import puja_to_dict
+from app.services import multa_service, acceso_service
 
 router = APIRouter()
 
@@ -38,6 +39,12 @@ def get_pujas_asistente(id: int, db: Session = Depends(get_db)):
 
 @router.post("/inscribir", response_model=AsistenteResponse)
 def inscribir(body: InscribirRequest, db: Session = Depends(get_db)):
+    # No puede participar en otra subasta si tiene una multa impaga (o quedó
+    # derivado a la justicia por impago vencido).
+    multa_service.verificar_puede_participar(body.clienteId, db)
+    # Categoría subasta ≤ usuario y no estar conectado a otra subasta en vivo.
+    acceso_service.validar_inscripcion(body.clienteId, body.subastaId, db)
+
     existing = (
         db.query(Asistente)
         .filter(Asistente.cliente == body.clienteId, Asistente.subasta == body.subastaId)

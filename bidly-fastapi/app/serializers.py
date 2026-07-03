@@ -16,15 +16,17 @@ from app.models.pujo_fecha import PujoFecha
 from app.models.asistente import Asistente
 
 
-def item_to_dict(item: ItemCatalogo, db: Session) -> dict:
+def item_to_dict(item: ItemCatalogo, db: Session, mostrar_precio: bool = True) -> dict:
     prod = db.query(Producto).filter(Producto.identificador == item.producto).first()
     descripcion_catalogo = prod.descripcioncatalogo if prod else None
     descripcion_completa = prod.descripcioncompleta if prod else None
+    # El catálogo es público, pero solo los usuarios registrados ven el precio base.
+    precio = item.preciobase if mostrar_precio else None
     return {
         "identificador": item.identificador,
         "catalogo": item.catalogo,
-        "preciobase": item.preciobase,
-        "precioBase": item.preciobase,
+        "preciobase": precio,
+        "precioBase": precio,
         "comision": item.comision,
         "subastado": item.subastado,
         "producto": {

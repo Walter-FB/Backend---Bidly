@@ -1,0 +1,76 @@
+"""Saldo/límite disponible de los medios de pago del cliente.
+
+Enunciado + pedido del profe: cada medio de pago tiene un monto disponible
+(cheque certificado → montocheque; tarjeta/cuenta → saldo). Las compras del
+cliente no pueden superar la suma de esos montos. Al alcanzar el límite ya no
+puede seguir pujando.
+"""
+from decimal import Decimal
+from fastapi import HTTPException
+from sqlalchemy.orm import Session
+
+from app.models.medio_pago import MedioPago
+from app.models.registro_subasta import RegistroDeSubasta
+from app.models.reembolso import Reembolso
+
+
+def _d(v) -> Decimal:
+    return Decimal(str(v or 0))
+
+
+def _monto_medio(mp: MedioPago) -> Decimal:
+    if mp.tipo == "cheque":
+        return _d(mp.montocheque)
+    return _d(mp.saldo)
+
+
+def saldo_total(cliente_id: int, db: Session) -> Decimal:
+    """Suma de montos disponibles de todos los medios verificados del cliente."""
+    medios = (
+        db.query(MedioPago)
+        .filter(MedioPago.cliente == cliente_id, MedioPago.verificado == "si")
+        .all()
+    )
+    return sum((_monto_medio(m) for m in medios), Decimal("0"))
+
+
+def comprometido(cliente_id: int, db: Session) -> Decimal:
+    """Compras (adjudicadas) del cliente que no fueron reembolsadas."""
+    registros = db.query(RegistroDeSubasta).filter(RegistroDeSubasta.cliente == cliente_id).all()
+    total = Decimal("0")
+    for r in registros:
+        ree = db.query(Reembolso).filter(Reembolso.registro == r.identificador).first()
+        if ree and ree.reembolsada == "si":
+            continue
+        total += _d(r.importe)
+    return total
+
+
+def disponible(cliente_id: int, db: Session) -> Decimal:
+    return saldo_total(cliente_id, db) - comprometido(cliente_id, db)
+
+
+def validar_puja(cliente_id: int, importe, db: Session) -> None:
+    disp = disponible(cliente_id, db)
+    if _d(importe) > disp:
+        raise HTTPException(
+            422,
+            detail={
+                "message": (
+                    f"No te alcanza el saldo. Disponible: ${disp}. Tus compras no pueden "
+                    "superar la suma de tus medios de pago (cheque/tarjeta/cuenta)."
+                ),
+                "code": "SALDO_INSUFICIENTE",
+                "saldoDisponible": float(max(disp, Decimal("0"))),
+            },
+        )
+
+
+def resumen(cliente_id: int, db: Session) -> dict:
+    total = saldo_total(cliente_id, db)
+    comp = comprometido(cliente_id, db)
+    return {
+        "saldoTotal": float(total),
+        "comprometido": float(comp),
+        "disponible": float(total - comp),
+    }

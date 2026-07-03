@@ -56,10 +56,8 @@ def iniciar_subastas_programadas():
             SELECT s.identificador
             FROM subastas s
             JOIN subasta_estado_admin sea ON s.identificador = sea.subasta
-            LEFT JOIN subasta_revision sr ON s.identificador = sr.subasta
             WHERE sea.estado_subasta = 'esperando'
               AND (s.fecha + s.hora) <= NOW()
-              AND (sr.estado = 'aprobada' OR sr.estado IS NULL)
         """))
         ids = [row[0] for row in result]
 

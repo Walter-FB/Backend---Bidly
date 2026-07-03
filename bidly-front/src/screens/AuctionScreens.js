@@ -525,36 +525,28 @@ export function SubastaEnVivoScreen({ navigation, route }) {
         {!user?.isGuest && asistenteId && !esLidero && (
           <Card el style={{ marginTop: 12 }}>
             <Text style={{ color: colors.muted, fontSize: 11, fontWeight: '800', letterSpacing: 1 }}>TU OFERTA</Text>
-            <View style={st.stepRow}>
-              <TouchableOpacity
-                style={[st.stepBtn, montoNum <= proximaPuja + 0.001 && st.stepBtnDisabled]}
-                onPress={() => {
-                  const next = Math.round((montoNum - minIncremento) * 100) / 100;
-                  if (next >= proximaPuja - 0.001) setMontoIngresado(String(next));
-                }}
-                disabled={!montoValido || montoNum <= proximaPuja + 0.001}
-              >
-                <Text style={st.stepBtnText}>−</Text>
-              </TouchableOpacity>
-              <Text style={{ fontSize: 26, fontWeight: '800', color: montoInvalido ? colors.red : '#fff' }}>
-                {montoValido ? formatImporte(montoNum, moneda) : '—'}
+            <Field
+              value={montoIngresado}
+              onChangeText={(v) => setMontoIngresado(v.replace(/[^0-9.,]/g, ''))}
+              keyboardType="numeric"
+              placeholder={`Ingresá el monto (mín ${formatImporte(proximaPuja, moneda)})`}
+              style={{ marginTop: 8 }}
+            />
+            {montoIngresado && montoInvalido ? (
+              <Text style={{ color: colors.red, fontSize: 12, marginTop: 6 }}>
+                {montoMenorQueMin
+                  ? `La oferta debe ser al menos ${formatImporte(proximaPuja, moneda)}.`
+                  : montoMayorQueMax
+                    ? `La oferta no puede superar ${formatImporte(maxPuja, moneda)}.`
+                    : 'Ingresá un monto válido.'}
               </Text>
-              <TouchableOpacity
-                style={[st.stepBtn, (maxPuja != null && montoNum >= maxPuja - 0.001) && st.stepBtnDisabled]}
-                onPress={() => {
-                  const next = Math.round((montoNum + minIncremento) * 100) / 100;
-                  if (maxPuja == null || next <= maxPuja + 0.001) setMontoIngresado(String(next));
-                }}
-                disabled={!montoValido || (maxPuja != null && montoNum >= maxPuja - 0.001)}
-              >
-                <Text style={st.stepBtnText}>+</Text>
-              </TouchableOpacity>
-            </View>
-            <Text style={{ color: colors.muted, fontSize: 12, marginTop: 8, textAlign: 'center' }}>
-              {maxPuja != null
-                ? `Mín: ${formatImporte(proximaPuja, moneda)}  ·  Máx: ${formatImporte(maxPuja, moneda)}`
-                : `Mín: ${formatImporte(proximaPuja, moneda)}  ·  Sin tope`}
-            </Text>
+            ) : (
+              <Text style={{ color: colors.muted, fontSize: 12, marginTop: 6 }}>
+                {maxPuja != null
+                  ? `Mín: ${formatImporte(proximaPuja, moneda)}  ·  Máx: ${formatImporte(maxPuja, moneda)}`
+                  : `Mín: ${formatImporte(proximaPuja, moneda)}  ·  Sin tope`}
+              </Text>
+            )}
           </Card>
         )}
 
@@ -913,8 +905,8 @@ export function SubastaAdminScreen({ navigation, route }) {
         <Card el style={{ padding: 14, width: '100%' }}>
           <Text style={{ color: colors.muted, fontSize: 13, textAlign: 'center', lineHeight: 19 }}>
             {enVivo
-              ? 'Subasta en vivo. El cierre de la puja lo gestiona el panel de administración.'
-              : 'La puja solo puede iniciarse desde el panel de administración, una vez aprobada tu subasta.'}
+              ? 'Subasta en vivo. El cierre de la puja lo gestiona el subastador.'
+              : 'La puja la inicia el subastador a la fecha y hora programadas.'}
           </Text>
         </Card>
       </BottomBar>

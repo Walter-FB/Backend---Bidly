@@ -110,52 +110,59 @@ export function MedioPagoScreen({ navigation, route }) {
   const [medios, setMedios] = useState([]);
   const [selIdx, setSelIdx] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [saldoInfo, setSaldoInfo] = useState(null);
 
-  // Campos para agregar nueva tarjeta
+  // Formulario para agregar un medio (tarjeta / cuenta / cheque).
   const [mostrarForm, setMostrarForm] = useState(false);
-  const [nuevaTarjeta, setNuevaTarjeta] = useState({ tipo: 'credito', numeroTarjeta: '', vencimiento: '', titular: '' });
+  const [medioTipo, setMedioTipo] = useState('tarjeta'); // 'tarjeta' | 'cuenta' | 'cheque'
+  const [nuevo, setNuevo] = useState({
+    subtipo: 'credito', numeroTarjeta: '', vencimiento: '', titular: '',
+    saldo: '', numeroCuenta: '', banco: '', numeroCheque: '', montoCheque: '',
+  });
   const [guardando, setGuardando] = useState(false);
+  const setN = (k) => (v) => setNuevo((s) => ({ ...s, [k]: v }));
 
-  useEffect(() => {
+  const cargar = () => {
     if (!user?.clienteId) { setLoading(false); return; }
     Clientes.mediosPago(user.clienteId)
       .then((data) => setMedios(data || []))
       .catch(() => setMedios([]))
       .finally(() => setLoading(false));
-  }, [user]);
+    Clientes.saldo(user.clienteId).then(setSaldoInfo).catch(() => setSaldoInfo(null));
+  };
+  useEffect(cargar, [user]);
 
-  const onAgregarTarjeta = async () => {
-    const numero = cardDigits(nuevaTarjeta.numeroTarjeta);
-    const titular = nuevaTarjeta.titular.trim();
-    const vencimiento = formatCardExpiry(nuevaTarjeta.vencimiento);
-
-    if (!numero || !vencimiento || !titular) {
-      return Alert.alert('Campos requeridos', 'Completá todos los datos de la tarjeta.');
-    }
-    if (!isValidCardNumber(numero)) {
-      return Alert.alert('Número inválido', 'La tarjeta debe tener entre 13 y 19 dígitos.');
-    }
-    if (!isValidCardExpiry(vencimiento)) {
-      return Alert.alert('Vencimiento inválido', 'Usá el formato MM/AA (ej: 12/28). El mes debe ser entre 01 y 12.');
+  const onAgregar = async () => {
+    let payload = { verificado: 'si', titular: nuevo.titular.trim() };
+    if (medioTipo === 'tarjeta') {
+      const numero = cardDigits(nuevo.numeroTarjeta);
+      const vencimiento = formatCardExpiry(nuevo.vencimiento);
+      if (!numero || !vencimiento || !nuevo.titular.trim()) return Alert.alert('Campos requeridos', 'Completá los datos de la tarjeta.');
+      if (!isValidCardNumber(numero)) return Alert.alert('Número inválido', 'La tarjeta debe tener entre 13 y 19 dígitos.');
+      if (!isValidCardExpiry(vencimiento)) return Alert.alert('Vencimiento inválido', 'Usá el formato MM/AA (ej: 12/28).');
+      if (!nuevo.saldo || Number(nuevo.saldo) <= 0) return Alert.alert('Saldo requerido', 'Ingresá el saldo disponible de la tarjeta.');
+      payload = { ...payload, tipo: 'tarjeta', numeroTarjeta: numero, vencimiento, banco: nuevo.subtipo, saldo: Number(nuevo.saldo) };
+    } else if (medioTipo === 'cuenta') {
+      if (!nuevo.numeroCuenta.trim() || !nuevo.banco.trim()) return Alert.alert('Campos requeridos', 'Completá cuenta y banco.');
+      if (!nuevo.saldo || Number(nuevo.saldo) <= 0) return Alert.alert('Fondos requeridos', 'Ingresá los fondos reservados en la cuenta.');
+      payload = { ...payload, tipo: 'cuenta', numeroCuenta: nuevo.numeroCuenta.trim(), banco: nuevo.banco.trim(), saldo: Number(nuevo.saldo) };
+    } else {
+      if (!nuevo.numeroCheque.trim()) return Alert.alert('Campos requeridos', 'Ingresá el número de cheque.');
+      if (!nuevo.montoCheque || Number(nuevo.montoCheque) <= 0) return Alert.alert('Monto requerido', 'Ingresá el monto certificado del cheque.');
+      payload = { ...payload, tipo: 'cheque', numeroCheque: nuevo.numeroCheque.trim(), montoCheque: Number(nuevo.montoCheque) };
     }
 
     setGuardando(true);
     try {
-      const guardada = await Clientes.agregarMedioPago(user.clienteId, {
-        tipo: 'tarjeta',
-        numeroTarjeta: numero,
-        vencimiento,
-        titular,
-        banco: nuevaTarjeta.tipo,
-        verificado: 'si',
-      });
+      const guardada = await Clientes.agregarMedioPago(user.clienteId, payload);
       setMedios((m) => [...m, guardada]);
       setSelIdx(medios.length);
       setMostrarForm(false);
-      setNuevaTarjeta({ tipo: 'credito', numeroTarjeta: '', vencimiento: '', titular: '' });
-      Alert.alert('Tarjeta guardada', 'Ya podés usarla para pujar en subastas.');
+      setNuevo({ subtipo: 'credito', numeroTarjeta: '', vencimiento: '', titular: '', saldo: '', numeroCuenta: '', banco: '', numeroCheque: '', montoCheque: '' });
+      Clientes.saldo(user.clienteId).then(setSaldoInfo).catch(() => {});
+      Alert.alert('Medio agregado', 'Ya podés usarlo para pujar en subastas.');
     } catch (e) {
-      Alert.alert('Error', e.message || 'No se pudo guardar la tarjeta.');
+      Alert.alert('Error', e.message || 'No se pudo guardar el medio de pago.');
     } finally {
       setGuardando(false);
     }
@@ -173,7 +180,15 @@ export function MedioPagoScreen({ navigation, route }) {
         keyboardShouldPersistTaps="handled"
       >
         <Title>Medio de pago</Title>
-        <Sub>{esFlujoPago ? 'Elegí una tarjeta para continuar con el pago.' : 'Administrá tus tarjetas para pujar en subastas.'}</Sub>
+        <Sub>{esFlujoPago ? 'Elegí un medio para continuar con el pago.' : 'Administrá tus medios (tarjeta, cuenta o cheque) para pujar.'}</Sub>
+
+        {saldoInfo && (
+          <Card el style={{ marginBottom: 12 }}>
+            <Row k="Saldo total" v={`$${Number(saldoInfo.saldoTotal).toLocaleString('es-AR')}`} />
+            <Row k="Comprometido" v={`$${Number(saldoInfo.comprometido).toLocaleString('es-AR')}`} />
+            <Row k="Disponible para pujar" v={`$${Number(saldoInfo.disponible).toLocaleString('es-AR')}`} vc={colors.green} bold />
+          </Card>
+        )}
 
         {loading && <ActivityIndicator color={colors.blue} style={{ marginTop: 20 }} />}
 
@@ -183,9 +198,17 @@ export function MedioPagoScreen({ navigation, route }) {
               borderColor: selIdx === i ? colors.borderHi : colors.border, borderWidth: 1.5 }}>
               {esTarjeta(m) ? <VisaChip /> : <OtroChip tipo={m.tipo} />}
               <View style={{ flex: 1 }}>
-                <Text style={{ color: '#fff', fontSize: 15, fontWeight: '800' }}>{maskCard(m.numeroTarjeta)}</Text>
+                <Text style={{ color: '#fff', fontSize: 15, fontWeight: '800' }}>
+                  {m.tipo === 'cheque' ? `Cheque ${m.numeroCheque || ''}`.trim()
+                    : m.tipo === 'cuenta' ? `Cuenta ${m.banco || ''}`.trim()
+                    : maskCard(m.numeroTarjeta)}
+                </Text>
                 <Text style={{ color: colors.muted, fontSize: 12.5 }}>
-                  {tipoTarjetaLabel(m)} · vence {formatExpiryDisplay(m.vencimiento)}
+                  {m.tipo === 'cheque'
+                    ? `Cheque certificado · $${Number(m.montoCheque || 0).toLocaleString('es-AR')}`
+                    : m.tipo === 'cuenta'
+                      ? `Cuenta · saldo $${Number(m.saldo || 0).toLocaleString('es-AR')}`
+                      : `${tipoTarjetaLabel(m)} · saldo $${Number(m.saldo || 0).toLocaleString('es-AR')}`}
                 </Text>
                 {m.titular && <Text style={{ color: colors.faint, fontSize: 11.5 }}>{m.titular}</Text>}
               </View>
@@ -203,49 +226,54 @@ export function MedioPagoScreen({ navigation, route }) {
 
         {mostrarForm && (
           <Card el style={{ gap: 10, marginTop: 8 }}>
-            <Text style={{ color: '#fff', fontWeight: '700', marginBottom: 4 }}>Nueva tarjeta</Text>
+            <Text style={{ color: '#fff', fontWeight: '700', marginBottom: 4 }}>Nuevo medio de pago</Text>
             <View style={{ flexDirection: 'row', gap: 8 }}>
-              <Chip
-                label="Crédito"
-                active={nuevaTarjeta.tipo === 'credito'}
-                onPress={() => setNuevaTarjeta((t) => ({ ...t, tipo: 'credito' }))}
-              />
-              <Chip
-                label="Débito"
-                active={nuevaTarjeta.tipo === 'debito'}
-                onPress={() => setNuevaTarjeta((t) => ({ ...t, tipo: 'debito' }))}
-              />
+              <Chip label="Tarjeta" active={medioTipo === 'tarjeta'} onPress={() => setMedioTipo('tarjeta')} />
+              <Chip label="Cuenta" active={medioTipo === 'cuenta'} onPress={() => setMedioTipo('cuenta')} />
+              <Chip label="Cheque" active={medioTipo === 'cheque'} onPress={() => setMedioTipo('cheque')} />
             </View>
-            <Field
-              placeholder="Número de tarjeta"
-              value={nuevaTarjeta.numeroTarjeta}
-              onChangeText={(v) => setNuevaTarjeta((t) => ({ ...t, numeroTarjeta: formatCardNumber(v) }))}
-              keyboardType="numeric"
-              maxLength={23}
-            />
-            <Field
-              placeholder="Vencimiento (MM/AA)"
-              value={nuevaTarjeta.vencimiento}
-              onChangeText={(v) => setNuevaTarjeta((t) => ({ ...t, vencimiento: formatCardExpiry(v) }))}
-              keyboardType="numeric"
-              maxLength={5}
-            />
-            <Field
-              placeholder="Titular (como figura en la tarjeta)"
-              value={nuevaTarjeta.titular}
-              onChangeText={(v) => setNuevaTarjeta((t) => ({ ...t, titular: v.toUpperCase() }))}
-              autoCapitalize="characters"
-            />
+
+            {medioTipo === 'tarjeta' && (
+              <>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <Chip label="Crédito" active={nuevo.subtipo === 'credito'} onPress={() => setN('subtipo')('credito')} />
+                  <Chip label="Débito" active={nuevo.subtipo === 'debito'} onPress={() => setN('subtipo')('debito')} />
+                </View>
+                <Field placeholder="Número de tarjeta" value={nuevo.numeroTarjeta} onChangeText={(v) => setN('numeroTarjeta')(formatCardNumber(v))} keyboardType="numeric" maxLength={23} />
+                <Field placeholder="Vencimiento (MM/AA)" value={nuevo.vencimiento} onChangeText={(v) => setN('vencimiento')(formatCardExpiry(v))} keyboardType="numeric" maxLength={5} />
+                <Field placeholder="Titular" value={nuevo.titular} onChangeText={(v) => setN('titular')(v.toUpperCase())} autoCapitalize="characters" />
+                <Field placeholder="Saldo disponible ($)" value={nuevo.saldo} onChangeText={setN('saldo')} keyboardType="numeric" />
+              </>
+            )}
+            {medioTipo === 'cuenta' && (
+              <>
+                <Field placeholder="Número de cuenta / CBU" value={nuevo.numeroCuenta} onChangeText={setN('numeroCuenta')} />
+                <Field placeholder="Banco" value={nuevo.banco} onChangeText={setN('banco')} />
+                <Field placeholder="Titular" value={nuevo.titular} onChangeText={setN('titular')} />
+                <Field placeholder="Fondos reservados ($)" value={nuevo.saldo} onChangeText={setN('saldo')} keyboardType="numeric" />
+              </>
+            )}
+            {medioTipo === 'cheque' && (
+              <>
+                <Field placeholder="Número de cheque" value={nuevo.numeroCheque} onChangeText={setN('numeroCheque')} />
+                <Field placeholder="Titular" value={nuevo.titular} onChangeText={setN('titular')} />
+                <Field placeholder="Monto certificado ($)" value={nuevo.montoCheque} onChangeText={setN('montoCheque')} keyboardType="numeric" />
+                <Text style={{ color: colors.muted, fontSize: 11.5 }}>
+                  Tus compras no podrán superar el monto del cheque.
+                </Text>
+              </>
+            )}
+
             <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
               <Btn title="Cancelar" kind="ghost" onPress={() => setMostrarForm(false)} style={{ flex: 1 }} />
-              <Btn title={guardando ? 'Guardando…' : 'Guardar'} onPress={onAgregarTarjeta} disabled={guardando} style={{ flex: 1 }} />
+              <Btn title={guardando ? 'Guardando…' : 'Guardar'} onPress={onAgregar} disabled={guardando} style={{ flex: 1 }} />
             </View>
           </Card>
         )}
 
         {!mostrarForm && (
           <TouchableOpacity style={s.addCard} onPress={() => setMostrarForm(true)}>
-            <Text style={{ color: colors.blue, fontSize: 14, fontWeight: '800' }}>+ Agregar tarjeta</Text>
+            <Text style={{ color: colors.blue, fontSize: 14, fontWeight: '800' }}>+ Agregar medio de pago</Text>
           </TouchableOpacity>
         )}
       </ScrollView>
@@ -257,9 +285,10 @@ export function MedioPagoScreen({ navigation, route }) {
             onPress={() => navigation.navigate('Seguro', {
               ...params,
               medioPagoId: medioSeleccionado?.identificador,
-              medioPagoLabel: medioSeleccionado
-                ? `${tipoTarjetaLabel(medioSeleccionado)} **** ${cardDigits(medioSeleccionado.numeroTarjeta).slice(-4)}`
-                : '—',
+              medioPagoLabel: !medioSeleccionado ? '—'
+                : medioSeleccionado.tipo === 'cheque' ? `Cheque ${medioSeleccionado.numeroCheque || ''}`.trim()
+                : medioSeleccionado.tipo === 'cuenta' ? `Cuenta ${medioSeleccionado.banco || ''}`.trim()
+                : `${tipoTarjetaLabel(medioSeleccionado)} **** ${cardDigits(medioSeleccionado.numeroTarjeta).slice(-4)}`,
             })}
           />
         ) : (
@@ -349,41 +378,52 @@ export function ConfirmarPagoScreen({ navigation, route }) {
   } = route.params || {};
 
   const [pagando, setPagando] = useState(false);
+  const [declarando, setDeclarando] = useState(false);
+  const [entrega, setEntrega] = useState('envio'); // 'envio' | 'retiro'
 
-  const total = Number(importe) + Number(comision) + Number(importeSeguro);
+  // El envío corre por cuenta del comprador (3% del bien, mínimo $1500).
+  const costoEnvio = entrega === 'retiro' ? 0 : Math.max(1500, Math.round(Number(importe) * 0.03));
+  const total = Number(importe) + Number(comision) + Number(importeSeguro) + costoEnvio;
+
+  // Ubica el registro de compra ya creado en la adjudicación del ítem.
+  const resolverRegistroId = async () => {
+    let registroId = route.params?.registroId;
+    if (registroId || !user?.clienteId) return registroId;
+    const registros = await RegistroSubasta.porCliente(user.clienteId);
+    let candidato = null;
+    if (subastaId && itemId) {
+      try {
+        const item = await Items.obtener(itemId);
+        const productoId = item?.producto?.identificador ?? item?.producto;
+        candidato = (registros || []).find(
+          (r) => Number(r.subasta?.identificador) === Number(subastaId)
+            && Number(r.producto) === Number(productoId),
+        );
+      } catch {
+        candidato = (registros || []).find(
+          (r) => Number(r.subasta?.identificador) === Number(subastaId),
+        );
+      }
+    } else if (subastaId) {
+      candidato = (registros || []).find(
+        (r) => Number(r.subasta?.identificador) === Number(subastaId),
+      );
+    }
+    return candidato?.identificador;
+  };
 
   const onPagar = async () => {
     setPagando(true);
     try {
-      // Pago simulado: el registro ya existe desde la adjudicación del ítem.
-      let registroId = route.params?.registroId;
-      if (!registroId && user?.clienteId) {
-        const registros = await RegistroSubasta.porCliente(user.clienteId);
-        let candidato = null;
-        if (subastaId && itemId) {
-          try {
-            const item = await Items.obtener(itemId);
-            const productoId = item?.producto?.identificador ?? item?.producto;
-            candidato = (registros || []).find(
-              (r) => Number(r.subasta?.identificador) === Number(subastaId)
-                && Number(r.producto) === Number(productoId),
-            );
-          } catch {
-            candidato = (registros || []).find(
-              (r) => Number(r.subasta?.identificador) === Number(subastaId),
-            );
-          }
-        } else if (subastaId) {
-          candidato = (registros || []).find(
-            (r) => Number(r.subasta?.identificador) === Number(subastaId),
-          );
-        }
-        registroId = candidato?.identificador;
-      }
+      const registroId = await resolverRegistroId();
       // Persistir el pago en el backend (marca el registro como pagado).
       if (registroId && medioPagoId) {
         try {
-          await RegistroSubasta.pagar(registroId, medioPagoId);
+          await RegistroSubasta.pagar(registroId, medioPagoId, {
+            retiroPersonal: entrega === 'retiro',
+            direccionEnvio: entrega === 'envio' ? 'Dirección declarada del comprador' : null,
+            envio: costoEnvio,
+          });
         } catch (errPago) {
           // No bloqueamos la confirmación si el medio de pago no es válido server-side.
           console.warn('No se pudo registrar el pago:', errPago?.message);
@@ -403,6 +443,39 @@ export function ConfirmarPagoScreen({ navigation, route }) {
     }
   };
 
+  // No dispone de los fondos: genera la multa del 10% y bloquea la participación.
+  const onNoPuedoPagar = () => {
+    Alert.alert(
+      'No puedo pagar',
+      'Se generará una multa del 10% de lo ofertado y no podrás participar en otras '
+      + 'subastas hasta abonarla. Tenés 72hs para presentar los fondos antes de que el '
+      + 'caso se derive a la justicia. ¿Continuar?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Sí, no tengo fondos',
+          style: 'destructive',
+          onPress: async () => {
+            setDeclarando(true);
+            try {
+              const registroId = await resolverRegistroId();
+              if (!registroId) {
+                Alert.alert('Error', 'No se encontró la compra a declarar.');
+                return;
+              }
+              const res = await RegistroSubasta.impago(registroId);
+              navigation.navigate('Multa', { multaId: res?.multa?.identificador });
+            } catch (e) {
+              Alert.alert('Error', e.message || 'No se pudo declarar el impago.');
+            } finally {
+              setDeclarando(false);
+            }
+          },
+        },
+      ],
+    );
+  };
+
   return (
     <Screen>
       <Header />
@@ -413,8 +486,21 @@ export function ConfirmarPagoScreen({ navigation, route }) {
           <Row k={titulo || 'Artículo'} v={formatImporte(importe, moneda)} />
           {Number(comision) > 0 && <Row k="Comisión BIDLY" v={formatImporte(comision, moneda)} />}
           {Number(importeSeguro) > 0 && <Row k="Seguro" v={formatImporte(importeSeguro, moneda)} />}
+          {costoEnvio > 0 && <Row k="Envío" v={formatImporte(costoEnvio, moneda)} />}
           <View style={s.divider}><Row k="TOTAL" v={formatImporte(total, moneda)} vc={colors.green} bold /></View>
         </Card>
+
+        <SectionLabel>Entrega</SectionLabel>
+        <View style={{ flexDirection: 'row', gap: 10 }}>
+          <Chip label="Envío a domicilio" active={entrega === 'envio'} onPress={() => setEntrega('envio')} />
+          <Chip label="Retiro personal" active={entrega === 'retiro'} onPress={() => setEntrega('retiro')} />
+        </View>
+        {entrega === 'retiro' && (
+          <Text style={{ color: colors.red, fontSize: 12, marginTop: 8 }}>
+            Al retirar en persona, una vez retirado el bien perdés la cobertura del seguro.
+          </Text>
+        )}
+
         <SectionLabel>Medio de pago</SectionLabel>
         <Card el style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
           <VisaChip />
@@ -425,8 +511,13 @@ export function ConfirmarPagoScreen({ navigation, route }) {
         <Btn
           title={pagando ? 'Procesando…' : `Pagar ${formatImporte(total, moneda)}`}
           onPress={onPagar}
-          disabled={pagando}
+          disabled={pagando || declarando}
         />
+        <TouchableOpacity onPress={onNoPuedoPagar} disabled={pagando || declarando} style={{ marginTop: 12, alignItems: 'center' }}>
+          <Text style={{ color: colors.red, fontSize: 13, fontWeight: '700' }}>
+            {declarando ? 'Registrando…' : 'No puedo pagar ahora'}
+          </Text>
+        </TouchableOpacity>
       </BottomBar>
     </Screen>
   );

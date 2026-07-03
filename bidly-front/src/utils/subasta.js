@@ -88,11 +88,11 @@ export function formatFechaSubasta(fecha) {
   }
 }
 
-/** Aún no aprobada por administración. */
+/** Todavía no iniciada (sin sesión de puja abierta). */
 export function esSubastaPendiente(subasta) {
   if (!subasta) return false;
   if (subasta.estadoSubasta === 'pendiente') return true;
-  return subasta.fase === 'pendiente' || subasta.revisionEstado === 'pendiente';
+  return subasta.fase === 'pendiente';
 }
 
 /** Finalizada: catálogo agotado o cerrada tras haberse iniciado. */
@@ -121,11 +121,6 @@ export function esMiSubasta(subasta, clienteId) {
 
 export function tagEstadoSubasta(subasta) {
   const sub = subasta || {};
-  const rev = sub.revisionEstado;
-  if (rev === 'pendiente') return { label: 'PENDIENTE', color: colors.gold };
-  if (rev === 'pausada') return { label: 'PAUSADA', color: colors.muted };
-  if (rev === 'rechazada') return { label: 'RECHAZADA', color: colors.red };
-
   const est = sub.estadoSubasta;
   if (est === 'iniciada') return { label: 'EN VIVO', color: colors.green };
   if (est === 'finalizada') return { label: 'FINALIZADA', color: colors.muted };

@@ -44,7 +44,6 @@ class SubastaResponse(BaseModel):
     totalItems: Optional[int] = None
     titulo: Optional[str] = None
     totalAsistentes: Optional[int] = None
-    revisionEstado: Optional[str] = None
     fase: Optional[str] = None
     segundosRestantes: Optional[int] = None
     itemsPendientes: Optional[int] = None

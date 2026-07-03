@@ -1,12 +1,12 @@
-// BIDLY — Panel de administración: subastas + solicitudes a confirmar.
+// BIDLY — Panel del subastador: admisiones a validar + subastas que corre.
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { Display, Tag, Chip, Card, SectionLabel, Row, Btn, LiveBadge, SuccessBanner, ErrorBanner } from '../components/ui';
+import { Display, Tag, Chip, Card, SectionLabel, Row, Btn, LiveBadge, SuccessBanner, ErrorBanner, Field } from '../components/ui';
 import { colors } from '../theme/theme';
-import { Subastas, Pujas, SubastaRevision, Items } from '../api/endpoints';
+import { Subastas, Pujas, Items, Admisiones, Clientes } from '../api/endpoints';
 import { BASE_URL } from '../api/client';
 import { tituloSubasta, formatFechaSubasta, tagEstadoSubasta } from '../utils/subasta';
 
@@ -28,7 +28,7 @@ export function DashboardAdminScreen() {
   const insets = useSafeAreaInsets();
   const nav = useNavigation();
 
-  const [tab, setTab] = useState('subastas');
+  const [tab, setTab] = useState('admisiones');
   const [subastas, setSubastas] = useState([]);
   const [filtroLista, setFiltroLista] = useState('con_items');
   const [loadingSubastas, setLoadingSubastas] = useState(false);
@@ -39,9 +39,11 @@ export function DashboardAdminScreen() {
   const [activeIdx, setActiveIdx] = useState(0);
   const [ctrl, setCtrl] = useState(false);
   const [lastRefresh, setLastRefresh] = useState('—');
-  const [revisiones, setRevisiones] = useState([]);
-  const [loadingRevisiones, setLoadingRevisiones] = useState(false);
-  const [pendientesCount, setPendientesCount] = useState(0);
+  const [admisiones, setAdmisiones] = useState([]);
+  const [loadingAdmisiones, setLoadingAdmisiones] = useState(false);
+  const [admisionesCount, setAdmisionesCount] = useState(0);
+  const [postores, setPostores] = useState([]);
+  const [loadingPostores, setLoadingPostores] = useState(false);
   const [successMsg, setSuccessMsg] = useState(null);
   const [errorMsg, setErrorMsg] = useState(null);
   const mounted = useRef(true);
@@ -76,24 +78,38 @@ export function DashboardAdminScreen() {
 
   useEffect(() => { loadSubastas(); }, [loadSubastas]);
 
-  const loadRevisiones = useCallback(async () => {
-    setLoadingRevisiones(true);
+  const loadAdmisiones = useCallback(async () => {
+    setLoadingAdmisiones(true);
     try {
       const [lista, countData] = await Promise.all([
-        SubastaRevision.listar('pendiente'),
-        SubastaRevision.contarPendientes(),
+        Admisiones.listar(),
+        Admisiones.contarPendientes(),
       ]);
       if (!mounted.current) return;
-      setRevisiones(Array.isArray(lista) ? lista : []);
-      setPendientesCount(Number(countData?.pendientes ?? 0));
+      setAdmisiones(Array.isArray(lista) ? lista : []);
+      setAdmisionesCount(Number(countData?.pendientes ?? 0));
     } catch (e) {
       if (mounted.current) setErrorMsg(formatAdminError(e));
     } finally {
-      if (mounted.current) setLoadingRevisiones(false);
+      if (mounted.current) setLoadingAdmisiones(false);
     }
   }, []);
 
-  useEffect(() => { loadRevisiones(); }, [loadRevisiones]);
+  useEffect(() => { loadAdmisiones(); }, [loadAdmisiones]);
+
+  const loadPostores = useCallback(async () => {
+    setLoadingPostores(true);
+    try {
+      const lista = await Clientes.pendientes();
+      if (mounted.current) setPostores(Array.isArray(lista) ? lista : []);
+    } catch (e) {
+      if (mounted.current) setErrorMsg(formatAdminError(e));
+    } finally {
+      if (mounted.current) setLoadingPostores(false);
+    }
+  }, []);
+
+  useEffect(() => { loadPostores(); }, [loadPostores]);
 
   const refreshContexto = useCallback(async () => {
     if (!selId || !mounted.current) return;
@@ -224,29 +240,6 @@ export function DashboardAdminScreen() {
     }
   }, [ctrl]);
 
-  const aprobarRevision = useCallback(async (subastaId) => {
-    await runAdminAction(async () => {
-      await SubastaRevision.aprobar(subastaId);
-      await Promise.all([loadRevisiones(), loadSubastas()]);
-    }, 'Subasta aprobada');
-  }, [runAdminAction, loadRevisiones, loadSubastas]);
-
-  const pausarRevision = useCallback(async (subastaId) => {
-    await runAdminAction(async () => {
-      await SubastaRevision.pausar(subastaId);
-      await Promise.all([loadRevisiones(), loadSubastas()]);
-      if (selId === subastaId) await refreshContexto();
-    }, 'Subasta pausada');
-  }, [runAdminAction, loadRevisiones, loadSubastas, selId, refreshContexto]);
-
-  const rechazarRevision = useCallback(async (subastaId) => {
-    await runAdminAction(async () => {
-      await SubastaRevision.rechazar(subastaId, 'Rechazada por administrador');
-      await Promise.all([loadRevisiones(), loadSubastas()]);
-      if (selId === subastaId) await refreshContexto();
-    }, 'Solicitud eliminada');
-  }, [runAdminAction, loadRevisiones, loadSubastas, selId, refreshContexto]);
-
   const iniciarPuja = useCallback(async () => {
     if (!selId) return;
     await runAdminAction(async () => {
@@ -274,9 +267,45 @@ export function DashboardAdminScreen() {
     }, 'Ítem adjudicado');
   }, [items, activeIdx, runAdminAction, refreshContexto]);
 
-  const solicitudesLabel = pendientesCount > 0
-    ? `Solicitudes (${pendientesCount})`
-    : 'Solicitudes a confirmar';
+  const pedirInspeccion = useCallback(async (id, direccion) => {
+    await runAdminAction(async () => {
+      await Admisiones.pedirInspeccion(id, direccion);
+      await loadAdmisiones();
+    }, 'Inspección solicitada');
+  }, [runAdminAction, loadAdmisiones]);
+
+  const rechazarAdmision = useCallback(async (id, observacion) => {
+    await runAdminAction(async () => {
+      await Admisiones.rechazar(id, observacion);
+      await loadAdmisiones();
+    }, 'Admisión rechazada');
+  }, [runAdminAction, loadAdmisiones]);
+
+  const proponerAdmision = useCallback(async (id, valorBase, comision, subastaId) => {
+    await runAdminAction(async () => {
+      await Admisiones.proponer(id, valorBase, comision || null, subastaId);
+      await loadAdmisiones();
+    }, 'Propuesta enviada al dueño');
+  }, [runAdminAction, loadAdmisiones]);
+
+  const admitirPostor = useCallback(async (id, categoria) => {
+    await runAdminAction(async () => {
+      await Clientes.actualizarCategoria(id, categoria);
+      await Clientes.admitir(id, 'si');
+      await loadPostores();
+    }, 'Postor admitido');
+  }, [runAdminAction, loadPostores]);
+
+  const crearColeccion = useCallback(async (payload) => {
+    await runAdminAction(async () => {
+      await Admisiones.crearColeccion(payload);
+      await loadAdmisiones();
+    }, 'Colección creada');
+  }, [runAdminAction, loadAdmisiones]);
+
+  const admisionesLabel = admisionesCount > 0
+    ? `Admisiones (${admisionesCount})`
+    : 'Admisiones';
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg, paddingTop: insets.top }}>
@@ -284,14 +313,15 @@ export function DashboardAdminScreen() {
         <TouchableOpacity onPress={() => nav.goBack()} hitSlop={10}>
           <Ionicons name="chevron-back" size={28} color="#fff" />
         </TouchableOpacity>
-        <Display style={{ color: colors.blueLogo, fontSize: 19 }}>Administración</Display>
-        <Tag label="ADMIN" color={colors.blue} />
+        <Display style={{ color: colors.blueLogo, fontSize: 19 }}>Subastador</Display>
+        <Tag label="SUBASTADOR" color={colors.blue} />
       </View>
 
       <View style={s.tabRow}>
         {[
+          ['admisiones', admisionesLabel],
+          ['postores', postores.length > 0 ? `Postores (${postores.length})` : 'Postores'],
           ['subastas', 'Subastas'],
-          ['solicitudes', solicitudesLabel],
         ].map(([k, label]) => (
           <TouchableOpacity key={k} onPress={() => setTab(k)} style={[s.tabBtn, tab === k && s.tabActive]}>
             <Text style={[s.tabTxt, tab === k && { color: '#fff', fontWeight: '700' }]} numberOfLines={1}>
@@ -314,16 +344,25 @@ export function DashboardAdminScreen() {
       </Text>
 
       <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 48 }} showsVerticalScrollIndicator={false}>
-        {tab === 'solicitudes' ? (
-          <SolicitudesSection
-            revisiones={revisiones}
-            loading={loadingRevisiones}
+        {tab === 'admisiones' ? (
+          <AdmisionesSection
+            admisiones={admisiones}
+            subastas={subastas}
+            loading={loadingAdmisiones}
             ctrl={ctrl}
-            onRefresh={loadRevisiones}
-            onAprobar={aprobarRevision}
-            onPausar={pausarRevision}
-            onRechazar={rechazarRevision}
-            onVer={abrirSubasta}
+            onRefresh={loadAdmisiones}
+            onInspeccionar={pedirInspeccion}
+            onRechazar={rechazarAdmision}
+            onProponer={proponerAdmision}
+            onColeccion={crearColeccion}
+          />
+        ) : tab === 'postores' ? (
+          <PostoresSection
+            postores={postores}
+            loading={loadingPostores}
+            ctrl={ctrl}
+            onRefresh={loadPostores}
+            onAdmitir={admitirPostor}
           />
         ) : selId ? (
           <EstadoSection
@@ -352,6 +391,7 @@ export function DashboardAdminScreen() {
             onFiltro={setFiltroLista}
             onSelect={abrirSubasta}
             onRefresh={loadSubastas}
+            onCrear={() => nav.navigate('CrearSubasta')}
           />
         )}
       </ScrollView>
@@ -360,10 +400,11 @@ export function DashboardAdminScreen() {
 }
 
 function SubastasListSection({
-  subastas, total, loading, filtro, onFiltro, onSelect, onRefresh,
+  subastas, total, loading, filtro, onFiltro, onSelect, onRefresh, onCrear,
 }) {
   return (
     <View style={{ gap: 12, paddingTop: 14 }}>
+      <Btn title="+ Crear subasta" onPress={onCrear} />
       <ScrollView horizontal showsHorizontalScrollIndicator={false}>
         <View style={{ flexDirection: 'row', gap: 8, paddingBottom: 4 }}>
           {FILTROS_SUBASTA.map(([k, label]) => (
@@ -420,71 +461,6 @@ function SubastasListSection({
   );
 }
 
-const REVISION_LABEL = {
-  pendiente: { label: 'PENDIENTE', color: colors.gold },
-  aprobada: { label: 'APROBADA', color: colors.green },
-  pausada: { label: 'PAUSADA', color: colors.muted },
-  rechazada: { label: 'RECHAZADA', color: colors.red },
-};
-
-function SolicitudesSection({
-  revisiones, loading, ctrl, onRefresh, onAprobar, onPausar, onRechazar, onVer,
-}) {
-  return (
-    <View style={{ gap: 12, paddingTop: 14 }}>
-      <Text style={{ color: colors.muted, fontSize: 13, lineHeight: 20 }}>
-        Las subastas nuevas aparecen acá hasta que las apruebes. Solo las aprobadas se muestran en el home.
-      </Text>
-
-      <View style={{ flexDirection: 'row', justifyContent: 'flex-end' }}>
-        <TouchableOpacity onPress={onRefresh} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-          <Ionicons name="refresh" size={16} color={colors.blue} />
-          <Text style={{ color: colors.blue, fontSize: 13, fontWeight: '700' }}>Actualizar</Text>
-        </TouchableOpacity>
-      </View>
-
-      {loading && <ActivityIndicator color={colors.blue} />}
-
-      {!loading && revisiones.length === 0 && (
-        <Text style={{ color: colors.muted, fontSize: 13, textAlign: 'center', paddingVertical: 28 }}>
-          No hay solicitudes pendientes ni pausadas.
-        </Text>
-      )}
-
-      {revisiones.map((rev) => {
-        const sub = rev.subasta;
-        const sid = sub?.identificador;
-        const meta = REVISION_LABEL[rev.estado] || REVISION_LABEL.pendiente;
-        return (
-          <Card key={rev.identificador ?? sid} el style={{ gap: 8 }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 8 }}>
-              <View style={{ flex: 1 }}>
-                <Text style={{ color: colors.muted, fontSize: 11.5, fontWeight: '700' }}>#{sid}</Text>
-                <Display style={{ fontSize: 14.5, lineHeight: 18 }} numberOfLines={2}>
-                  {sub?.titulo || tituloSubasta(sub)}
-                </Display>
-              </View>
-              <Tag label={meta.label} color={meta.color} />
-            </View>
-            <Text style={{ color: colors.muted, fontSize: 12 }}>
-              Solicitante #{rev.solicitante} · {formatFechaSubasta(sub?.fecha)} · {sub?.categoria}
-            </Text>
-            <Text style={{ color: colors.muted, fontSize: 11.5 }}>
-              {sub?.totalItems ?? 0} ítems
-            </Text>
-            <Btn title="Ver subasta" kind="ghost" onPress={() => onVer(sid)} />
-            <View style={{ flexDirection: 'row', gap: 8 }}>
-              <Btn title={ctrl ? 'Procesando…' : 'Aprobar'} kind="primary" style={{ flex: 1 }} onPress={() => onAprobar(sid)} disabled={ctrl || !sid} />
-              <Btn title="Pausar" kind="ghost" style={{ flex: 1 }} onPress={() => onPausar(sid)} disabled={ctrl || !sid} />
-              <Btn title="Eliminar" kind="danger" style={{ flex: 1 }} onPress={() => onRechazar(sid)} disabled={ctrl || !sid} />
-            </View>
-          </Card>
-        );
-      })}
-    </View>
-  );
-}
-
 function EstadoSection({
   subasta, items, asistentes, pujas, activeIdx, activeItem, onBack, onSelectItem, onVerComoUsuario,
   onAbrir, onCerrar, onAdjudicar, onRefresh, ctrl, lastRefresh,
@@ -495,7 +471,6 @@ function EstadoSection({
   const isEsperando = subasta?.estadoSubasta === 'esperando'
     || (!subasta?.estadoSubasta && subasta?.fase === 'programada');
   const isFinalizada = subasta?.estadoSubasta === 'finalizada' || subasta?.fase === 'finalizada';
-  const aprobada = subasta?.revisionEstado === 'aprobada';
   const itemActivo = activeItem ?? items[activeIdx];
   const itemActivoAdjudicado = itemActivo?.subastado === 'si';
   const allAdjudicados = items.length > 0 && items.every(i => i.subastado === 'si');
@@ -537,13 +512,6 @@ function EstadoSection({
               : undefined
           }
         />
-        {subasta?.revisionEstado ? (
-          <Row k="Aprobación" v={subasta.revisionEstado} vc={
-            subasta.revisionEstado === 'aprobada' ? colors.green
-              : subasta.revisionEstado === 'pendiente' ? colors.gold
-              : colors.red
-          } />
-        ) : null}
         <Row k="Asistentes" v={String(asistentes.length)} />
         {isOpen && subasta?.segundosRestantes != null ? (
           <Row k="Timer" v={`${Math.floor(subasta.segundosRestantes / 60)}m ${subasta.segundosRestantes % 60}s`} vc={colors.gold} />
@@ -612,11 +580,11 @@ function EstadoSection({
           <Btn title="Subasta finalizada" kind="ghost" style={{ flex: 1 }} disabled />
         ) : (
           <Btn
-            title={ctrl ? 'Procesando…' : (isPendiente ? 'Pendiente de aprobación' : 'Iniciar puja')}
+            title={ctrl ? 'Procesando…' : 'Iniciar puja'}
             kind="primary"
             style={{ flex: 1 }}
             onPress={onAbrir}
-            disabled={ctrl || !isEsperando || !aprobada}
+            disabled={ctrl || !isEsperando}
           />
         )}
         <Btn title={ctrl ? '…' : 'Cerrar'} kind="danger" style={{ flex: 1 }} onPress={onCerrar} disabled={ctrl || !isOpen} />
@@ -631,6 +599,252 @@ function EstadoSection({
       )}
       <Btn title="Refrescar" kind="ghost" onPress={onRefresh} disabled={ctrl} style={{ marginTop: 4 }} />
     </View>
+  );
+}
+
+const CATEGORIAS_POSTOR = ['comun', 'especial', 'plata', 'oro', 'platino'];
+
+function PostoresSection({ postores, loading, ctrl, onRefresh, onAdmitir }) {
+  return (
+    <View style={{ gap: 12, paddingTop: 14 }}>
+      <Text style={{ color: colors.muted, fontSize: 13, lineHeight: 20 }}>
+        Postores registrados pendientes de admisión. Verificá sus datos, asigná una categoría y admitilos.
+      </Text>
+      <View style={{ flexDirection: 'row', justifyContent: 'flex-end' }}>
+        <TouchableOpacity onPress={onRefresh} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          <Ionicons name="refresh" size={16} color={colors.blue} />
+          <Text style={{ color: colors.blue, fontSize: 13, fontWeight: '700' }}>Actualizar</Text>
+        </TouchableOpacity>
+      </View>
+      {loading && <ActivityIndicator color={colors.blue} />}
+      {!loading && postores.length === 0 && (
+        <Text style={{ color: colors.muted, fontSize: 13, textAlign: 'center', paddingVertical: 28 }}>
+          No hay postores pendientes de admisión.
+        </Text>
+      )}
+      {postores.map((p) => (
+        <PostorCard key={p.identificador} p={p} ctrl={ctrl} onAdmitir={onAdmitir} />
+      ))}
+    </View>
+  );
+}
+
+function PostorCard({ p, ctrl, onAdmitir }) {
+  const [cat, setCat] = useState('comun');
+  return (
+    <Card el style={{ gap: 8 }}>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 8 }}>
+        <View style={{ flex: 1 }}>
+          <Text style={{ color: colors.muted, fontSize: 11.5, fontWeight: '700' }}>#{p.identificador}</Text>
+          <Display style={{ fontSize: 14.5, lineHeight: 18 }} numberOfLines={2}>{p.nombre || 'Postor'}</Display>
+          <Text style={{ color: colors.muted, fontSize: 12 }}>{p.email || '—'}</Text>
+        </View>
+        <Tag label="PENDIENTE" color={colors.gold} />
+      </View>
+      <Text style={{ color: colors.muted, fontSize: 12 }}>Categoría a asignar:</Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        <View style={{ flexDirection: 'row', gap: 8, paddingVertical: 2 }}>
+          {CATEGORIAS_POSTOR.map((c) => (
+            <Chip key={c} label={c} active={cat === c} onPress={() => setCat(c)} />
+          ))}
+        </View>
+      </ScrollView>
+      <Btn title={ctrl ? 'Procesando…' : `Admitir como ${cat.toUpperCase()}`} onPress={() => onAdmitir(p.identificador, cat)} disabled={ctrl} />
+    </Card>
+  );
+}
+
+const ADMISION_ADMIN_LABEL = {
+  solicitada:       { label: 'A REVISAR', color: colors.gold },
+  en_inspeccion:    { label: 'EN INSPECCIÓN', color: colors.blue },
+  propuesta:        { label: 'PROPUESTA ENVIADA', color: colors.gold },
+  aprobada:         { label: 'EN SUBASTA', color: colors.green },
+  rechazada:        { label: 'RECHAZADA', color: colors.red },
+  rechazada_duenio: { label: 'DEVUELTA', color: colors.muted },
+};
+
+function ColeccionBuilder({ admisiones, subastas, ctrl, onColeccion }) {
+  const [abierto, setAbierto] = useState(false);
+  const [nombre, setNombre] = useState('');
+  const [subastaId, setSubastaId] = useState(null);
+  const [sel, setSel] = useState({}); // admisionId -> valorBase
+
+  const candidatas = (admisiones || []).filter((a) => a.estado === 'solicitada' || a.estado === 'en_inspeccion');
+  const disponibles = (subastas || []).filter((s) => s.estadoSubasta !== 'finalizada');
+
+  const toggle = (id) => setSel((s) => {
+    const n = { ...s };
+    if (id in n) delete n[id]; else n[id] = '';
+    return n;
+  });
+
+  const crear = () => {
+    const ids = Object.keys(sel);
+    if (!nombre.trim()) return Alert.alert('Nombre', 'Ponele un nombre a la colección (ej. "Colección Juan Pérez").');
+    if (!subastaId) return Alert.alert('Subasta', 'Elegí a qué subasta asignar la colección.');
+    if (ids.length < 2) return Alert.alert('Ítems', 'Elegí al menos 2 bienes para armar la colección.');
+    const items = ids.map((id) => ({ admisionId: Number(id), valorBase: Number(sel[id]) }));
+    if (items.some((it) => !it.valorBase || it.valorBase <= 0)) return Alert.alert('Valores', 'Completá el valor base de cada bien.');
+    onColeccion({ subastaId, nombreColeccion: nombre.trim(), items });
+    setAbierto(false); setNombre(''); setSubastaId(null); setSel({});
+  };
+
+  if (!abierto) {
+    return (
+      <Btn title="+ Armar colección" kind="ghost" onPress={() => setAbierto(true)} disabled={candidatas.length < 2} />
+    );
+  }
+  return (
+    <Card el style={{ gap: 8 }}>
+      <Text style={{ color: '#fff', fontWeight: '700' }}>Nueva colección</Text>
+      <Field placeholder='Nombre (ej. "Colección Juan Pérez")' value={nombre} onChangeText={setNombre} />
+      <Text style={{ color: colors.muted, fontSize: 12 }}>Asignar a subasta:</Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        <View style={{ flexDirection: 'row', gap: 8, paddingVertical: 2 }}>
+          {disponibles.map((s) => (
+            <Chip key={s.identificador} label={`#${s.identificador}`} active={subastaId === s.identificador} onPress={() => setSubastaId(s.identificador)} />
+          ))}
+        </View>
+      </ScrollView>
+      <Text style={{ color: colors.muted, fontSize: 12 }}>Bienes (≥2, mismo dueño idealmente):</Text>
+      {candidatas.map((a) => (
+        <View key={a.identificador} style={{ gap: 6 }}>
+          <TouchableOpacity onPress={() => toggle(a.identificador)} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Ionicons name={a.identificador in sel ? 'checkbox' : 'square-outline'} size={20} color={a.identificador in sel ? colors.blue : colors.muted} />
+            <Text style={{ color: '#fff', fontSize: 13, flex: 1 }} numberOfLines={1}>#{a.identificador} · {a.producto?.titulo || 'Producto'} (dueño {a.duenio})</Text>
+          </TouchableOpacity>
+          {a.identificador in sel && (
+            <Field placeholder="Valor base ($)" value={sel[a.identificador]} onChangeText={(v) => setSel((s) => ({ ...s, [a.identificador]: v }))} keyboardType="numeric" />
+          )}
+        </View>
+      ))}
+      <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
+        <Btn title="Cancelar" kind="ghost" onPress={() => setAbierto(false)} style={{ flex: 1 }} />
+        <Btn title={ctrl ? 'Creando…' : 'Crear colección'} onPress={crear} disabled={ctrl} style={{ flex: 1 }} />
+      </View>
+    </Card>
+  );
+}
+
+function AdmisionesSection({ admisiones, subastas, loading, ctrl, onRefresh, onInspeccionar, onRechazar, onProponer, onColeccion }) {
+  return (
+    <View style={{ gap: 12, paddingTop: 14 }}>
+      <Text style={{ color: colors.muted, fontSize: 13, lineHeight: 20 }}>
+        Artículos que los usuarios ofrecen a subasta. Pedí la inspección, rechazá con motivo o aceptá
+        proponiendo valor base y comisión (asignándolo a una subasta).
+      </Text>
+      <ColeccionBuilder admisiones={admisiones} subastas={subastas} ctrl={ctrl} onColeccion={onColeccion} />
+      <View style={{ flexDirection: 'row', justifyContent: 'flex-end' }}>
+        <TouchableOpacity onPress={onRefresh} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          <Ionicons name="refresh" size={16} color={colors.blue} />
+          <Text style={{ color: colors.blue, fontSize: 13, fontWeight: '700' }}>Actualizar</Text>
+        </TouchableOpacity>
+      </View>
+      {loading && <ActivityIndicator color={colors.blue} />}
+      {!loading && admisiones.length === 0 && (
+        <Text style={{ color: colors.muted, fontSize: 13, textAlign: 'center', paddingVertical: 28 }}>
+          No hay solicitudes de admisión.
+        </Text>
+      )}
+      {admisiones.map((a) => (
+        <AdmisionAdminCard
+          key={a.identificador}
+          a={a}
+          subastas={subastas}
+          ctrl={ctrl}
+          onInspeccionar={onInspeccionar}
+          onRechazar={onRechazar}
+          onProponer={onProponer}
+        />
+      ))}
+    </View>
+  );
+}
+
+function AdmisionAdminCard({ a, subastas, ctrl, onInspeccionar, onRechazar, onProponer }) {
+  const meta = ADMISION_ADMIN_LABEL[a.estado] || ADMISION_ADMIN_LABEL.solicitada;
+  const [direccion, setDireccion] = useState('Depósito BIDLY · Av. Corrientes 1234, CABA');
+  const [observacion, setObservacion] = useState('');
+  const [valorBase, setValorBase] = useState('');
+  const [comision, setComision] = useState('');
+  const [subastaId, setSubastaId] = useState(null);
+
+  // Se puede asignar a cualquier subasta no finalizada (recién creada = 'esperando').
+  const disponibles = (subastas || []).filter((sub) => sub.estadoSubasta !== 'finalizada');
+  const accionable = a.estado === 'solicitada' || a.estado === 'en_inspeccion';
+
+  const proponer = () => {
+    if (!valorBase || Number(valorBase) <= 0) return Alert.alert('Valor base', 'Ingresá un valor base válido.');
+    if (!subastaId) return Alert.alert('Subasta', 'Elegí a qué subasta asignar el bien.');
+    onProponer(a.identificador, Number(valorBase), comision ? Number(comision) : null, subastaId);
+  };
+
+  const rechazar = () => {
+    if (!observacion.trim()) return Alert.alert('Motivo', 'Ingresá el motivo del rechazo.');
+    onRechazar(a.identificador, observacion.trim());
+  };
+
+  return (
+    <Card el style={{ gap: 8 }}>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+        <View style={{ flex: 1 }}>
+          <Text style={{ color: colors.muted, fontSize: 11.5, fontWeight: '700' }}>#{a.identificador} · dueño {a.duenio}</Text>
+          <Display style={{ fontSize: 14.5, lineHeight: 18 }} numberOfLines={2}>
+            {a.producto?.titulo || `Producto #${a.producto?.identificador}`}
+          </Display>
+        </View>
+        <Tag label={meta.label} color={meta.color} />
+      </View>
+      <Text style={{ color: colors.muted, fontSize: 12 }}>
+        {a.producto?.fotos ?? 0} fotos · propiedad: {a.declaraPropiedad} · origen: {a.declaraOrigen}
+      </Text>
+      {a.estado === 'rechazada' && a.observacion && (
+        <Text style={{ color: colors.red, fontSize: 12 }}>Motivo: {a.observacion}</Text>
+      )}
+      {a.estado === 'propuesta' && (
+        <Text style={{ color: colors.muted, fontSize: 12 }}>
+          Propuesto: base ${a.valorBase} · comisión ${a.comision} · subasta #{a.subastaId}
+        </Text>
+      )}
+
+      {a.estado === 'solicitada' && (
+        <>
+          <Field placeholder="Dirección de envío para inspección" value={direccion} onChangeText={setDireccion} />
+          <Btn title="Pedir inspección" onPress={() => onInspeccionar(a.identificador, direccion)} disabled={ctrl || !direccion.trim()} />
+        </>
+      )}
+
+      {a.estado === 'en_inspeccion' && (
+        <>
+          <SectionLabel>Aceptar y proponer</SectionLabel>
+          <Field placeholder="Valor base ($)" value={valorBase} onChangeText={setValorBase} keyboardType="numeric" />
+          <Field placeholder="Comisión ($) — opcional (10% por defecto)" value={comision} onChangeText={setComision} keyboardType="numeric" />
+          <Text style={{ color: colors.muted, fontSize: 12 }}>Asignar a subasta:</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            <View style={{ flexDirection: 'row', gap: 8, paddingVertical: 2 }}>
+              {disponibles.length === 0 && <Text style={{ color: colors.muted, fontSize: 12 }}>No hay subastas disponibles</Text>}
+              {disponibles.map((sub) => (
+                <Chip
+                  key={sub.identificador}
+                  label={`#${sub.identificador} · ${sub.categoria ?? ''}`}
+                  active={subastaId === sub.identificador}
+                  onPress={() => setSubastaId(sub.identificador)}
+                />
+              ))}
+            </View>
+          </ScrollView>
+          <Btn title="Aceptar y proponer" onPress={proponer} disabled={ctrl} />
+        </>
+      )}
+
+      {accionable && (
+        <>
+          <SectionLabel>Rechazar</SectionLabel>
+          <Field placeholder="Motivo del rechazo (causas)" value={observacion} onChangeText={setObservacion} />
+          <Btn title="Rechazar y devolver" kind="danger" onPress={rechazar} disabled={ctrl} />
+        </>
+      )}
+    </Card>
   );
 }
 

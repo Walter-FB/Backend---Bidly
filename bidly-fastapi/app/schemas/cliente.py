@@ -26,6 +26,7 @@ class MedioPagoCreate(BaseModel):
     banco: Optional[str] = None
     numeroCheque: Optional[str] = None
     montoCheque: Optional[Decimal] = None
+    saldo: Optional[Decimal] = None
     verificado: Optional[str] = "no"
 
 
@@ -42,6 +43,7 @@ class MedioPagoResponse(BaseModel):
     banco: Optional[str] = None
     numerocheque: Optional[str] = Field(default=None, serialization_alias="numeroCheque")
     montocheque: Optional[Decimal] = Field(default=None, serialization_alias="montoCheque")
+    saldo: Optional[Decimal] = None
     verificado: Optional[str] = None
 
 

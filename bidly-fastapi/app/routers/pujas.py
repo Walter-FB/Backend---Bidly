@@ -14,7 +14,7 @@ from app.models.cliente import Cliente
 from app.models.medio_pago import MedioPago
 from app.models.subasta_estado_admin import SubastaEstadoAdmin
 from app.schemas.puja import PujaCreate
-from app.services import notificacion_service, subasta_sesion_service
+from app.services import notificacion_service, subasta_sesion_service, multa_service, acceso_service, saldo_service
 from app.serializers import puja_to_dict
 
 router = APIRouter()
@@ -82,10 +82,15 @@ def colocar_puja(body: PujaCreate, db: Session = Depends(get_db)):
     if not asistente or asistente.subasta != subasta_id:
         raise HTTPException(403, detail={"message": "No estás inscripto en esta subasta", "code": "FORBIDDEN"})
 
-    # Verificar medio de pago
-    tiene_pago = db.query(MedioPago).filter(MedioPago.cliente == asistente.cliente).first()
-    if not tiene_pago:
-        raise HTTPException(422, detail={"message": "No tenés medios de pago registrados", "code": "NO_PAYMENT"})
+    # Bloqueo por multa impaga / cuenta derivada a la justicia
+    multa_service.verificar_puede_participar(asistente.cliente, db)
+
+    # Solo puede pujar quien tenga al menos un medio de pago VERIFICADO por la empresa.
+    acceso_service.validar_puede_pujar(asistente.cliente, db)
+
+    # Saldo: las compras no pueden superar la suma de los montos de sus medios de
+    # pago (cheque certificado → montocheque; tarjeta/cuenta → saldo disponible).
+    saldo_service.validar_puja(asistente.cliente, importe, db)
 
     # Calcular mínimo y máximo
     ultima = (

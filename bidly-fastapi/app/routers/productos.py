@@ -12,9 +12,33 @@ from app.models.foto import Foto
 from app.models.empleado import Empleado, EMPLEADO_SISTEMA
 from app.models.item_catalogo import ItemCatalogo
 from app.models.duenio import Duenio
+from app.models.producto_detalle import ProductoDetalle
 from app.schemas.producto import ProductoCreate, DisponibleUpdate, ProductoResponse
+from pydantic import BaseModel
+from typing import Optional
 
 router = APIRouter()
+
+
+class ProductoDetalleBody(BaseModel):
+    esObraArte: bool = False
+    artista: Optional[str] = None
+    fechaObra: Optional[str] = None
+    historia: Optional[str] = None
+    cantidadPiezas: Optional[int] = 1
+    composicion: Optional[str] = None
+
+
+def _detalle_to_dict(d: ProductoDetalle) -> dict:
+    return {
+        "producto": d.producto,
+        "esObraArte": d.es_obra_arte,
+        "artista": d.artista,
+        "fechaObra": d.fecha_obra,
+        "historia": d.historia,
+        "cantidadPiezas": d.cantidad_piezas,
+        "composicion": d.composicion,
+    }
 
 
 def _get_revisor_aleatorio(db: Session) -> int:
@@ -94,6 +118,32 @@ def update_disponible(id: int, body: DisponibleUpdate, db: Session = Depends(get
     db.commit()
     db.refresh(p)
     return p
+
+
+@router.get("/{id}/detalle")
+def get_detalle(id: int, db: Session = Depends(get_db)):
+    d = db.query(ProductoDetalle).filter(ProductoDetalle.producto == id).first()
+    if not d:
+        return None
+    return _detalle_to_dict(d)
+
+
+@router.put("/{id}/detalle")
+def set_detalle(id: int, body: ProductoDetalleBody, db: Session = Depends(get_db)):
+    """Detalle ampliado: obra de arte/diseñador (artista, fecha, historia) o pieza
+    compuesta por varios elementos (cantidad de piezas, composición)."""
+    d = db.query(ProductoDetalle).filter(ProductoDetalle.producto == id).first()
+    if not d:
+        d = ProductoDetalle(producto=id)
+        db.add(d)
+    d.es_obra_arte    = "si" if body.esObraArte else "no"
+    d.artista         = body.artista
+    d.fecha_obra      = body.fechaObra
+    d.historia        = body.historia
+    d.cantidad_piezas = body.cantidadPiezas or 1
+    d.composicion     = body.composicion
+    db.commit()
+    return _detalle_to_dict(d)
 
 
 @router.get("/{id}/fotos")

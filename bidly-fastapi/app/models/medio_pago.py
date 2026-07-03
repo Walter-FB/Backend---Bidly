@@ -15,4 +15,7 @@ class MedioPago(Base):
     banco         = Column(String)
     numerocheque  = Column(String)
     montocheque   = Column(Numeric(precision=12, scale=2))
+    # Saldo/límite disponible para tarjetas y cuentas (el cheque usa montocheque).
+    # Las compras del cliente no pueden superar la suma de estos montos.
+    saldo         = Column(Numeric(precision=12, scale=2))
     verificado    = Column(String, default="no")

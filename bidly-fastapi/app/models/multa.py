@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Numeric, Date, ForeignKey
+from sqlalchemy import Column, Integer, String, Numeric, Date, DateTime, ForeignKey
 from app.database import Base
 
 
@@ -11,3 +11,6 @@ class Multa(Base):
     importe       = Column(Numeric(precision=12, scale=2))
     pagada        = Column(String, default="no")
     fechagenerada = Column(Date)
+    # Vencimiento de las 72hs para presentar los fondos. Pasado este límite con la
+    # multa impaga, el caso se considera "derivado a la justicia" (cuenta suspendida).
+    fecha_limite  = Column(DateTime, nullable=True)

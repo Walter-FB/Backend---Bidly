@@ -5,7 +5,6 @@ from sqlalchemy.orm import Session
 from app.models.subasta import Subasta
 from app.models.subasta_moneda import SubastaMoneda
 from app.models.subasta_estado_admin import SubastaEstadoAdmin
-from app.models.subasta_revision import SubastaRevision
 from app.models.subasta_sesion import SubastaSesion
 from app.models.item_catalogo import ItemCatalogo
 from app.models.catalogo import Catalogo
@@ -36,13 +35,6 @@ def enrich(subasta: Subasta, db: Session) -> dict:
     data["algunaVezAbierta"] = admin.alguna_vez_abierta if admin else False
     data["fechaApertura"]    = admin.fecha_apertura if admin else None
     data["fechaInicioReal"]  = admin.fecha_inicio_real if admin else None
-
-    rev = (
-        db.query(SubastaRevision)
-        .filter(SubastaRevision.subasta == subasta.identificador)
-        .first()
-    )
-    data["revisionEstado"] = rev.estado if rev else None
 
     items = (
         db.query(ItemCatalogo)

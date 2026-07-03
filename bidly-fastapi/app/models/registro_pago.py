@@ -10,3 +10,6 @@ class RegistroPago(Base):
     medio_pago   = Column(Integer, ForeignKey("mediosdepago.identificador"))
     importe_total= Column(Numeric(precision=12, scale=2))
     fecha_pago   = Column(DateTime)
+    envio           = Column(Numeric(precision=12, scale=2))
+    direccion_envio = Column(String)
+    retiro_personal = Column(String, default="no")

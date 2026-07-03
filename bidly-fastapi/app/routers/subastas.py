@@ -4,10 +4,10 @@ from sqlalchemy.orm import Session
 from typing import Optional, List
 
 from app.database import get_db
+from app.auth import get_optional_client
 from app.models.subasta import Subasta
 from app.models.subasta_moneda import SubastaMoneda
 from app.models.subasta_sesion import SubastaSesion
-from app.models.subasta_revision import SubastaRevision
 from app.models.subasta_estado_admin import SubastaEstadoAdmin
 from app.models.asistente import Asistente
 from app.models.catalogo import Catalogo
@@ -15,11 +15,24 @@ from app.models.item_catalogo import ItemCatalogo
 from app.models.producto import Producto
 from app.models.foto import Foto
 from app.schemas.subasta import SubastaCreate, SubastaEstadoUpdate, SesionResponse
-from app.services import subasta_service, subasta_estado_service, subasta_revision_service, notificacion_service
+from app.services import subasta_service, subasta_estado_service, notificacion_service
 from app.services.subasta_sesion_service import segundos_restantes
 from app.serializers import item_to_dict
 
 router = APIRouter()
+
+
+def _ensure_subastador(persona_id: int, db: Session) -> int:
+    """Garantiza una fila en `subastadores` para la persona que arma la subasta.
+    Un subastador es una persona con matrícula/región; `subastas.subastador` es
+    FK a subastadores, así que debe existir antes de crear la subasta."""
+    from app.models.subastador import Subastador
+    s = db.query(Subastador).filter(Subastador.identificador == persona_id).first()
+    if not s:
+        s = Subastador(identificador=persona_id, matricula=None, region=None)
+        db.add(s)
+        db.flush()
+    return persona_id
 
 
 def _build_sesion_response(sesion: SubastaSesion) -> dict:
@@ -57,8 +70,8 @@ def listar_subastas(
         }
         subastas = [s for s in subastas if s.identificador in ids_con_moneda]
 
-    if publico:
-        subastas = subasta_revision_service.filtrar_visibles_publico(subastas, db)
+    # `publico` ya no filtra por aprobación: todas las subastas las arma el
+    # subastador, así que son válidas. El parámetro se mantiene por compatibilidad.
 
     return subasta_service.enrich_all(subastas, db)
 
@@ -74,6 +87,7 @@ def get_subasta(id: int, db: Session = Depends(get_db)):
 @router.post("", status_code=201)
 @router.post("/", status_code=201)
 def crear_subasta(body: SubastaCreate, db: Session = Depends(get_db)):
+    _ensure_subastador(body.subastador, db)
     s = Subasta(
         fecha=body.fecha,
         hora=body.hora,
@@ -91,29 +105,19 @@ def crear_subasta(body: SubastaCreate, db: Session = Depends(get_db)):
     sm = SubastaMoneda(subasta=s.identificador, moneda=body.moneda)
     db.add(sm)
 
+    # La subasta la arma el subastador: queda lista para iniciar (no hay
+    # aprobación intermedia). El scheduler la abre a la fecha/hora, o el
+    # subastador la abre manualmente.
     subasta_estado_service.crear_estado_pendiente(s.identificador, db)
-
-    from app.models.cliente import Cliente
-    cliente = db.query(Cliente).filter(Cliente.identificador == body.subastador).first()
-    subasta_revision_service.registrar_nueva(s, solicitante_id=cliente.identificador if cliente else None, db=db)
+    subasta_estado_service.pasar_a_esperando(s.identificador, db)
 
     db.commit()
     db.refresh(s)
-
-    if cliente:
-        notificacion_service.crear(
-            cliente.identificador,
-            "subasta_creada",
-            "Tu subasta fue creada y está pendiente de revisión",
-            db,
-        )
-        db.commit()
-
     return subasta_service.enrich(s, db)
 
 
 @router.get("/{id}/catalogo")
-def get_catalogo(id: int, db: Session = Depends(get_db)):
+def get_catalogo(id: int, db: Session = Depends(get_db), current: dict = Depends(get_optional_client)):
     item = (
         db.query(ItemCatalogo)
         .join(Catalogo, ItemCatalogo.catalogo == Catalogo.identificador)
@@ -123,11 +127,11 @@ def get_catalogo(id: int, db: Session = Depends(get_db)):
     )
     if not item:
         raise HTTPException(404, "Sin items en el catálogo")
-    return item_to_dict(item, db)
+    return item_to_dict(item, db, mostrar_precio=current is not None)
 
 
 @router.get("/{id}/catalogos")
-def get_catalogos(id: int, db: Session = Depends(get_db)):
+def get_catalogos(id: int, db: Session = Depends(get_db), current: dict = Depends(get_optional_client)):
     items = (
         db.query(ItemCatalogo)
         .join(Catalogo, ItemCatalogo.catalogo == Catalogo.identificador)
@@ -135,7 +139,7 @@ def get_catalogos(id: int, db: Session = Depends(get_db)):
         .order_by(ItemCatalogo.identificador)
         .all()
     )
-    return [item_to_dict(item, db) for item in items]
+    return [item_to_dict(item, db, mostrar_precio=current is not None) for item in items]
 
 
 @router.get("/{id}/estado")
@@ -174,10 +178,6 @@ def update_estado(id: int, body: SubastaEstadoUpdate, db: Session = Depends(get_
     s = db.query(Subasta).filter(Subasta.identificador == id).first()
     if not s:
         raise HTTPException(404, "Subasta no encontrada")
-
-    rev = db.query(SubastaRevision).filter(SubastaRevision.subasta == id).first()
-    if rev and rev.estado not in ("aprobada",):
-        raise HTTPException(400, detail={"message": "La subasta debe estar aprobada", "code": "NOT_APPROVED"})
 
     # Mapear el estado pedido a la transición real de la máquina de estados:
     # 'abierta' -> iniciar (crea sesión + timer + estado_subasta='iniciada')

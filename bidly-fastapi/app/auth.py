@@ -78,3 +78,12 @@ def get_current_client(
     if not data:
         raise HTTPException(status_code=401, detail="Token inválido o expirado")
     return data
+
+
+def get_optional_client(authorization: str = Header(default=None)) -> dict | None:
+    """Igual que get_current_client pero no falla si no hay token: devuelve None.
+    Sirve para gatear datos visibles solo a usuarios registrados (ej. precio base)."""
+    if not authorization or not authorization.startswith("Bearer "):
+        return None
+    token = authorization.split(" ", 1)[1].strip()
+    return get_token_data(token)

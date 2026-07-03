@@ -1,0 +1,306 @@
+"""Admisión de artículos a subasta.
+
+Circuito (enunciado): el dueño carga el bien + declaraciones → la empresa pide
+enviarlo a inspección → lo acepta o rechaza (con causas) → si lo acepta propone
+valor base + comisión + subasta → el dueño acepta (pasa al catálogo) o rechaza
+(devolución con gastos).
+"""
+from datetime import datetime
+from decimal import Decimal
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from typing import Optional
+
+from app.database import get_db
+from app.models.admision import Admision
+from app.models.producto import Producto
+from app.models.foto import Foto
+from app.models.subasta import Subasta
+from app.models.catalogo import Catalogo
+from app.models.item_catalogo import ItemCatalogo
+from app.models.empleado import EMPLEADO_SISTEMA
+from app.schemas.admision import (
+    AdmisionCreate, InspeccionRequest, RechazarAdmisionRequest,
+    ProponerRequest, RechazarDuenioRequest,
+)
+from app.services import notificacion_service
+from pydantic import BaseModel
+from typing import List
+
+
+class ItemColeccion(BaseModel):
+    admisionId: int
+    valorBase: Decimal
+    comision: Optional[Decimal] = None
+
+
+class ColeccionRequest(BaseModel):
+    subastaId: int
+    nombreColeccion: str
+    items: List[ItemColeccion]
+
+router = APIRouter()
+
+
+def _to_dict(a: Admision, db: Session) -> dict:
+    prod = db.query(Producto).filter(Producto.identificador == a.producto).first()
+    n_fotos = db.query(Foto).filter(Foto.producto == a.producto).count() if a.producto else 0
+    sub = db.query(Subasta).filter(Subasta.identificador == a.subasta).first() if a.subasta else None
+    return {
+        "identificador": a.identificador,
+        "estado": a.estado,
+        "producto": {
+            "identificador": a.producto,
+            "titulo": prod.descripcioncatalogo if prod else None,
+            "descripcionCompleta": prod.descripcioncompleta if prod else None,
+            "fotos": n_fotos,
+        },
+        "duenio": a.duenio,
+        "declaraPropiedad": a.declara_propiedad,
+        "declaraOrigen": a.declara_origen,
+        "direccionEnvio": a.direccion_envio,
+        "observacion": a.observacion,
+        "valorBase": float(a.valor_base) if a.valor_base is not None else None,
+        "comision": float(a.comision) if a.comision is not None else None,
+        "subastaId": a.subasta,
+        "subasta": {
+            "identificador": sub.identificador,
+            "fecha": sub.fecha.isoformat() if sub and sub.fecha else None,
+            "hora": sub.hora.isoformat() if sub and sub.hora else None,
+            "ubicacion": sub.ubicacion if sub else None,
+        } if sub else None,
+        "gastosDevolucion": float(a.gastos_devolucion) if a.gastos_devolucion is not None else None,
+        "esColeccion": a.es_coleccion,
+        "nombreColeccion": a.nombre_coleccion,
+        "creadoEn": a.creado_en.isoformat() if a.creado_en else None,
+    }
+
+
+def _get(id: int, db: Session) -> Admision:
+    a = db.query(Admision).filter(Admision.identificador == id).first()
+    if not a:
+        raise HTTPException(404, "Admisión no encontrada")
+    return a
+
+
+# ── Dueño ─────────────────────────────────────────────────────────────────────
+@router.post("", status_code=201)
+@router.post("/", status_code=201)
+def crear(body: AdmisionCreate, db: Session = Depends(get_db)):
+    if not body.declaraPropiedad:
+        raise HTTPException(422, detail={
+            "message": "Debés declarar que el bien te pertenece.", "code": "DECLARACION_PROPIEDAD"})
+    if not body.declaraOrigen:
+        raise HTTPException(422, detail={
+            "message": "Debés declarar el origen lícito del bien.", "code": "DECLARACION_ORIGEN"})
+
+    a = Admision(
+        producto=body.productoId,
+        duenio=body.duenioId,
+        estado="solicitada",
+        declara_propiedad="si",
+        declara_origen="si",
+        creado_en=datetime.utcnow(),
+        actualizado_en=datetime.utcnow(),
+    )
+    db.add(a)
+    db.commit()
+    db.refresh(a)
+
+    notificacion_service.crear(
+        body.duenioId, "admision",
+        "Recibimos tu solicitud de admisión. Te avisaremos si debés enviar el bien a inspección.",
+        db,
+    )
+    db.commit()
+    return _to_dict(a, db)
+
+
+@router.get("/duenio/{duenio_id}")
+def por_duenio(duenio_id: int, db: Session = Depends(get_db)):
+    admisiones = (
+        db.query(Admision)
+        .filter(Admision.duenio == duenio_id)
+        .order_by(Admision.identificador.desc())
+        .all()
+    )
+    return [_to_dict(a, db) for a in admisiones]
+
+
+@router.patch("/{id}/aprobar-duenio")
+def aprobar_duenio(id: int, db: Session = Depends(get_db)):
+    """El dueño acepta el valor base y la comisión: el bien pasa al catálogo de la subasta."""
+    a = _get(id, db)
+    if a.estado != "propuesta":
+        raise HTTPException(409, detail={"message": "No hay una propuesta pendiente para aceptar", "code": "SIN_PROPUESTA"})
+    if not a.subasta:
+        raise HTTPException(409, detail={"message": "La admisión no tiene subasta asignada", "code": "SIN_SUBASTA"})
+
+    # Buscar (o crear) el catálogo de la subasta y agregar el ítem.
+    catalogo = db.query(Catalogo).filter(Catalogo.subasta == a.subasta).first()
+    if not catalogo:
+        catalogo = Catalogo(descripcion=f"Catálogo subasta {a.subasta}", subasta=a.subasta, responsable=EMPLEADO_SISTEMA)
+        db.add(catalogo)
+        db.flush()
+
+    valor = Decimal(str(a.valor_base or 0))
+    comision = Decimal(str(a.comision)) if a.comision is not None else valor * Decimal("0.10")
+    item = ItemCatalogo(
+        catalogo=catalogo.identificador,
+        producto=a.producto,
+        preciobase=valor,
+        comision=comision,
+        subastado="no",
+    )
+    db.add(item)
+
+    # De cada bien recibido para la venta se contrata un seguro según el valor base.
+    from app.services import seguro_service
+    seguro_service.contratar_para_producto(a.producto, valor, db)
+
+    a.estado = "aprobada"
+    a.actualizado_en = datetime.utcnow()
+    db.commit()
+
+    notificacion_service.crear(
+        a.duenio, "seguro",
+        "Tu bien fue asegurado y guardado en depósito. Podés ver la póliza y su ubicación en la app.",
+        db,
+    )
+    db.commit()
+    return _to_dict(a, db)
+
+
+@router.patch("/{id}/rechazar-duenio")
+def rechazar_duenio(id: int, body: RechazarDuenioRequest, db: Session = Depends(get_db)):
+    """El dueño no acepta el valor base/comisión: devolución con gastos a su cargo."""
+    a = _get(id, db)
+    if a.estado != "propuesta":
+        raise HTTPException(409, detail={"message": "No hay una propuesta pendiente", "code": "SIN_PROPUESTA"})
+    a.estado = "rechazada_duenio"
+    if body.gastosDevolucion is not None:
+        a.gastos_devolucion = body.gastosDevolucion
+    a.actualizado_en = datetime.utcnow()
+    db.commit()
+    return _to_dict(a, db)
+
+
+# ── Empresa / Admin ───────────────────────────────────────────────────────────
+@router.get("")
+@router.get("/")
+def listar(estado: Optional[str] = None, db: Session = Depends(get_db)):
+    q = db.query(Admision)
+    if estado:
+        q = q.filter(Admision.estado == estado)
+    return [_to_dict(a, db) for a in q.order_by(Admision.identificador.desc()).all()]
+
+
+@router.get("/pendientes/count")
+def contar_pendientes(db: Session = Depends(get_db)):
+    n = db.query(Admision).filter(Admision.estado.in_(["solicitada", "en_inspeccion"])).count()
+    return {"pendientes": n}
+
+
+@router.get("/{id}")
+def obtener(id: int, db: Session = Depends(get_db)):
+    return _to_dict(_get(id, db), db)
+
+
+@router.patch("/{id}/inspeccion")
+def pedir_inspeccion(id: int, body: InspeccionRequest, db: Session = Depends(get_db)):
+    a = _get(id, db)
+    a.estado = "en_inspeccion"
+    a.direccion_envio = body.direccionEnvio
+    a.actualizado_en = datetime.utcnow()
+    db.commit()
+    notificacion_service.crear(
+        a.duenio, "admision",
+        f"Tu artículo pasó a inspección. Enviá el bien a: {body.direccionEnvio}. "
+        "Si no se acepta, la devolución corre por tu cuenta.",
+        db,
+    )
+    db.commit()
+    return _to_dict(a, db)
+
+
+@router.patch("/{id}/rechazar")
+def rechazar(id: int, body: RechazarAdmisionRequest, db: Session = Depends(get_db)):
+    a = _get(id, db)
+    a.estado = "rechazada"
+    a.observacion = body.observacion
+    if body.gastosDevolucion is not None:
+        a.gastos_devolucion = body.gastosDevolucion
+    a.actualizado_en = datetime.utcnow()
+    db.commit()
+    notificacion_service.crear(
+        a.duenio, "admision",
+        f"Tu artículo no fue aceptado. Motivo: {body.observacion}. "
+        "Será devuelto con cargo a tu cuenta.",
+        db,
+    )
+    db.commit()
+    return _to_dict(a, db)
+
+
+@router.post("/coleccion")
+def crear_coleccion(body: ColeccionRequest, db: Session = Depends(get_db)):
+    """Agrupa varios bienes de un mismo dueño en una subasta (colección con el
+    nombre del usuario). Propone todos con su valor base + comisión."""
+    sub = db.query(Subasta).filter(Subasta.identificador == body.subastaId).first()
+    if not sub:
+        raise HTTPException(404, "Subasta no encontrada")
+    if not body.items:
+        raise HTTPException(422, detail={"message": "La colección no tiene ítems", "code": "SIN_ITEMS"})
+
+    resultado = []
+    duenios = set()
+    for it in body.items:
+        a = db.query(Admision).filter(Admision.identificador == it.admisionId).first()
+        if not a:
+            continue
+        a.estado = "propuesta"
+        a.valor_base = it.valorBase
+        a.comision = it.comision if it.comision is not None else Decimal(str(it.valorBase)) * Decimal("0.10")
+        a.subasta = body.subastaId
+        a.es_coleccion = "si"
+        a.nombre_coleccion = body.nombreColeccion
+        a.actualizado_en = datetime.utcnow()
+        duenios.add(a.duenio)
+        resultado.append(a)
+    db.commit()
+
+    for d in duenios:
+        notificacion_service.crear(
+            d, "admision",
+            f"Tus bienes se agruparon en la colección \"{body.nombreColeccion}\". "
+            "Aceptá o rechazá las propuestas desde la app.",
+            db,
+        )
+    db.commit()
+    return [_to_dict(a, db) for a in resultado]
+
+
+@router.patch("/{id}/proponer")
+def proponer(id: int, body: ProponerRequest, db: Session = Depends(get_db)):
+    """La empresa acepta el bien y propone valor base + comisión, asignándolo a una subasta."""
+    a = _get(id, db)
+    sub = db.query(Subasta).filter(Subasta.identificador == body.subastaId).first()
+    if not sub:
+        raise HTTPException(404, "Subasta no encontrada")
+
+    a.estado = "propuesta"
+    a.valor_base = body.valorBase
+    a.comision = body.comision if body.comision is not None else Decimal(str(body.valorBase)) * Decimal("0.10")
+    a.subasta = body.subastaId
+    a.actualizado_en = datetime.utcnow()
+    db.commit()
+
+    fecha = sub.fecha.isoformat() if sub.fecha else "a confirmar"
+    notificacion_service.crear(
+        a.duenio, "admision",
+        f"¡Tu artículo fue aceptado! Subasta del {fecha} en {sub.ubicacion or 'a confirmar'}. "
+        f"Valor base ${a.valor_base} y comisión ${a.comision}. Aceptá o rechazá la propuesta desde la app.",
+        db,
+    )
+    db.commit()
+    return _to_dict(a, db)

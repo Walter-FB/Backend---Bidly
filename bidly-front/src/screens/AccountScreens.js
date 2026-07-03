@@ -9,7 +9,7 @@ import { colors } from '../theme/theme';
 import { AuctionCard } from './HomeScreens';
 import { useAuth } from '../context/AuthContext';
 import { BASE_URL, getToken } from '../api/client';
-import { Clientes, Personas, RegistroSubasta, Subastas, Productos, Subastadores, Catalogos } from '../api/endpoints';
+import { Clientes, Personas, RegistroSubasta, Subastas, Productos, Subastadores, Catalogos, Multas, Admisiones, Payouts, Seguros } from '../api/endpoints';
 import { tituloSubasta, subtituloSubasta, formatFechaSubasta, esSubastaFinalizada, esSubastaEnCursoVendedor, esMiSubasta, tagEstadoSubasta } from '../utils/subasta';
 import { useNotifBadge } from '../hooks/useNotifBadge';
 
@@ -79,7 +79,7 @@ function mapRegistro(r) {
 
 // ─── PERFIL SCREEN ────────────────────────────────────────────────────────────
 export function PerfilScreen({ navigation }) {
-  const { user, logout, isAdmin } = useAuth();
+  const { user, logout, isSubastador } = useAuth();
   const [persona, setPersona] = useState(null);
   const [cliente, setCliente] = useState(null);
 
@@ -104,6 +104,9 @@ export function PerfilScreen({ navigation }) {
 
   const rows = [
     ['Mis Productos', 'MisProductos'],
+    ['Mis publicaciones', 'MisAdmisiones'],
+    ['Mis cobros', 'MisCobros'],
+    ['Mis métricas', 'MisMetricas'],
     ['Datos personales', 'DatosPersonales'],
     ['Medios de pago', 'MedioPago'],
     ['Mis compras', 'MisCompras'],
@@ -131,10 +134,10 @@ export function PerfilScreen({ navigation }) {
             <Ionicons name="chevron-forward" size={18} color={colors.muted} />
           </TouchableOpacity>
         ))}
-        {isAdmin && (
+        {isSubastador && (
           <TouchableOpacity style={s.listItem} onPress={() => navigation.navigate('DashboardAdmin')}>
-            <Text style={{ color: '#fff', fontSize: 14.5, fontWeight: '600' }}>Administración</Text>
-            <Tag label="ADMIN" color={colors.blue} />
+            <Text style={{ color: '#fff', fontSize: 14.5, fontWeight: '600' }}>Panel del subastador</Text>
+            <Tag label="SUBASTADOR" color={colors.blue} />
           </TouchableOpacity>
         )}
         <TouchableOpacity onPress={logout} style={{ marginTop: 6, padding: 12, alignItems: 'center' }}>
@@ -270,13 +273,14 @@ function irAGanaste(navigation, g) {
 
 export function MisSubastasScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
-  const { user } = useAuth();
+  const { user, isSubastador } = useAuth();
   const { unreadCount } = useNotifBadge();
   const [tab, setTab] = useState(route.params?.initialTab || 'curso');
   const [subastas, setSubastas] = useState([]);
   const [ganadas, setGanadas] = useState([]);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState(null);
+  const [sancion, setSancion] = useState(null);
 
   const cargar = () => {
     if (!user?.clienteId) { setLoading(false); return; }
@@ -294,6 +298,10 @@ export function MisSubastasScreen({ navigation, route }) {
         setGanadas([]);
       })
       .finally(() => setLoading(false));
+    // Estado de sanción (multas pendientes / derivación a la justicia).
+    Multas.estadoSancion(user.clienteId)
+      .then((e) => setSancion(e && e.bloqueado ? e : null))
+      .catch(() => setSancion(null));
   };
 
   useEffect(() => {
@@ -347,6 +355,29 @@ export function MisSubastasScreen({ navigation, route }) {
             <Text style={{ color: '#fff', fontSize: 13, fontWeight: '600', flex: 1 }}>{toast}</Text>
           </View>
         )}
+        {sancion && (
+          <View style={s.sancionBanner}>
+            <Ionicons name={sancion.enJusticia ? 'lock-closed' : 'alert-circle'} size={20} color={colors.red} />
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: colors.red, fontSize: 13.5, fontWeight: '800' }}>
+                {sancion.enJusticia ? 'Cuenta suspendida (derivada a la justicia)' : 'Tenés una multa pendiente'}
+              </Text>
+              <Text style={{ color: colors.muted, fontSize: 12, marginTop: 2 }}>
+                {sancion.enJusticia
+                  ? 'No podés participar en subastas hasta regularizar el impago.'
+                  : `Adeudás $${Number(sancion.montoAdeudado).toLocaleString('es-AR')}. Debés abonarla antes de participar en otra subasta.`}
+              </Text>
+            </View>
+            {!sancion.enJusticia && sancion.multas?.[0] && (
+              <TouchableOpacity
+                onPress={() => navigation.navigate('Multa', { multaId: sancion.multas[0].identificador })}
+                style={{ backgroundColor: colors.red, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 9 }}
+              >
+                <Text style={{ color: '#fff', fontSize: 12.5, fontWeight: '800' }}>Pagar</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
         <Title>Mis subastas</Title>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginVertical: 12 }}>
           <View style={{ flexDirection: 'row', gap: 9 }}>
@@ -365,10 +396,12 @@ export function MisSubastasScreen({ navigation, route }) {
         {!loading && tab !== 'ganadas' && filtradas.length === 0 && (
           <Text style={{ color: colors.muted, textAlign: 'center', marginTop: 20 }}>
             {tab === 'curso'
-              ? 'No tenés subastas en vivo.\nLa puja la inicia un administrador cuando aprueba tu solicitud.'
+              ? 'No tenés subastas en vivo.\nEl subastador inicia la puja a la fecha y hora programadas.'
               : tab === 'fin'
                 ? 'No tenés subastas finalizadas.'
-                : 'Aún no tenés subastas.\nPresioná "Nueva subasta" para comenzar.'}
+                : isSubastador
+                  ? 'Aún no armaste subastas.\nPresioná "Nueva subasta" para comenzar.'
+                  : 'Todavía no participaste de subastas.\nOfrecé un bien desde "Publicar" o sumate a una subasta.'}
           </Text>
         )}
         {tab === 'ganadas' && (
@@ -458,9 +491,11 @@ export function MisSubastasScreen({ navigation, route }) {
         </View>
         )}
       </ScrollView>
-      <BottomBar>
-        <Btn title="+ Nueva subasta" onPress={() => navigation.navigate('CrearSubasta')} />
-      </BottomBar>
+      {isSubastador && (
+        <BottomBar>
+          <Btn title="+ Nueva subasta" onPress={() => navigation.navigate('CrearSubasta')} />
+        </BottomBar>
+      )}
     </View>
   );
 }
@@ -773,41 +808,42 @@ export function CrearSubastaScreen({ navigation, route }) {
   };
 
   const onCrear = async () => {
-    if (itemsSeleccionados.length === 0) {
-      return Alert.alert('Sin productos', 'Agregá al menos un producto a la subasta.');
-    }
-    const sinPrecio = itemsSeleccionados.find((i) => !String(i.precioBase).trim() || parseFloat(i.precioBase) <= 0 || isNaN(parseFloat(i.precioBase)));
-    if (sinPrecio) {
-      return Alert.alert('Precio faltante', 'Completá el precio base de cada producto con un valor mayor a 0.');
+    // Los ítems son opcionales: el subastador puede crear la subasta vacía y
+    // luego asignarle los bienes admitidos desde la pestaña "Admisiones".
+    const conItems = itemsSeleccionados.length > 0;
+    if (conItems) {
+      const sinPrecio = itemsSeleccionados.find((i) => !String(i.precioBase).trim() || parseFloat(i.precioBase) <= 0 || isNaN(parseFloat(i.precioBase)));
+      if (sinPrecio) {
+        return Alert.alert('Precio faltante', 'Completá el precio base de cada producto con un valor mayor a 0.');
+      }
     }
     setLoading(true);
     try {
-      await Subastadores.crear({ identificador: user.clienteId }).catch(() => {});
-
       const subasta = await Subastas.crear({
         fecha: f.fecha,
         hora: f.hora + ':00',
-        estado: 'cerrada', // pendiente de aprobación; la puja la inicia el admin
+        estado: 'cerrada', // queda en espera; la puja la inicia el subastador o el scheduler
         subastador: user.clienteId,
         ubicacion: f.ubicacion,
         categoria: f.categoria,
         moneda: f.moneda,
       });
 
-      const catalogo = await Catalogos.crear({
-        descripcion: `Catálogo subasta #${subasta.identificador}`,
-        subasta: subasta.identificador,
-        responsable: user.clienteId,
-      });
-
-      await Promise.all(
-        itemsSeleccionados.map((it) =>
-          Catalogos.agregarItem(catalogo.identificador, {
-            producto: it.productoId,
-            precioBase: parseFloat(it.precioBase),
-          })
-        )
-      );
+      if (conItems) {
+        const catalogo = await Catalogos.crear({
+          descripcion: `Catálogo subasta #${subasta.identificador}`,
+          subasta: subasta.identificador,
+          responsable: user.clienteId,
+        });
+        await Promise.all(
+          itemsSeleccionados.map((it) =>
+            Catalogos.agregarItem(catalogo.identificador, {
+              producto: it.productoId,
+              precioBase: parseFloat(it.precioBase),
+            })
+          )
+        );
+      }
 
       const titulo = itemsSeleccionados[0]?.titulo || tituloSubasta(subasta);
       setLoading(false);
@@ -956,7 +992,15 @@ export function CrearSubastaScreen({ navigation, route }) {
       </TouchableOpacity>
 
       <View style={{ marginTop: 24 }}>
-        <Btn title={loading ? 'Creando subasta…' : `Crear subasta con ${itemsSeleccionados.length} producto(s)`} onPress={onCrear} disabled={loading || !!exito || itemsSeleccionados.length === 0} />
+        <Btn
+          title={loading
+            ? 'Creando subasta…'
+            : itemsSeleccionados.length > 0
+              ? `Crear subasta con ${itemsSeleccionados.length} producto(s)`
+              : 'Crear subasta vacía (agregás ítems desde Admisiones)'}
+          onPress={onCrear}
+          disabled={loading || !!exito}
+        />
       </View>
 
       <Modal visible={!!exito} transparent animationType="fade">
@@ -970,7 +1014,7 @@ export function CrearSubastaScreen({ navigation, route }) {
               {exito?.titulo}
             </Text>
             <Text style={{ color: colors.muted, fontSize: 13, textAlign: 'center', marginTop: 10, lineHeight: 18 }}>
-              Un administrador iniciará la puja cuando apruebe tu solicitud.
+              Queda en espera. La puja se inicia a la fecha y hora, o manualmente desde el panel.
             </Text>
             <Text style={{ color: colors.blue, fontSize: 13, fontWeight: '700', marginTop: 18 }}>
               Yendo a Mis subastas…
@@ -990,6 +1034,10 @@ export function PublicarScreen({ navigation }) {
   const [f, setF] = useState({ titulo: '', categoria: '', estado: '', precio: '', descripcion: '' });
   const [fotos, setFotos] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [declaraPropiedad, setDeclaraPropiedad] = useState(false);
+  const [declaraOrigen, setDeclaraOrigen] = useState(false);
+  const [det, setDet] = useState({ esObraArte: false, artista: '', fechaObra: '', historia: '', cantidadPiezas: '', composicion: '' });
+  const setD = (k) => (v) => setDet((s) => ({ ...s, [k]: v }));
   const set = (k) => (v) => setF((s) => ({ ...s, [k]: v }));
 
   const elegirFoto = async () => {
@@ -1013,8 +1061,17 @@ export function PublicarScreen({ navigation }) {
   const quitarFoto = (idx) => setFotos((prev) => prev.filter((_, i) => i !== idx));
 
   const onPublicar = async () => {
-    if (!f.titulo.trim() || !f.precio.trim()) {
-      return Alert.alert('Campos requeridos', 'Completá al menos el título y el precio base.');
+    if (!f.titulo.trim() || !f.descripcion.trim()) {
+      return Alert.alert('Campos requeridos', 'Completá al menos el título y la descripción del bien.');
+    }
+    if (fotos.length < MAX_FOTOS) {
+      return Alert.alert('Faltan fotos', `Subí al menos ${MAX_FOTOS} fotos del bien (tenés ${fotos.length}).`);
+    }
+    if (!declaraPropiedad || !declaraOrigen) {
+      return Alert.alert(
+        'Declaraciones obligatorias',
+        'Debés declarar que el bien te pertenece y que su origen es lícito para enviarlo a admisión.',
+      );
     }
     setLoading(true);
     try {
@@ -1048,22 +1105,35 @@ export function PublicarScreen({ navigation }) {
         });
       }
 
+      // Detalle ampliado: obra de arte/diseñador o pieza compuesta.
+      if (det.esObraArte || det.artista || det.historia || det.composicion || det.cantidadPiezas) {
+        await Productos.setDetalle(producto.identificador, {
+          esObraArte: det.esObraArte,
+          artista: det.artista || null,
+          fechaObra: det.fechaObra || null,
+          historia: det.historia || null,
+          cantidadPiezas: det.cantidadPiezas ? parseInt(det.cantidadPiezas, 10) : 1,
+          composicion: det.composicion || null,
+        }).catch(() => {});
+      }
+
+      // Enviar el bien a admisión (la empresa lo inspecciona antes de subastarlo).
+      await Admisiones.crear({
+        productoId: producto.identificador,
+        duenioId: user?.clienteId,
+        declaraPropiedad,
+        declaraOrigen,
+      });
+
       Alert.alert(
-        '¡Producto publicado!',
-        `¡${producto.descripcionCatalogo || 'Producto'} listo! ¿Querés crear una subasta con este producto ahora?`,
-        [
-          {
-            text: 'Crear subasta',
-            onPress: () => navigation.navigate('CrearSubasta', {
-              productoId: producto.identificador,
-              titulo: f.titulo,
-            }),
-          },
-          { text: 'Ir al inicio', style: 'cancel', onPress: () => navigation.navigate('Main') },
-        ],
+        'Solicitud enviada',
+        'Tu bien fue enviado a admisión. La empresa te avisará si debés enviarlo a inspección '
+        + 'y, si lo acepta, te propondrá un valor base y comisión para que aceptes o rechaces.',
+        [{ text: 'Ver mis publicaciones', onPress: () => navigation.navigate('MisAdmisiones') },
+         { text: 'Ir al inicio', style: 'cancel', onPress: () => navigation.navigate('Main') }],
       );
     } catch (e) {
-      Alert.alert('Error', e.message || 'No se pudo publicar el producto.');
+      Alert.alert('Error', e.message || 'No se pudo enviar la solicitud de admisión.');
     } finally {
       setLoading(false);
     }
@@ -1109,14 +1179,422 @@ export function PublicarScreen({ navigation }) {
               ))}
             </View>
           </View>
-          <Field placeholder="Precio base ($)" value={f.precio} onChangeText={set('precio')} keyboardType="numeric" />
-          <Field placeholder="Descripción completa" value={f.descripcion} onChangeText={set('descripcion')} multiline />
+          <Field placeholder="Descripción completa (historia, artista, cantidad de piezas, etc.)" value={f.descripcion} onChangeText={set('descripcion')} multiline />
+        </View>
+
+        <SectionLabel>Declaraciones</SectionLabel>
+        <TouchableOpacity onPress={() => setDeclaraPropiedad((v) => !v)} activeOpacity={0.8} style={s.decl}>
+          <Ionicons name={declaraPropiedad ? 'checkbox' : 'square-outline'} size={22} color={declaraPropiedad ? colors.blue : colors.muted} />
+          <Text style={{ color: '#fff', fontSize: 13, flex: 1 }}>Declaro que el bien me pertenece y no tiene impedimentos para subastarse.</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => setDeclaraOrigen((v) => !v)} activeOpacity={0.8} style={s.decl}>
+          <Ionicons name={declaraOrigen ? 'checkbox' : 'square-outline'} size={22} color={declaraOrigen ? colors.blue : colors.muted} />
+          <Text style={{ color: '#fff', fontSize: 13, flex: 1 }}>Declaro el origen lícito del bien y puedo acreditarlo si me lo requieren.</Text>
+        </TouchableOpacity>
+        <Text style={{ color: colors.muted, fontSize: 11.5, marginTop: 6 }}>
+          El valor base y la comisión los definirá la empresa tras la inspección. Vos podrás aceptarlos o rechazarlos.
+        </Text>
+
+        <SectionLabel>Detalle (opcional)</SectionLabel>
+        <TouchableOpacity onPress={() => setDet((s) => ({ ...s, esObraArte: !s.esObraArte }))} activeOpacity={0.8} style={s.decl}>
+          <Ionicons name={det.esObraArte ? 'checkbox' : 'square-outline'} size={22} color={det.esObraArte ? colors.blue : colors.muted} />
+          <Text style={{ color: '#fff', fontSize: 13, flex: 1 }}>Es obra de arte / objeto de diseñador</Text>
+        </TouchableOpacity>
+        <View style={{ gap: 12 }}>
+          {det.esObraArte && (
+            <>
+              <Field placeholder="Artista / diseñador" value={det.artista} onChangeText={setD('artista')} />
+              <Field placeholder="Fecha / época" value={det.fechaObra} onChangeText={setD('fechaObra')} />
+              <Field placeholder="Historia (dueños anteriores, curiosidades…)" value={det.historia} onChangeText={setD('historia')} multiline />
+            </>
+          )}
+          <Field placeholder="Cantidad de piezas (ej. juego de té = 18)" value={det.cantidadPiezas} onChangeText={setD('cantidadPiezas')} keyboardType="numeric" />
+          <Field placeholder="Composición (qué elementos incluye)" value={det.composicion} onChangeText={setD('composicion')} multiline />
         </View>
       </ScrollView>
       <View style={{ flexDirection: 'row', gap: 12, paddingHorizontal: 22, paddingBottom: 28, paddingTop: 14 }}>
         <Btn title="Borrador" kind="ghost" onPress={onBorrador} style={{ flex: 1 }} />
         <Btn title={loading ? 'Publicando…' : 'Publicar'} onPress={onPublicar} disabled={loading} style={{ flex: 1 }} />
       </View>
+    </Screen>
+  );
+}
+
+// ─── MIS ADMISIONES (estado de las publicaciones del dueño) ──────────────────
+const ADMISION_LABEL = {
+  solicitada:       { label: 'EN REVISIÓN', color: colors.gold },
+  en_inspeccion:    { label: 'INSPECCIÓN', color: colors.blue },
+  rechazada:        { label: 'RECHAZADA', color: colors.red },
+  propuesta:        { label: 'PROPUESTA', color: colors.gold },
+  aprobada:         { label: 'EN SUBASTA', color: colors.green },
+  rechazada_duenio: { label: 'DEVUELTA', color: colors.muted },
+};
+
+export function MisAdmisionesScreen({ navigation }) {
+  const { user } = useAuth();
+  const [admisiones, setAdmisiones] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [ctrl, setCtrl] = useState(false);
+
+  const cargar = () => {
+    if (!user?.clienteId) { setLoading(false); return; }
+    setLoading(true);
+    Admisiones.porDuenio(user.clienteId)
+      .then((data) => setAdmisiones(Array.isArray(data) ? data : []))
+      .catch(() => setAdmisiones([]))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => navigation.addListener('focus', cargar), [navigation, user]);
+
+  const aceptar = (a) => {
+    Alert.alert('Aceptar propuesta', `Valor base $${a.valorBase} y comisión $${a.comision}. ¿Aceptás?`, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Aceptar',
+        onPress: async () => {
+          setCtrl(true);
+          try {
+            await Admisiones.aprobarDuenio(a.identificador);
+            Alert.alert('Listo', 'Tu bien se incluyó en el catálogo de la subasta.');
+            cargar();
+          } catch (e) { Alert.alert('Error', e.message || 'No se pudo aceptar.'); }
+          finally { setCtrl(false); }
+        },
+      },
+    ]);
+  };
+
+  const rechazar = (a) => {
+    Alert.alert('Rechazar propuesta', 'Se procederá a la devolución del bien con los gastos a tu cargo. ¿Confirmás?', [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Rechazar',
+        style: 'destructive',
+        onPress: async () => {
+          setCtrl(true);
+          try {
+            await Admisiones.rechazarDuenio(a.identificador);
+            cargar();
+          } catch (e) { Alert.alert('Error', e.message || 'No se pudo rechazar.'); }
+          finally { setCtrl(false); }
+        },
+      },
+    ]);
+  };
+
+  return (
+    <Screen>
+      <Header />
+      <ScrollView contentContainerStyle={{ paddingHorizontal: 22, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
+        <Title>Mis{'\n'}publicaciones</Title>
+        <Sub>Seguí el estado de admisión de los bienes que ofreciste a subasta.</Sub>
+        {loading && <ActivityIndicator color={colors.blue} style={{ marginTop: 20 }} />}
+        {!loading && admisiones.length === 0 && (
+          <Text style={{ color: colors.muted, textAlign: 'center', marginTop: 20 }}>
+            Todavía no ofreciste ningún bien.{'\n'}Usá "Publicar" para enviar uno a admisión.
+          </Text>
+        )}
+        <View style={{ gap: 12, marginTop: 12 }}>
+          {admisiones.map((a) => {
+            const meta = ADMISION_LABEL[a.estado] || ADMISION_LABEL.solicitada;
+            return (
+              <Card key={a.identificador} el style={{ gap: 6 }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                  <Display style={{ fontSize: 15, flex: 1, lineHeight: 18 }} numberOfLines={2}>
+                    {a.producto?.titulo || `Producto #${a.producto?.identificador}`}
+                  </Display>
+                  <Tag label={meta.label} color={meta.color} />
+                </View>
+                {a.estado === 'en_inspeccion' && (
+                  <Text style={{ color: colors.muted, fontSize: 12.5 }}>Enviá el bien a: {a.direccionEnvio}</Text>
+                )}
+                {a.estado === 'rechazada' && (
+                  <Text style={{ color: colors.red, fontSize: 12.5 }}>Motivo: {a.observacion}</Text>
+                )}
+                {a.estado === 'propuesta' && (
+                  <>
+                    <Row k="Valor base" v={`$${Number(a.valorBase).toLocaleString('es-AR')}`} />
+                    <Row k="Comisión" v={`$${Number(a.comision).toLocaleString('es-AR')}`} />
+                    {a.subasta?.fecha && <Row k="Subasta" v={`${a.subasta.fecha} · ${a.subasta.ubicacion || ''}`} />}
+                    <View style={{ flexDirection: 'row', gap: 10, marginTop: 6 }}>
+                      <Btn title="Aceptar" onPress={() => aceptar(a)} disabled={ctrl} style={{ flex: 1 }} />
+                      <Btn title="Rechazar" kind="danger" onPress={() => rechazar(a)} disabled={ctrl} style={{ flex: 1 }} />
+                    </View>
+                  </>
+                )}
+                {a.estado === 'aprobada' && (
+                  <>
+                    <Text style={{ color: colors.green, fontSize: 12.5 }}>Incluido en la subasta. ¡Suerte con el remate!</Text>
+                    <Btn
+                      title="Ver seguro y depósito"
+                      kind="ghost"
+                      onPress={() => navigation.navigate('SeguroBien', { productoId: a.producto?.identificador, titulo: a.producto?.titulo })}
+                      style={{ marginTop: 6 }}
+                    />
+                  </>
+                )}
+              </Card>
+            );
+          })}
+        </View>
+      </ScrollView>
+    </Screen>
+  );
+}
+
+// ─── MIS COBROS (payout al dueño) ────────────────────────────────────────────
+export function MisCobrosScreen({ navigation }) {
+  const { user } = useAuth();
+  const [payouts, setPayouts] = useState([]);
+  const [cuentas, setCuentas] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [ctrl, setCtrl] = useState(false);
+  const [form, setForm] = useState(false);
+  const [nueva, setNueva] = useState({ alias: '', banco: '', pais: '', moneda: 'pesos', esExterior: false });
+
+  const cargar = () => {
+    if (!user?.clienteId) { setLoading(false); return; }
+    setLoading(true);
+    Promise.all([
+      Payouts.porDuenio(user.clienteId),
+      Payouts.cuentas(user.clienteId),
+    ])
+      .then(([ps, cs]) => {
+        setPayouts(Array.isArray(ps) ? ps : []);
+        setCuentas(Array.isArray(cs) ? cs : []);
+      })
+      .catch(() => { setPayouts([]); setCuentas([]); })
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => navigation.addListener('focus', cargar), [navigation, user]);
+
+  const declararCuenta = async () => {
+    if (!nueva.alias.trim()) return Alert.alert('Cuenta', 'Ingresá el CBU / IBAN / alias.');
+    setCtrl(true);
+    try {
+      await Payouts.declararCuenta({ duenioId: user.clienteId, ...nueva });
+      setForm(false);
+      setNueva({ alias: '', banco: '', pais: '', moneda: 'pesos', esExterior: false });
+      cargar();
+    } catch (e) { Alert.alert('Error', e.message || 'No se pudo declarar la cuenta.'); }
+    finally { setCtrl(false); }
+  };
+
+  const cobrar = (p) => {
+    if (cuentas.length === 0) {
+      return Alert.alert('Falta una cuenta', 'Declará una cuenta a la vista antes de cobrar.', [
+        { text: 'Declarar', onPress: () => setForm(true) },
+        { text: 'Cancelar', style: 'cancel' },
+      ]);
+    }
+    const cuenta = cuentas[0];
+    Alert.alert('Cobrar', `Se acreditarán $${Number(p.importeNeto).toLocaleString('es-AR')} en ${cuenta.alias}. ¿Confirmás?`, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Cobrar',
+        onPress: async () => {
+          setCtrl(true);
+          try { await Payouts.cobrar(p.identificador, cuenta.identificador); cargar(); }
+          catch (e) { Alert.alert('Error', e.message || 'No se pudo cobrar.'); }
+          finally { setCtrl(false); }
+        },
+      },
+    ]);
+  };
+
+  return (
+    <Screen>
+      <Header />
+      <ScrollView contentContainerStyle={{ paddingHorizontal: 22, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
+        <Title>Mis{'\n'}cobros</Title>
+        <Sub>El dinero de tus bienes vendidos se acredita en tu cuenta a la vista declarada.</Sub>
+
+        <SectionLabel>Cuentas a la vista</SectionLabel>
+        {cuentas.map((c) => (
+          <Card key={c.identificador} el style={{ marginBottom: 8 }}>
+            <Text style={{ color: '#fff', fontWeight: '700' }}>{c.alias}</Text>
+            <Text style={{ color: colors.muted, fontSize: 12 }}>
+              {c.banco || 'Banco'} · {c.pais || '—'} · {c.moneda} · {c.esExterior === 'si' ? 'Exterior' : 'Nacional'}
+            </Text>
+          </Card>
+        ))}
+        {!form && (
+          <TouchableOpacity onPress={() => setForm(true)} style={{ paddingVertical: 10 }}>
+            <Text style={{ color: colors.blue, fontWeight: '800' }}>+ Declarar cuenta a la vista</Text>
+          </TouchableOpacity>
+        )}
+        {form && (
+          <Card el style={{ gap: 10 }}>
+            <Field placeholder="CBU / IBAN / alias" value={nueva.alias} onChangeText={(v) => setNueva((n) => ({ ...n, alias: v }))} />
+            <Field placeholder="Banco" value={nueva.banco} onChangeText={(v) => setNueva((n) => ({ ...n, banco: v }))} />
+            <Field placeholder="País" value={nueva.pais} onChangeText={(v) => setNueva((n) => ({ ...n, pais: v }))} />
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <Chip label="Pesos" active={nueva.moneda === 'pesos'} onPress={() => setNueva((n) => ({ ...n, moneda: 'pesos' }))} />
+              <Chip label="Dólares" active={nueva.moneda === 'dolares'} onPress={() => setNueva((n) => ({ ...n, moneda: 'dolares' }))} />
+            </View>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <Chip label="Nacional" active={!nueva.esExterior} onPress={() => setNueva((n) => ({ ...n, esExterior: false }))} />
+              <Chip label="Exterior" active={nueva.esExterior} onPress={() => setNueva((n) => ({ ...n, esExterior: true }))} />
+            </View>
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <Btn title="Cancelar" kind="ghost" onPress={() => setForm(false)} style={{ flex: 1 }} />
+              <Btn title={ctrl ? 'Guardando…' : 'Declarar'} onPress={declararCuenta} disabled={ctrl} style={{ flex: 1 }} />
+            </View>
+          </Card>
+        )}
+
+        <SectionLabel>Cobros</SectionLabel>
+        {loading && <ActivityIndicator color={colors.blue} style={{ marginTop: 12 }} />}
+        {!loading && payouts.length === 0 && (
+          <Text style={{ color: colors.muted, textAlign: 'center', marginTop: 12 }}>
+            Todavía no tenés cobros. Cuando se venda un bien tuyo aparecerá acá.
+          </Text>
+        )}
+        <View style={{ gap: 12, marginTop: 8 }}>
+          {payouts.map((p) => (
+            <Card key={p.identificador} el style={{ gap: 6 }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                <Display style={{ fontSize: 15, flex: 1, lineHeight: 18 }} numberOfLines={2}>
+                  {p.producto?.titulo || `Producto #${p.producto?.identificador}`}
+                </Display>
+                <Tag label={p.estado === 'pagado' ? 'ACREDITADO' : 'PENDIENTE'} color={p.estado === 'pagado' ? colors.green : colors.gold} />
+              </View>
+              <Text style={{ color: colors.muted, fontSize: 12 }}>
+                {p.origen === 'empresa' ? 'Comprado por la empresa (sin pujas)' : 'Vendido en subasta'}
+              </Text>
+              <Row k="Bruto" v={`$${Number(p.importeBruto).toLocaleString('es-AR')}`} />
+              <Row k="Comisión" v={`$${Number(p.comision).toLocaleString('es-AR')}`} />
+              <Row k="Neto a cobrar" v={`$${Number(p.importeNeto).toLocaleString('es-AR')}`} vc={colors.green} bold />
+              {p.estado !== 'pagado' && (
+                <Btn title="Cobrar" onPress={() => cobrar(p)} disabled={ctrl} style={{ marginTop: 4 }} />
+              )}
+            </Card>
+          ))}
+        </View>
+      </ScrollView>
+    </Screen>
+  );
+}
+
+// ─── SEGURO DEL BIEN (póliza + depósito + aumentar) ──────────────────────────
+export function SeguroBienScreen({ navigation, route }) {
+  const { productoId, titulo } = route.params || {};
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [nuevo, setNuevo] = useState('');
+  const [ctrl, setCtrl] = useState(false);
+
+  const cargar = () => {
+    if (!productoId) { setLoading(false); return; }
+    setLoading(true);
+    Seguros.polizaProducto(productoId)
+      .then(setData)
+      .catch(() => setData(null))
+      .finally(() => setLoading(false));
+  };
+  useEffect(cargar, [productoId]);
+
+  const aumentar = async () => {
+    if (!data?.poliza?.nroPoliza) return;
+    if (!nuevo || Number(nuevo) <= 0) return Alert.alert('Valor', 'Ingresá el nuevo valor asegurado.');
+    setCtrl(true);
+    try {
+      const res = await Seguros.aumentar(data.poliza.nroPoliza, Number(nuevo));
+      Alert.alert('Póliza aumentada', `Nuevo valor $${Number(res.importe).toLocaleString('es-AR')}. Pagaste la diferencia de $${Number(res.diferenciaPagada).toLocaleString('es-AR')}.`);
+      setNuevo('');
+      cargar();
+    } catch (e) { Alert.alert('Error', e.message || 'No se pudo aumentar la póliza.'); }
+    finally { setCtrl(false); }
+  };
+
+  return (
+    <Screen>
+      <Header />
+      <ScrollView contentContainerStyle={{ paddingHorizontal: 22, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
+        <Title>Seguro{'\n'}del bien</Title>
+        {titulo && <Sub>{titulo}</Sub>}
+        {loading && <ActivityIndicator color={colors.blue} style={{ marginTop: 20 }} />}
+        {!loading && !data?.poliza && (
+          <Text style={{ color: colors.muted, textAlign: 'center', marginTop: 20 }}>
+            Este bien todavía no tiene póliza contratada.
+          </Text>
+        )}
+        {!loading && data?.poliza && (
+          <>
+            <Card el style={{ marginTop: 12 }}>
+              <Row k="Póliza" v={data.poliza.nroPoliza} />
+              <Row k="Compañía" v={data.poliza.compania} />
+              <Row k="Valor asegurado" v={`$${Number(data.poliza.importe).toLocaleString('es-AR')}`} vc={colors.green} />
+              <Row k="Depósito" v={data.deposito || '—'} />
+            </Card>
+            <SectionLabel>Aumentar póliza</SectionLabel>
+            <Text style={{ color: colors.muted, fontSize: 12.5, marginBottom: 8 }}>
+              Podés aumentar el valor asegurado pagando la diferencia del premio.
+            </Text>
+            <Field placeholder="Nuevo valor asegurado ($)" value={nuevo} onChangeText={setNuevo} keyboardType="numeric" />
+            <Btn title={ctrl ? 'Procesando…' : 'Aumentar póliza'} onPress={aumentar} disabled={ctrl} style={{ marginTop: 10 }} />
+          </>
+        )}
+      </ScrollView>
+    </Screen>
+  );
+}
+
+// ─── MIS MÉTRICAS ─────────────────────────────────────────────────────────────
+export function MisMetricasScreen({ navigation }) {
+  const { user } = useAuth();
+  const [m, setM] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!user?.clienteId) { setLoading(false); return; }
+    Clientes.metricas(user.clienteId)
+      .then(setM)
+      .catch(() => setM(null))
+      .finally(() => setLoading(false));
+  }, [user]);
+
+  const fmt = (n) => `$${Number(n || 0).toLocaleString('es-AR')}`;
+
+  return (
+    <Screen>
+      <Header />
+      <ScrollView contentContainerStyle={{ paddingHorizontal: 22, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
+        <Title>Mis{'\n'}métricas</Title>
+        <Sub>Tu participación en las subastas.</Sub>
+        {loading && <ActivityIndicator color={colors.blue} style={{ marginTop: 20 }} />}
+        {!loading && m && (
+          <>
+            <View style={{ flexDirection: 'row', gap: 12, marginTop: 12 }}>
+              <Card el style={{ flex: 1, alignItems: 'center', gap: 4 }}>
+                <Display style={{ fontSize: 26, color: colors.blue }}>{m.asistidas}</Display>
+                <Text style={{ color: colors.muted, fontSize: 12 }}>Subastas asistidas</Text>
+              </Card>
+              <Card el style={{ flex: 1, alignItems: 'center', gap: 4 }}>
+                <Display style={{ fontSize: 26, color: colors.green }}>{m.ganadas}</Display>
+                <Text style={{ color: colors.muted, fontSize: 12 }}>Veces que ganaste</Text>
+              </Card>
+            </View>
+            <Card el style={{ marginTop: 12 }}>
+              <Row k="Pujas realizadas" v={String(m.cantidadPujas)} />
+              <Row k="Total ofertado" v={fmt(m.totalOfertado)} />
+              <Row k="Total comprado" v={fmt(m.totalComprado)} />
+              <Row k="Total pagado" v={fmt(m.totalPagado)} vc={colors.green} />
+            </Card>
+            <SectionLabel>Asistencias por categoría</SectionLabel>
+            <Card el>
+              {Object.keys(m.porCategoria || {}).length === 0 && (
+                <Text style={{ color: colors.muted, fontSize: 13 }}>Todavía no participaste de subastas.</Text>
+              )}
+              {Object.entries(m.porCategoria || {}).map(([cat, n]) => (
+                <Row key={cat} k={cat.toUpperCase()} v={String(n)} />
+              ))}
+            </Card>
+          </>
+        )}
+      </ScrollView>
     </Screen>
   );
 }
@@ -1460,6 +1938,16 @@ const s = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 10,
     backgroundColor: 'rgba(55,214,111,0.12)', borderWidth: 1, borderColor: colors.green,
     borderRadius: 12, padding: 14, marginBottom: 12,
+  },
+  sancionBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: 'rgba(226,57,80,0.10)', borderWidth: 1, borderColor: colors.red,
+    borderRadius: 12, padding: 14, marginBottom: 12,
+  },
+  decl: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
+    borderRadius: 10, padding: 12, marginBottom: 8,
   },
   exitoOverlay: {
     flex: 1, backgroundColor: 'rgba(0,0,0,0.88)',

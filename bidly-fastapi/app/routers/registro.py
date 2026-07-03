@@ -10,8 +10,9 @@ from app.models.reembolso import Reembolso
 from app.models.subasta import Subasta
 from app.models.persona import Persona
 from app.models.credencial import Credencial
+from app.models.multa import Multa
 from app.schemas.registro_subasta import RegistroCreate, PagarRequest, ReembolsoUpdate
-from app.services import subasta_service
+from app.services import subasta_service, multa_service, notificacion_service
 
 router = APIRouter()
 
@@ -19,6 +20,13 @@ router = APIRouter()
 def _enrich_registro(r: RegistroDeSubasta, db: Session) -> dict:
     pago = db.query(RegistroPago).filter(RegistroPago.registro == r.identificador).first()
     ree  = db.query(Reembolso).filter(Reembolso.registro == r.identificador).first()
+
+    # Multa asociada (si esta compra derivó en impago) a través de la puja ganadora.
+    puja_ganadora = multa_service._puja_ganadora_registro(r, db)
+    multa = (
+        db.query(Multa).filter(Multa.pujo == puja_ganadora.identificador).first()
+        if puja_ganadora else None
+    )
 
     # El front espera subasta y cliente como objetos anidados (no enteros).
     subasta_obj = db.query(Subasta).filter(Subasta.identificador == r.subasta).first()
@@ -43,7 +51,11 @@ def _enrich_registro(r: RegistroDeSubasta, db: Session) -> dict:
         "medioPago":    pago.medio_pago if pago else None,
         "importeTotal": float(pago.importe_total) if pago and pago.importe_total else None,
         "fechaPago":    pago.fecha_pago.isoformat() if pago and pago.fecha_pago else None,
+        "envio":        float(pago.envio) if pago and pago.envio is not None else None,
+        "direccionEnvio": pago.direccion_envio if pago else None,
+        "retiroPersonal": pago.retiro_personal if pago else "no",
         "reembolsada":  ree.reembolsada if ree else "no",
+        "multa":        multa_service.multa_to_dict(multa) if multa else None,
     }
 
 
@@ -85,26 +97,99 @@ def get_registros_subasta(subasta_id: int, db: Session = Depends(get_db)):
     return [_enrich_registro(r, db) for r in registros]
 
 
-@router.post("/{id}/pagar")
-def pagar(id: int, body: PagarRequest, db: Session = Depends(get_db)):
+@router.post("/{id}/impago")
+def declarar_impago(id: int, db: Session = Depends(get_db)):
+    """El usuario no dispone de los fondos para cumplir con el pago: se genera la
+    multa del 10% de lo ofertado y queda bloqueado hasta abonarla (72hs para
+    presentar los fondos antes de derivar el caso a la justicia)."""
     r = db.query(RegistroDeSubasta).filter(RegistroDeSubasta.identificador == id).first()
     if not r:
         raise HTTPException(404, "Registro no encontrado")
 
     pago = db.query(RegistroPago).filter(RegistroPago.registro == id).first()
+    if pago and pago.estado == "pagado":
+        raise HTTPException(409, detail={"message": "La compra ya fue pagada", "code": "ALREADY_PAID"})
+
+    # Evitar multas duplicadas para la misma compra.
+    puja_ganadora = multa_service._puja_ganadora_registro(r, db)
+    ya_existe = (
+        db.query(Multa).filter(Multa.pujo == puja_ganadora.identificador).first()
+        if puja_ganadora else None
+    )
+    if ya_existe:
+        raise HTTPException(409, detail={"message": "Ya existe una multa para esta compra", "code": "MULTA_EXISTS"})
+
     if pago:
-        pago.estado      = "pagado"
-        pago.medio_pago  = body.medioPagoId
-        pago.fecha_pago  = datetime.utcnow()
+        pago.estado = "impago"
     else:
         pago = RegistroPago(
             registro=id,
-            estado="pagado",
-            medio_pago=body.medioPagoId,
-            fecha_pago=datetime.utcnow(),
+            estado="impago",
+            importe_total=(r.importe or 0) + (r.comision or 0),
         )
         db.add(pago)
+
+    multa = multa_service.generar_multa_impago(r, db)
     db.commit()
+
+    if r.cliente:
+        notificacion_service.crear(
+            r.cliente,
+            "multa",
+            f"No se pudo completar el pago. Se generó una multa de ${multa.importe}. "
+            "Tenés 72hs para presentar los fondos antes de derivar el caso a la justicia.",
+            db,
+        )
+        db.commit()
+
+    return _enrich_registro(r, db)
+
+
+@router.post("/{id}/pagar")
+def pagar(id: int, body: PagarRequest, db: Session = Depends(get_db)):
+    from decimal import Decimal
+    from app.models.medio_pago import MedioPago
+    from app.models.subasta_moneda import SubastaMoneda
+
+    r = db.query(RegistroDeSubasta).filter(RegistroDeSubasta.identificador == id).first()
+    if not r:
+        raise HTTPException(404, "Registro no encontrado")
+
+    # Moneda: una subasta en dólares se cancela en dólares (transferencia o tarjeta
+    # internacional), no con cheque.
+    sm = db.query(SubastaMoneda).filter(SubastaMoneda.subasta == r.subasta).first()
+    medio = db.query(MedioPago).filter(MedioPago.identificador == body.medioPagoId).first()
+    if sm and sm.moneda == "dolares" and medio and medio.tipo == "cheque":
+        raise HTTPException(422, detail={
+            "message": "Una subasta en dólares debe cancelarse por transferencia o tarjeta internacional, no con cheque.",
+            "code": "MONEDA_INCOMPATIBLE",
+        })
+
+    envio = Decimal("0") if body.retiroPersonal else Decimal(str(body.envio or 0))
+    importe_total = Decimal(str(r.importe or 0)) + Decimal(str(r.comision or 0)) + envio
+
+    pago = db.query(RegistroPago).filter(RegistroPago.registro == id).first()
+    if not pago:
+        pago = RegistroPago(registro=id)
+        db.add(pago)
+    pago.estado          = "pagado"
+    pago.medio_pago      = body.medioPagoId
+    pago.fecha_pago      = datetime.utcnow()
+    pago.importe_total   = importe_total
+    pago.envio           = envio
+    pago.direccion_envio = None if body.retiroPersonal else body.direccionEnvio
+    pago.retiro_personal = "si" if body.retiroPersonal else "no"
+    db.commit()
+
+    if body.retiroPersonal and r.cliente:
+        # Al retirar en persona pierde la cobertura del seguro.
+        notificacion_service.crear(
+            r.cliente, "retiro",
+            "Elegiste retiro personal: una vez retirado el bien perdés la cobertura del seguro.",
+            db,
+        )
+        db.commit()
+
     return _enrich_registro(r, db)
 
 

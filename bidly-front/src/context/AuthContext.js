@@ -61,10 +61,12 @@ export function AuthProvider({ children }) {
     setUser({ isGuest: true, nombre: 'Invitado', clienteId: null });
   }, []);
 
-  const isAdmin = user?.rol === 'admin';
+  // El subastador (martillero) es el rol intermediario: valida los artículos,
+  // les fija el valor base y corre las subastas. No existe un 'admin' genérico.
+  const isSubastador = user?.rol === 'subastador';
 
   return (
-    <AuthContext.Provider value={{ user, setUser, booting, login, register, logout, loginAsGuest, isAdmin }}>
+    <AuthContext.Provider value={{ user, setUser, booting, login, register, logout, loginAsGuest, isSubastador }}>
       {children}
     </AuthContext.Provider>
   );

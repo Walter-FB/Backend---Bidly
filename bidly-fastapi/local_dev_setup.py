@@ -12,19 +12,11 @@ import os
 from datetime import date, timedelta, time
 
 # La URL se toma de DATABASE_URL (config.py ya la resuelve).
-from sqlalchemy import Table, Column, Integer, String
 from app.database import Base, engine, SessionLocal
 import app.models  # registra todos los modelos en Base.metadata
 
-# La tabla 'sectores' es referenciada por empleados.sector pero no tiene modelo.
-if "sectores" not in Base.metadata.tables:
-    Table(
-        "sectores", Base.metadata,
-        Column("identificador", Integer, primary_key=True),
-        Column("nombresector", String),
-    )
-
 from app.models.persona import Persona
+from app.models.sector import Sector
 from app.models.empleado import Empleado
 from app.models.cliente import Cliente
 from app.models.credencial import Credencial
@@ -55,6 +47,13 @@ def main():
         db.add(emp); db.flush()
         emp_id = emp.identificador
 
+        # Sectores/regiones de la empresa (agrupan empleados y subastadores).
+        sec_caba = Sector(nombresector="CABA", codigosector="CABA", responsablesector=emp_id)
+        sec_int  = Sector(nombresector="Interior", codigosector="INT", responsablesector=emp_id)
+        db.add(sec_caba); db.add(sec_int); db.flush()
+        emp.sector = sec_caba.identificador  # el empleado sistema pertenece a CABA
+        db.flush()
+
         def nueva_persona(nombre, doc, dir):
             p = Persona(nombre=nombre, documento=doc, direccion=dir, estado="activo")
             db.add(p); db.flush()
@@ -63,10 +62,10 @@ def main():
         p1 = nueva_persona("Demo Cliente Uno", "11111111", "Corrientes 1000 CABA")
         p2 = nueva_persona("Demo Cliente Dos", "22222222", "Florida 200 CABA")
         p3 = nueva_persona("Demo Sin Pago", "33333333", "Rivadavia 300 CABA")
-        padm = nueva_persona("Demo Admin", "55555555", "Admin 500 CABA")
         psub = nueva_persona("Demo Subastador", "44444444", "Libertador 400 CABA")
 
-        for p in (p1, p2, p3, padm):
+        # El subastador también necesita fila en clientes (credenciales.cliente → clientes).
+        for p in (p1, p2, p3, psub):
             db.add(Cliente(identificador=p.identificador, admitido="si",
                            categoria="comun", verificador=emp_id, numeropais=1))
         db.flush()
@@ -74,13 +73,14 @@ def main():
         db.add(Credencial(cliente=p1.identificador, email="c1@bidly.demo", passwordhash="demo1234"))
         db.add(Credencial(cliente=p2.identificador, email="c2@bidly.demo", passwordhash="demo1234"))
         db.add(Credencial(cliente=p3.identificador, email="c3@bidly.demo", passwordhash="demo1234"))
-        db.add(Credencial(cliente=padm.identificador, email="admin@bidly.demo", passwordhash="demo1234"))
+        db.add(Credencial(cliente=psub.identificador, email="subastador@bidly.demo", passwordhash="demo1234"))
 
         db.add(UsuarioRol(cliente=p1.identificador, rol="postor"))
         db.add(UsuarioRol(cliente=p2.identificador, rol="postor"))
         db.add(UsuarioRol(cliente=p3.identificador, rol="postor"))
-        db.add(UsuarioRol(cliente=padm.identificador, rol="admin"))
+        db.add(UsuarioRol(cliente=psub.identificador, rol="subastador"))
 
+        # region="CABA" coincide con el sector CABA → relación subastador↔sector.
         db.add(Subastador(identificador=psub.identificador, matricula="MAT-DEMO-001", region="CABA"))
         db.flush()
 
@@ -116,15 +116,16 @@ def main():
         db.add(ItemCatalogo(catalogo=cat_b.identificador, producto=prod_b.identificador,
                             preciobase=10000, comision=100, subastado="no"))
 
-        db.add(MedioPago(cliente=p1.identificador, tipo="tarjeta", verificado="si"))
-        db.add(MedioPago(cliente=p2.identificador, tipo="tarjeta", verificado="si"))
+        # p1: tarjeta con saldo alto. p2: cheque certificado de 10000 (demo del límite).
+        db.add(MedioPago(cliente=p1.identificador, tipo="tarjeta", saldo=500000, verificado="si"))
+        db.add(MedioPago(cliente=p2.identificador, tipo="cheque", montocheque=10000, verificado="si"))
 
         db.commit()
         print(">> Seed demo cargado OK")
-        print("   c1@bidly.demo / demo1234  (medio de pago)")
-        print("   c2@bidly.demo / demo1234  (medio de pago)")
+        print("   c1@bidly.demo / demo1234  (tarjeta saldo 500000)")
+        print("   c2@bidly.demo / demo1234  (cheque 10000 - demo del límite)")
         print("   c3@bidly.demo / demo1234  (SIN medio de pago)")
-        print("   admin@bidly.demo / demo1234  (rol admin)")
+        print("   subastador@bidly.demo / demo1234  (rol subastador · región CABA)")
         print(f"   Subasta A (comun) id={sub_a.identificador}, Subasta B (oro) id={sub_b.identificador}")
     finally:
         db.close()

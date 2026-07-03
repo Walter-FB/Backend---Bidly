@@ -14,6 +14,9 @@ class RegistroCreate(BaseModel):
 
 class PagarRequest(BaseModel):
     medioPagoId: int
+    retiroPersonal: Optional[bool] = False
+    direccionEnvio: Optional[str] = None
+    envio: Optional[Decimal] = None
 
 
 class ReembolsoUpdate(BaseModel):
