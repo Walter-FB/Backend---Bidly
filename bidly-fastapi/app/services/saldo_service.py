@@ -23,12 +23,9 @@ def _monto_medio(mp: MedioPago) -> Decimal:
 
 
 def saldo_total(cliente_id: int, db: Session) -> Decimal:
-    """Suma de montos disponibles de todos los medios verificados del cliente."""
-    medios = (
-        db.query(MedioPago)
-        .filter(MedioPago.cliente == cliente_id, MedioPago.verificado == "si")
-        .all()
-    )
+    """Suma de lo que hay en TODOS los medios del cliente (coincide con el cartel
+    del front). El requisito de 'medio verificado' para pujar se controla aparte."""
+    medios = db.query(MedioPago).filter(MedioPago.cliente == cliente_id).all()
     return sum((_monto_medio(m) for m in medios), Decimal("0"))
 
 
@@ -49,7 +46,8 @@ def comprometido(cliente_id: int, db: Session) -> Decimal:
 
 
 def disponible(cliente_id: int, db: Session) -> Decimal:
-    return saldo_total(cliente_id, db) - comprometido(cliente_id, db)
+    """Todo lo que tenés en tus medios está disponible para pujar."""
+    return saldo_total(cliente_id, db)
 
 
 def validar_puja(cliente_id: int, importe, db: Session) -> None:
@@ -59,23 +57,15 @@ def validar_puja(cliente_id: int, importe, db: Session) -> None:
             422,
             detail={
                 "message": (
-                    f"No te alcanza el saldo. Disponible: ${disp}. Tus compras no pueden "
-                    "superar la suma de tus medios de pago (cheque/tarjeta/cuenta)."
+                    f"No te alcanza el saldo. Disponible: ${disp}. La puja no puede superar "
+                    "la suma de tus medios de pago."
                 ),
                 "code": "SALDO_INSUFICIENTE",
-                "saldoDisponible": float(max(disp, Decimal("0"))),
+                "saldoDisponible": float(disp),
             },
         )
 
 
 def resumen(cliente_id: int, db: Session) -> dict:
     total = saldo_total(cliente_id, db)
-    comp = comprometido(cliente_id, db)
-    disp = total - comp
-    if disp < 0:
-        disp = Decimal("0")  # nunca mostrar disponible negativo
-    return {
-        "saldoTotal": float(total),
-        "comprometido": float(comp),
-        "disponible": float(disp),
-    }
+    return {"saldoTotal": float(total), "comprometido": 0.0, "disponible": float(total)}

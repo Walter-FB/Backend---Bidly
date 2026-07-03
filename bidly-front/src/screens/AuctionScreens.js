@@ -2,9 +2,9 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { View, Text, ScrollView, StyleSheet, ActivityIndicator, Alert, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Screen, Header, Title, SectionLabel, Btn, Card, LiveBadge, Tag, ImgBox, ImageLightbox, BottomBar, Row, Display, SuccessBanner, Field } from '../components/ui';
+import { Screen, Header, Title, SectionLabel, Btn, Card, LiveBadge, Tag, ImgBox, ImageLightbox, BottomBar, Row, Display, SuccessBanner, Field, Chip } from '../components/ui';
 import { colors } from '../theme/theme';
-import { Subastas, Pujas, Asistentes, Productos, RegistroSubasta } from '../api/endpoints';
+import { Subastas, Pujas, Asistentes, Productos, RegistroSubasta, Clientes } from '../api/endpoints';
 import { BASE_URL } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { tituloSubasta, tagEstadoSubasta } from '../utils/subasta';
@@ -271,6 +271,8 @@ export function SubastaEnVivoScreen({ navigation, route }) {
   const [timeLeft, setTimeLeft] = useState(null);
   const [fotoAmpliada, setFotoAmpliada] = useState(false);
   const [montoIngresado, setMontoIngresado] = useState('');
+  const [medios, setMedios] = useState([]);
+  const [medioSelId, setMedioSelId] = useState(null);
   const mounted = useRef(true);
   const asistenteIdRef = useRef(null);
   const navegado = useRef(false);
@@ -283,6 +285,21 @@ export function SubastaEnVivoScreen({ navigation, route }) {
 
   // Mantener ref actualizada para usarla en callbacks sin crear dependencias.
   useEffect(() => { asistenteIdRef.current = asistenteId; }, [asistenteId]);
+
+  // Medios de pago del usuario (para elegir con cuál pagará si gana).
+  useEffect(() => {
+    if (user?.isGuest || !user?.clienteId) return;
+    Clientes.mediosPago(user.clienteId).then((data) => {
+      if (!mounted.current) return;
+      const list = data || [];
+      setMedios(list);
+      if (list.length) setMedioSelId((prev) => prev ?? list[0].identificador);
+    }).catch(() => {});
+  }, [user]);
+
+  const labelMedio = (m) => m.tipo === 'cheque' ? `Cheque ${m.numeroCheque || ''}`.trim()
+    : m.tipo === 'cuenta' ? `Cuenta ${m.banco || ''}`.trim()
+    : `Tarjeta ****${(m.numerotarjeta || m.numeroTarjeta || '').slice(-4)}`;
 
   // Sin timer de servidor: la subasta está 'abierta' hasta que el subastador la cierra.
 
@@ -488,6 +505,20 @@ export function SubastaEnVivoScreen({ navigation, route }) {
             </>
           )}
         </Card>
+
+        {!user?.isGuest && asistenteId && medios.length > 0 && (
+          <Card el style={{ marginTop: 12 }}>
+            <Text style={{ color: colors.muted, fontSize: 11, fontWeight: '800', letterSpacing: 1 }}>MEDIO DE PAGO</Text>
+            <Text style={{ color: colors.muted, fontSize: 12, marginTop: 4, marginBottom: 8 }}>Con este medio pagás si ganás.</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                {medios.map((m) => (
+                  <Chip key={m.identificador} label={labelMedio(m)} active={medioSelId === m.identificador} onPress={() => setMedioSelId(m.identificador)} />
+                ))}
+              </View>
+            </ScrollView>
+          </Card>
+        )}
 
         {!user?.isGuest && asistenteId && !esLidero && (
           <Card el style={{ marginTop: 12 }}>
