@@ -66,6 +66,16 @@ async def lifespan(app: FastAPI):
         conn.execute(text("ALTER TABLE admisiones ADD COLUMN IF NOT EXISTS alerta_origen VARCHAR DEFAULT 'no'"))
         conn.execute(text("ALTER TABLE admisiones ADD COLUMN IF NOT EXISTS alerta_origen_motivo VARCHAR"))
         conn.execute(text("ALTER TABLE admisiones ADD COLUMN IF NOT EXISTS alerta_origen_en TIMESTAMP"))
+        # Backfill de ubicación: bienes ya asegurados (aceptados) sin depósito → depósito por defecto.
+        conn.execute(text("""
+            INSERT INTO ubicaciones_bien (producto, deposito, sector, ingresado_en)
+            SELECT identificador, 'Depósito Central BIDLY',
+                   'Sector ' || chr(65 + (identificador % 6)) || ' · Estante ' || (((identificador % 20) + 1)::text),
+                   now()
+            FROM productos
+            WHERE seguro IS NOT NULL
+              AND identificador NOT IN (SELECT producto FROM ubicaciones_bien)
+        """))
         conn.commit()
     yield
 
