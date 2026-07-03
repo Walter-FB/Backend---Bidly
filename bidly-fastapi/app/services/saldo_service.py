@@ -67,8 +67,11 @@ def validar_puja(cliente_id: int, importe, db: Session) -> None:
 def resumen(cliente_id: int, db: Session) -> dict:
     total = saldo_total(cliente_id, db)
     comp = comprometido(cliente_id, db)
+    disp = total - comp
+    if disp < 0:
+        disp = Decimal("0")  # nunca mostrar disponible negativo
     return {
         "saldoTotal": float(total),
         "comprometido": float(comp),
-        "disponible": float(total - comp),
+        "disponible": float(disp),
     }

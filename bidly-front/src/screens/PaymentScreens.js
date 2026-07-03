@@ -117,7 +117,7 @@ export function MedioPagoScreen({ navigation, route }) {
   const [medioTipo, setMedioTipo] = useState('tarjeta'); // 'tarjeta' | 'cuenta' | 'cheque'
   const [nuevo, setNuevo] = useState({
     subtipo: 'credito', numeroTarjeta: '', vencimiento: '', titular: '',
-    saldo: '', numeroCuenta: '', banco: '', numeroCheque: '', montoCheque: '',
+    saldo: '100000', numeroCuenta: '', banco: '', numeroCheque: '', montoCheque: '10000',
   });
   const [guardando, setGuardando] = useState(false);
   const setN = (k) => (v) => setNuevo((s) => ({ ...s, [k]: v }));
@@ -158,7 +158,7 @@ export function MedioPagoScreen({ navigation, route }) {
       setMedios((m) => [...m, guardada]);
       setSelIdx(medios.length);
       setMostrarForm(false);
-      setNuevo({ subtipo: 'credito', numeroTarjeta: '', vencimiento: '', titular: '', saldo: '', numeroCuenta: '', banco: '', numeroCheque: '', montoCheque: '' });
+      setNuevo({ subtipo: 'credito', numeroTarjeta: '', vencimiento: '', titular: '', saldo: '100000', numeroCuenta: '', banco: '', numeroCheque: '', montoCheque: '10000' });
       Clientes.saldo(user.clienteId).then(setSaldoInfo).catch(() => {});
       Alert.alert('Medio agregado', 'Ya podés usarlo para pujar en subastas.');
     } catch (e) {
@@ -182,10 +182,10 @@ export function MedioPagoScreen({ navigation, route }) {
         <Title>Medio de pago</Title>
         <Sub>{esFlujoPago ? 'Elegí un medio para continuar con el pago.' : 'Administrá tus medios (tarjeta, cuenta o cheque) para pujar.'}</Sub>
 
-        {saldoInfo && (
+        {saldoInfo && medios.length > 0 && (
           <Card el style={{ marginBottom: 12 }}>
             <Row k="Saldo total" v={`$${Number(saldoInfo.saldoTotal).toLocaleString('es-AR')}`} />
-            <Row k="Comprometido" v={`$${Number(saldoInfo.comprometido).toLocaleString('es-AR')}`} />
+            <Row k="Comprometido (compras)" v={`$${Number(saldoInfo.comprometido).toLocaleString('es-AR')}`} />
             <Row k="Disponible para pujar" v={`$${Number(saldoInfo.disponible).toLocaleString('es-AR')}`} vc={colors.green} bold />
           </Card>
         )}

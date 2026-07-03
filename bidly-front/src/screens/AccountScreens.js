@@ -87,7 +87,6 @@ export function PerfilScreen({ navigation }) {
 
   const rows = [
     ['Mis productos', 'MisProductos'],
-    ['Mis publicaciones', 'MisAdmisiones'],
     ['Medios de pago', 'MedioPago'],
     ['Mis cobros', 'MisCobros'],
     ['Mis métricas', 'MisMetricas'],
@@ -1107,72 +1106,92 @@ export function DatosPersonalesScreen() {
 }
 
 // ─── MIS PRODUCTOS (con su estado de aprobación) ─────────────────────────────
-export function MisProductosScreen({ navigation, route }) {
+// Estado real del bien = el de su ADMISIÓN (lo que maneja la web /admin), no el
+// de producto_estado (que no se actualiza con ese flujo).
+const PROD_LABEL = {
+  solicitada:       { label: 'ESPERANDO APROBACIÓN', color: colors.gold },
+  en_inspeccion:    { label: 'EN INSPECCIÓN', color: colors.blue },
+  propuesta:        { label: 'PROPUESTA — REVISALA', color: colors.gold },
+  aprobada:         { label: 'EN SUBASTA', color: colors.green },
+  rechazada:        { label: 'RECHAZADA', color: colors.red },
+  rechazada_duenio: { label: 'DEVUELTA', color: colors.muted },
+};
+
+export function MisProductosScreen({ navigation }) {
   const { user } = useAuth();
-  const modoSeleccion = !!route.params?.modoSeleccion;
   const [productos, setProductos] = useState([]);
+  const [admisiones, setAdmisiones] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [ctrl, setCtrl] = useState(false);
 
-  useEffect(() => {
-    const cargar = () => {
-      if (!user?.clienteId) { setLoading(false); return; }
-      setLoading(true);
-      Productos.porDuenio(user.clienteId)
-        .then((data) => setProductos(data || []))
-        .catch(() => setProductos([]))
-        .finally(() => setLoading(false));
-    };
-    return navigation.addListener('focus', cargar);
-  }, [navigation, user]);
+  const cargar = () => {
+    if (!user?.clienteId) { setLoading(false); return; }
+    setLoading(true);
+    Promise.all([
+      Productos.porDuenio(user.clienteId).catch(() => []),
+      Admisiones.porDuenio(user.clienteId).catch(() => []),
+    ])
+      .then(([prods, adms]) => {
+        setProductos(Array.isArray(prods) ? prods : []);
+        setAdmisiones(Array.isArray(adms) ? adms : []);
+      })
+      .finally(() => setLoading(false));
+  };
+  useEffect(() => navigation.addListener('focus', cargar), [navigation, user]);
 
-  const seleccionar = (p) => navigation.navigate('CrearSubasta', { productoSeleccionado: p });
+  const admisionDe = (pid) => admisiones.find((a) => Number(a.producto?.identificador) === Number(pid));
+
+  const aceptar = (a) => Alert.alert('Aceptar propuesta', `Valor base $${a.valorBase} y comisión $${a.comision}. ¿Aceptás?`, [
+    { text: 'Cancelar', style: 'cancel' },
+    { text: 'Aceptar', onPress: async () => {
+        setCtrl(true);
+        try { await Admisiones.aprobarDuenio(a.identificador); Alert.alert('Listo', 'Tu bien entró al catálogo de la subasta.'); cargar(); }
+        catch (e) { Alert.alert('Error', e.message || 'No se pudo aceptar.'); } finally { setCtrl(false); }
+      } },
+  ]);
+  const rechazar = (a) => Alert.alert('Rechazar propuesta', 'Se devuelve el bien con gastos a tu cargo. ¿Confirmás?', [
+    { text: 'Cancelar', style: 'cancel' },
+    { text: 'Rechazar', style: 'destructive', onPress: async () => {
+        setCtrl(true);
+        try { await Admisiones.rechazarDuenio(a.identificador); cargar(); }
+        catch (e) { Alert.alert('Error', e.message || 'No se pudo rechazar.'); } finally { setCtrl(false); }
+      } },
+  ]);
 
   const confirmarEliminar = (p) => {
     Alert.alert('Eliminar producto', `¿Eliminar "${p.descripcionCatalogo || `Producto #${p.identificador}`}"?`, [
       { text: 'Cancelar', style: 'cancel' },
-      {
-        text: 'Eliminar', style: 'destructive',
-        onPress: async () => {
-          try {
-            await Productos.eliminar(p.identificador);
-            setProductos((prev) => prev.filter((x) => x.identificador !== p.identificador));
-          } catch (e) {
-            Alert.alert('No se pudo eliminar', e.message || 'El producto puede estar en una subasta.');
-          }
-        },
-      },
+      { text: 'Eliminar', style: 'destructive', onPress: async () => {
+          try { await Productos.eliminar(p.identificador); cargar(); }
+          catch (e) { Alert.alert('No se pudo eliminar', e.message || 'El producto puede estar en una subasta.'); }
+        } },
     ]);
   };
-
-  // En modo selección solo se pueden elegir productos aceptados.
-  const visibles = modoSeleccion ? productos.filter((p) => p.estado === 'aceptado') : productos;
 
   return (
     <Screen scroll contentStyle={{ paddingHorizontal: 22, paddingBottom: 40 }}>
       <Header />
-      <Title>{modoSeleccion ? 'Elegir\nproducto' : 'Mis\nproductos'}</Title>
-      {modoSeleccion && <Sub>Solo podés agregar productos ya aceptados por Bidly.</Sub>}
+      <Title>Mis{'\n'}productos</Title>
+      <Sub>Los bienes que ofreciste a subasta y en qué estado están.</Sub>
       {loading && <ActivityIndicator color={colors.blue} style={{ marginTop: 20 }} />}
-      {!loading && visibles.length === 0 && (
+      {!loading && productos.length === 0 && (
         <Card el style={{ alignItems: 'center', paddingVertical: 28, gap: 12 }}>
           <Ionicons name="cube-outline" size={44} color={colors.muted} />
-          <Text style={{ color: colors.muted, fontSize: 13, textAlign: 'center' }}>
-            {modoSeleccion ? 'No tenés productos aceptados todavía.' : 'Todavía no publicaste ningún producto.'}
-          </Text>
-          {!modoSeleccion && (
-            <TouchableOpacity onPress={() => navigation.navigate('Publicar')}>
-              <Text style={{ color: colors.blue, fontWeight: '700', fontSize: 13 }}>+ Publicar mi primer producto</Text>
-            </TouchableOpacity>
-          )}
+          <Text style={{ color: colors.muted, fontSize: 13, textAlign: 'center' }}>Todavía no publicaste ningún producto.</Text>
+          <TouchableOpacity onPress={() => navigation.navigate('Publicar')}>
+            <Text style={{ color: colors.blue, fontWeight: '700', fontSize: 13 }}>+ Publicar mi primer producto</Text>
+          </TouchableOpacity>
         </Card>
       )}
       <View style={{ gap: 12 }}>
-        {visibles.map((p) => {
-          const meta = ESTADO_PRODUCTO_LABEL[p.estado] || ESTADO_PRODUCTO_LABEL.solicitado;
-          const Wrapper = modoSeleccion ? TouchableOpacity : View;
+        {productos.map((p) => {
+          const a = admisionDe(p.identificador);
+          const estado = a?.estado || 'solicitada';
+          const meta = PROD_LABEL[estado] || PROD_LABEL.solicitada;
+          const enSubasta = estado === 'aprobada';
           return (
-            <Wrapper key={p.identificador} {...(modoSeleccion ? { onPress: () => seleccionar(p), activeOpacity: 0.75 } : {})}>
-              <Card el style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
+            <Card key={p.identificador} el style={{ gap: 8 }}>
+              <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
                 <View style={{ width: 64, height: 64, borderRadius: 10, backgroundColor: colors.cardEl, overflow: 'hidden' }}>
                   <Image source={{ uri: `${BASE_URL}/productos/${p.identificador}/portada` }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
                 </View>
@@ -1183,30 +1202,49 @@ export function MisProductosScreen({ navigation, route }) {
                     </Display>
                     <Tag label={meta.label} color={meta.color} />
                   </View>
-                  {p.estado === 'rechazado' && p.causaRechazo ? (
-                    <Text style={{ color: colors.red, fontSize: 12 }} numberOfLines={2}>Causa: {p.causaRechazo}</Text>
-                  ) : !!p.descripcionCompleta && (
+                  {!!p.descripcionCompleta && (
                     <Text style={{ color: colors.muted, fontSize: 12 }} numberOfLines={2}>{p.descripcionCompleta}</Text>
                   )}
                   <Text style={{ color: colors.blue, fontSize: 11, fontWeight: '700', marginTop: 4 }}>ID #{p.identificador}</Text>
                 </View>
-                {modoSeleccion
-                  ? <Ionicons name="add-circle" size={28} color={colors.blue} />
-                  : (
-                    <TouchableOpacity onPress={() => confirmarEliminar(p)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                      <Ionicons name="trash-outline" size={22} color="#ef4444" />
-                    </TouchableOpacity>
-                  )}
-              </Card>
-            </Wrapper>
+                {!enSubasta && (
+                  <TouchableOpacity onPress={() => confirmarEliminar(p)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                    <Ionicons name="trash-outline" size={22} color="#ef4444" />
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {estado === 'solicitada' && (
+                <Text style={{ color: colors.muted, fontSize: 12 }}>Bidly lo está revisando. Te avisamos cuando avance.</Text>
+              )}
+              {estado === 'en_inspeccion' && a?.direccionEnvio && (
+                <Text style={{ color: colors.muted, fontSize: 12.5 }}>Enviá el bien a: {a.direccionEnvio}</Text>
+              )}
+              {estado === 'rechazada' && a?.observacion && (
+                <Text style={{ color: colors.red, fontSize: 12.5 }}>Motivo: {a.observacion}</Text>
+              )}
+              {estado === 'aprobada' && (
+                <Text style={{ color: colors.green, fontSize: 12.5 }}>Incluido en la subasta. ¡Suerte con el remate!</Text>
+              )}
+              {estado === 'propuesta' && a && (
+                <View style={{ gap: 4 }}>
+                  <Text style={{ color: colors.gold, fontSize: 12.5, fontWeight: '700' }}>Bidly te propuso un precio. Aceptalo para entrar a la subasta:</Text>
+                  <Row k="Valor base" v={`$${Number(a.valorBase).toLocaleString('es-AR')}`} />
+                  <Row k="Comisión" v={`$${Number(a.comision).toLocaleString('es-AR')}`} />
+                  {a.subasta?.fecha && <Row k="Subasta" v={`${a.subasta.fecha} · ${a.subasta.ubicacion || ''}`} />}
+                  <View style={{ flexDirection: 'row', gap: 10, marginTop: 6 }}>
+                    <Btn title="Aceptar" onPress={() => aceptar(a)} disabled={ctrl} style={{ flex: 1 }} />
+                    <Btn title="Rechazar" kind="danger" onPress={() => rechazar(a)} disabled={ctrl} style={{ flex: 1 }} />
+                  </View>
+                </View>
+              )}
+            </Card>
           );
         })}
       </View>
-      {!modoSeleccion && (
-        <View style={{ marginTop: 24 }}>
-          <Btn title="+ Publicar nuevo producto" onPress={() => navigation.navigate('Publicar')} />
-        </View>
-      )}
+      <View style={{ marginTop: 24 }}>
+        <Btn title="+ Publicar nuevo producto" onPress={() => navigation.navigate('Publicar')} />
+      </View>
     </Screen>
   );
 }
