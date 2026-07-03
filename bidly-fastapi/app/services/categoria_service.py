@@ -1,55 +1,59 @@
-"""Mejora automática de categoría del cliente.
+"""Categorías de postores/subastas y su orden.
 
-Enunciado: "La diversidad de los medios de pago del usuario y su actividad en las
-subastas permiten mejorar su categoría." Solo mejora, nunca baja.
-
-Actualiza el VALOR de clientes.categoria (DML), sin tocar el DDL de la tabla.
+Consigna: "la categoría de la subasta debe ser menor o igual que la propia" para
+que un postor pueda acceder/pujar. Y "la actividad en las subastas permite mejorar
+su categoría" (solo mejora, nunca baja). Trabaja sobre el VALOR de clientes.categoria
+(DML), sin tocar el DDL.
 """
 from sqlalchemy.orm import Session
 
 from app.models.cliente import Cliente
-from app.models.medio_pago import MedioPago
 from app.models.asistente import Asistente
 from app.models.registro_subasta import RegistroDeSubasta
 
 CATEGORIAS = ["comun", "especial", "plata", "oro", "platino"]
 
 
-def _rango(cat: str) -> int:
+def rango(cat: str) -> int:
     try:
         return CATEGORIAS.index((cat or "comun").lower())
     except ValueError:
         return 0
 
 
-def _categoria_objetivo(tipos: int, asistidas: int, ganadas: int) -> str:
-    if tipos >= 3 and ganadas >= 3:
+def puede_acceder(categoria_usuario: str, categoria_subasta: str) -> bool:
+    """True si la categoría de la subasta es <= la del usuario."""
+    return rango(categoria_subasta) <= rango(categoria_usuario)
+
+
+def sin_tope_maximo(categoria_usuario: str) -> bool:
+    """Oro y platino no tienen tope máximo de puja (límite del 20%)."""
+    return (categoria_usuario or "comun").lower() in ("oro", "platino")
+
+
+def _categoria_objetivo(asistidas: int, ganadas: int) -> str:
+    if ganadas >= 3:
         return "platino"
-    if tipos >= 2 and ganadas >= 2:
+    if ganadas >= 2:
         return "oro"
-    if tipos >= 2 or ganadas >= 1:
+    if ganadas >= 1:
         return "plata"
-    if tipos >= 1 or asistidas >= 1:
+    if asistidas >= 1:
         return "especial"
     return "comun"
 
 
 def recalcular(cliente_id: int, db: Session) -> str | None:
+    """Mejora la categoría según la actividad (asistencias/ganadas). Solo sube."""
     cliente = db.query(Cliente).filter(Cliente.identificador == cliente_id).first()
     if not cliente:
         return None
 
-    tipos = (
-        db.query(MedioPago.tipo)
-        .filter(MedioPago.cliente == cliente_id, MedioPago.verificado == "si")
-        .distinct()
-        .count()
-    )
     asistidas = db.query(Asistente).filter(Asistente.cliente == cliente_id).count()
     ganadas = db.query(RegistroDeSubasta).filter(RegistroDeSubasta.cliente == cliente_id).count()
 
-    objetivo = _categoria_objetivo(tipos, asistidas, ganadas)
-    if _rango(objetivo) > _rango(cliente.categoria):
+    objetivo = _categoria_objetivo(asistidas, ganadas)
+    if rango(objetivo) > rango(cliente.categoria):
         cliente.categoria = objetivo  # solo mejora
         db.flush()
         return objetivo

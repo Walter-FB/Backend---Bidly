@@ -4,28 +4,39 @@ Circuito (enunciado): el dueño carga el bien + declaraciones → la empresa pid
 enviarlo a inspección → lo acepta o rechaza (con causas) → si lo acepta propone
 valor base + comisión + subasta → el dueño acepta (pasa al catálogo) o rechaza
 (devolución con gastos).
+
+`producto_estado` se mantiene en sync con el estado de la admisión:
+  en_inspeccion → 'en_inspeccion'; aprobada → 'aceptado' (+ disponible='si');
+  rechazada / rechazada_duenio → 'rechazado' (+ causa).
+El seguro del bien se contrata inline sobre la tabla `seguros` (sin ubicacion_bien,
+que quedó borrada).
 """
 from datetime import datetime
 from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import Optional
+from typing import Optional, List
+from pydantic import BaseModel
 
 from app.database import get_db
 from app.models.admision import Admision
 from app.models.producto import Producto
+from app.models.producto_estado import ProductoEstado
 from app.models.foto import Foto
 from app.models.subasta import Subasta
 from app.models.catalogo import Catalogo
 from app.models.item_catalogo import ItemCatalogo
+from app.models.seguro import Seguro
 from app.models.empleado import EMPLEADO_SISTEMA
 from app.schemas.admision import (
     AdmisionCreate, InspeccionRequest, RechazarAdmisionRequest,
     ProponerRequest, RechazarDuenioRequest,
 )
 from app.services import notificacion_service
-from pydantic import BaseModel
-from typing import List
+
+router = APIRouter()
+
+COMPANIA_SEGURO = "Aseguradora BIDLY S.A."
 
 
 class ItemColeccion(BaseModel):
@@ -39,7 +50,41 @@ class ColeccionRequest(BaseModel):
     nombreColeccion: str
     items: List[ItemColeccion]
 
-router = APIRouter()
+
+def _sync_producto_estado(producto_id: int, estado: str, causa: Optional[str], db: Session) -> None:
+    """Refleja el avance de la admisión en producto_estado (SPEC) y en
+    productos.disponible ('si' sólo cuando el bien queda aceptado)."""
+    if producto_id is None:
+        return
+    pe = db.query(ProductoEstado).filter(ProductoEstado.producto == producto_id).first()
+    if not pe:
+        pe = ProductoEstado(producto=producto_id)
+        db.add(pe)
+    pe.estado = estado
+    pe.causa_rechazo = causa
+    pe.fecha_cambio = datetime.utcnow()
+    prod = db.query(Producto).filter(Producto.identificador == producto_id).first()
+    if prod:
+        prod.disponible = "si" if estado == "aceptado" else "no"
+
+
+def _asegurar_producto(producto_id: int, valor_base, db: Session) -> None:
+    """De cada bien recibido para la venta se contrata un seguro según el valor
+    base. Guarda la póliza en `seguros` y la referencia en productos.seguro."""
+    prod = db.query(Producto).filter(Producto.identificador == producto_id).first()
+    if not prod or prod.seguro:
+        return
+    nropoliza = f"POL-{producto_id}-{int(datetime.utcnow().timestamp())}"
+    db.add(Seguro(
+        nropoliza=nropoliza,
+        compania=COMPANIA_SEGURO,
+        polizacombinada="no",
+        importe=Decimal(str(valor_base or 0)) or Decimal("1"),
+    ))
+    # La póliza debe existir en `seguros` ANTES de referenciarla en productos.seguro
+    # (FK fk_productos_seguros); forzamos el INSERT con flush.
+    db.flush()
+    prod.seguro = nropoliza
 
 
 def _to_dict(a: Admision, db: Session) -> dict:
@@ -145,26 +190,26 @@ def aprobar_duenio(id: int, db: Session = Depends(get_db)):
 
     valor = Decimal(str(a.valor_base or 0))
     comision = Decimal(str(a.comision)) if a.comision is not None else valor * Decimal("0.10")
-    item = ItemCatalogo(
+    db.add(ItemCatalogo(
         catalogo=catalogo.identificador,
         producto=a.producto,
         preciobase=valor,
         comision=comision,
         subastado="no",
-    )
-    db.add(item)
+    ))
 
     # De cada bien recibido para la venta se contrata un seguro según el valor base.
-    from app.services import seguro_service
-    seguro_service.contratar_para_producto(a.producto, valor, db)
+    _asegurar_producto(a.producto, valor, db)
 
     a.estado = "aprobada"
     a.actualizado_en = datetime.utcnow()
+    # producto_estado: aceptado → disponible='si' (entra al catálogo).
+    _sync_producto_estado(a.producto, "aceptado", None, db)
     db.commit()
 
     notificacion_service.crear(
         a.duenio, "seguro",
-        "Tu bien fue asegurado y guardado en depósito. Podés ver la póliza y su ubicación en la app.",
+        "Tu bien fue aceptado y asegurado. Ya forma parte del catálogo de la subasta.",
         db,
     )
     db.commit()
@@ -181,6 +226,7 @@ def rechazar_duenio(id: int, body: RechazarDuenioRequest, db: Session = Depends(
     if body.gastosDevolucion is not None:
         a.gastos_devolucion = body.gastosDevolucion
     a.actualizado_en = datetime.utcnow()
+    _sync_producto_estado(a.producto, "rechazado", "El dueño no aceptó el valor base/comisión propuestos.", db)
     db.commit()
     return _to_dict(a, db)
 
@@ -212,6 +258,7 @@ def pedir_inspeccion(id: int, body: InspeccionRequest, db: Session = Depends(get
     a.estado = "en_inspeccion"
     a.direccion_envio = body.direccionEnvio
     a.actualizado_en = datetime.utcnow()
+    _sync_producto_estado(a.producto, "en_inspeccion", None, db)
     db.commit()
     notificacion_service.crear(
         a.duenio, "admision",
@@ -231,6 +278,7 @@ def rechazar(id: int, body: RechazarAdmisionRequest, db: Session = Depends(get_d
     if body.gastosDevolucion is not None:
         a.gastos_devolucion = body.gastosDevolucion
     a.actualizado_en = datetime.utcnow()
+    _sync_producto_estado(a.producto, "rechazado", body.observacion, db)
     db.commit()
     notificacion_service.crear(
         a.duenio, "admision",
@@ -252,13 +300,24 @@ def crear_coleccion(body: ColeccionRequest, db: Session = Depends(get_db)):
     if not body.items:
         raise HTTPException(422, detail={"message": "La colección no tiene ítems", "code": "SIN_ITEMS"})
 
+    # Consigna: la colección lleva el nombre del usuario y el seguro es de un mismo
+    # dueño (único beneficiario). Todos los bienes deben ser del MISMO dueño.
+    admisiones = [
+        db.query(Admision).filter(Admision.identificador == it.admisionId).first()
+        for it in body.items
+    ]
+    admisiones = [a for a in admisiones if a]
+    duenios_distintos = {a.duenio for a in admisiones}
+    if len(duenios_distintos) > 1:
+        raise HTTPException(422, detail={
+            "message": "Una colección debe ser de un solo dueño (lleva su nombre y el seguro tiene un único beneficiario).",
+            "code": "COLECCION_MULTIPLE_DUENIO"})
+
     resultado = []
     duenios = set()
-    for it in body.items:
-        a = db.query(Admision).filter(Admision.identificador == it.admisionId).first()
-        if not a:
-            continue
+    for a in admisiones:
         a.estado = "propuesta"
+        it = next(x for x in body.items if x.admisionId == a.identificador)
         a.valor_base = it.valorBase
         a.comision = it.comision if it.comision is not None else Decimal(str(it.valorBase)) * Decimal("0.10")
         a.subasta = body.subastaId

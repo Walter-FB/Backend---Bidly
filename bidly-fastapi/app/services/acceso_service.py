@@ -3,15 +3,19 @@
 - La categoría de la subasta debe ser menor o igual que la del usuario.
 - Solo puede pujar quien tenga al menos un medio de pago VERIFICADO.
 - Un usuario no puede estar conectado a más de una subasta a la vez.
+
+Adaptación (sin `subasta_sesion` / `subasta_estado_admin`, tablas borradas): una
+subasta está "en vivo" cuando `subastas.estado == 'abierta'` (DDL del profe). El
+chequeo de "una sola a la vez" se hace mirando de qué OTRAS subastas abiertas es
+asistente el cliente.
 """
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.models.cliente import Cliente
 from app.models.subasta import Subasta
-from app.models.medio_pago import MedioPago
+from app.models.pagos import MedioPago
 from app.models.asistente import Asistente
-from app.models.subasta_estado_admin import SubastaEstadoAdmin
 
 CATEGORIAS = ["comun", "especial", "plata", "oro", "platino"]
 
@@ -38,12 +42,13 @@ def tiene_medio_verificado(cliente_id: int, db: Session) -> bool:
 
 
 def _subasta_viva(subasta_id: int, db: Session) -> bool:
-    admin = db.query(SubastaEstadoAdmin).filter(SubastaEstadoAdmin.subasta == subasta_id).first()
-    return bool(admin and admin.estado_subasta == "iniciada")
+    """En vivo = abierta (estado directo de la DDL del profe)."""
+    sub = db.query(Subasta).filter(Subasta.identificador == subasta_id).first()
+    return bool(sub and sub.estado == "abierta")
 
 
 def conectado_en_otra_viva(cliente_id: int, subasta_id: int, db: Session) -> bool:
-    """True si el cliente ya es asistente de OTRA subasta actualmente en vivo."""
+    """True si el cliente ya es asistente de OTRA subasta actualmente abierta."""
     otras = (
         db.query(Asistente)
         .filter(Asistente.cliente == cliente_id, Asistente.subasta != subasta_id)

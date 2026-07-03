@@ -1,12 +1,11 @@
-"""Pagos al dueño y cuentas a la vista."""
+"""Pagos al dueño (payouts) y cuentas a la vista donde cobra."""
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models.payout import Payout
-from app.models.cuenta_duenio import CuentaDuenio
-from app.schemas.payout import CuentaCreate, PagarPayoutRequest
+from app.models.pagos import Payout, CuentaDuenio
+from app.schemas.pagos import CuentaCreate, PagarPayoutRequest
 from app.services import payout_service, notificacion_service
 
 router = APIRouter()

@@ -1,17 +1,15 @@
 """Saldo/límite disponible de los medios de pago del cliente.
 
-Enunciado + pedido del profe: cada medio de pago tiene un monto disponible
-(cheque certificado → montocheque; tarjeta/cuenta → saldo). Las compras del
-cliente no pueden superar la suma de esos montos. Al alcanzar el límite ya no
-puede seguir pujando.
+Cada medio de pago tiene un monto disponible (cheque certificado → montocheque;
+tarjeta/cuenta → saldo). Las compras del cliente no pueden superar la suma de esos
+montos. Al alcanzar el límite ya no puede seguir pujando.
 """
 from decimal import Decimal
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from app.models.medio_pago import MedioPago
+from app.models.pagos import MedioPago, Reembolso
 from app.models.registro_subasta import RegistroDeSubasta
-from app.models.reembolso import Reembolso
 
 
 def _d(v) -> Decimal:

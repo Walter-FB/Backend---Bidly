@@ -1,40 +1,31 @@
-from datetime import datetime
-from decimal import Decimal
-from sqlalchemy import text
+"""Subastas: enriquecido para el front y adjudicación de ítems.
+
+Sin máquina de estados en vivo: una subasta usa directamente `subastas.estado`
+('abierta' | 'cerrada'), como en la DDL del profe. Sin sesión ni timers (eso se
+quemó). Sí conserva moneda dual (subasta_moneda) y, al cerrar, genera el payout al
+dueño, la notificación al ganador y la fila de registro_pago pendiente.
+"""
 from sqlalchemy.orm import Session
+
 from app.models.subasta import Subasta
 from app.models.subasta_moneda import SubastaMoneda
-from app.models.subasta_estado_admin import SubastaEstadoAdmin
-from app.models.subasta_sesion import SubastaSesion
 from app.models.item_catalogo import ItemCatalogo
 from app.models.catalogo import Catalogo
 from app.models.producto import Producto
 from app.models.asistente import Asistente
+from app.models.puja import Puja
+from app.models.registro_subasta import RegistroDeSubasta
+from app.models.pagos import RegistroPago, Reembolso
 
-FASE_PENDIENTE  = "pendiente"
-FASE_PROGRAMADA = "programada"
-FASE_EN_CURSO   = "en_curso"
-FASE_FINALIZADA = "finalizada"
-TIMEOUT_SEG = 1800
+
+def _moneda(subasta_id: int, db: Session) -> str:
+    sm = db.query(SubastaMoneda).filter(SubastaMoneda.subasta == subasta_id).first()
+    return sm.moneda if sm else "pesos"
 
 
 def enrich(subasta: Subasta, db: Session) -> dict:
-    data: dict = {}
-    for col in subasta.__table__.columns:
-        data[col.name] = getattr(subasta, col.name)
-
-    sm = db.query(SubastaMoneda).filter(SubastaMoneda.subasta == subasta.identificador).first()
-    data["moneda"] = sm.moneda if sm else None
-
-    admin = (
-        db.query(SubastaEstadoAdmin)
-        .filter(SubastaEstadoAdmin.subasta == subasta.identificador)
-        .first()
-    )
-    data["estadoSubasta"]    = admin.estado_subasta if admin else "pendiente"
-    data["algunaVezAbierta"] = admin.alguna_vez_abierta if admin else False
-    data["fechaApertura"]    = admin.fecha_apertura if admin else None
-    data["fechaInicioReal"]  = admin.fecha_inicio_real if admin else None
+    data: dict = {col.name: getattr(subasta, col.name) for col in subasta.__table__.columns}
+    data["moneda"] = _moneda(subasta.identificador, db)
 
     items = (
         db.query(ItemCatalogo)
@@ -55,37 +46,8 @@ def enrich(subasta: Subasta, db: Session) -> dict:
         data["titulo"] = None
 
     data["totalAsistentes"] = (
-        db.query(Asistente)
-        .filter(Asistente.subasta == subasta.identificador)
-        .count()
+        db.query(Asistente).filter(Asistente.subasta == subasta.identificador).count()
     )
-
-    sesion = (
-        db.query(SubastaSesion)
-        .filter(SubastaSesion.subasta == subasta.identificador)
-        .first()
-    )
-    estado_sub = data["estadoSubasta"]
-
-    if estado_sub == "finalizada":
-        data["fase"]              = FASE_FINALIZADA
-        data["segundosRestantes"] = 0
-    elif estado_sub == "iniciada" and sesion:
-        data["fase"] = FASE_EN_CURSO
-        elapsed = (datetime.utcnow() - sesion.timer_desde).total_seconds()
-        data["segundosRestantes"] = max(0, int(TIMEOUT_SEG - elapsed))
-    elif estado_sub == "esperando":
-        data["fase"] = FASE_PROGRAMADA
-        try:
-            inicio = datetime.combine(subasta.fecha, subasta.hora)
-            secs = (inicio - datetime.utcnow()).total_seconds()
-            data["segundosRestantes"] = max(0, int(secs))
-        except Exception:
-            data["segundosRestantes"] = None
-    else:
-        data["fase"]              = FASE_PENDIENTE
-        data["segundosRestantes"] = None
-
     return data
 
 
@@ -93,26 +55,122 @@ def enrich_all(subastas: list[Subasta], db: Session) -> list[dict]:
     return [enrich(s, db) for s in subastas]
 
 
-def referencia_inactividad(subasta_id: int, db: Session) -> datetime:
-    result = db.execute(
-        text("""
-            SELECT MAX(pf.fechahora)
-            FROM pujo_fecha pf
-            JOIN pujos p ON pf.pujo = p.identificador
-            JOIN itemscatalogo ic ON p.item = ic.identificador
-            JOIN catalogos c ON ic.catalogo = c.identificador
-            WHERE c.subasta = :sid
-        """),
-        {"sid": subasta_id},
-    ).scalar()
+def _comprar_por_empresa(item: ItemCatalogo, db: Session) -> None:
+    """Nadie pujó: la empresa compra el bien al valor base y se paga al dueño
+    (payout origen='empresa'). No hay comprador, así que no se crea registroDeSubasta."""
+    from app.services import payout_service, notificacion_service
+    prod = db.query(Producto).filter(Producto.identificador == item.producto).first()
+    if not prod or payout_service.existe_payout(item.producto, db):
+        return
+    catalogo = db.query(Catalogo).filter(Catalogo.identificador == item.catalogo).first()
+    payout = payout_service.crear_payout(
+        duenio_id=prod.duenio,
+        producto_id=item.producto,
+        subasta_id=catalogo.subasta if catalogo else None,
+        importe_bruto=item.preciobase,
+        comision=item.comision,
+        origen="empresa",
+        db=db,
+    )
+    notificacion_service.crear(
+        prod.duenio, "payout",
+        f"Nadie pujó tu bien: la empresa lo compró al valor base. "
+        f"Se te acreditarán ${payout.importe_neto} en tu cuenta declarada.",
+        db,
+    )
 
-    if result:
-        return result
 
-    sesion = db.query(SubastaSesion).filter(SubastaSesion.subasta == subasta_id).first()
-    return sesion.iniciada_en if sesion else datetime.utcnow()
+def adjudicar_item(item_id: int, db: Session) -> ItemCatalogo:
+    """Cierra un ítem:
+      - con pujas → el mejor postor gana: registroDeSubasta (importe + comisión),
+        pujos.ganador='si', payout al dueño (neto = puja − comisión), registro_pago
+        pendiente + reembolso, y notificación al ganador con el desglose a pagar.
+      - sin pujas → la empresa compra al valor base y se genera el payout al dueño.
+    """
+    from app.services import payout_service, notificacion_service
+    item = (
+        db.query(ItemCatalogo)
+        .with_for_update()
+        .filter(ItemCatalogo.identificador == item_id)
+        .first()
+    )
+    if not item or item.subastado == "si":
+        return item
+
+    puja_ganadora = (
+        db.query(Puja)
+        .filter(Puja.item == item_id)
+        .order_by(Puja.importe.desc())
+        .first()
+    )
+    item.subastado = "si"
+
+    if not puja_ganadora:
+        _comprar_por_empresa(item, db)
+        db.flush()
+        return item
+
+    puja_ganadora.ganador = "si"
+    asistente = db.query(Asistente).filter(Asistente.identificador == puja_ganadora.asistente).first()
+    catalogo  = db.query(Catalogo).filter(Catalogo.identificador == item.catalogo).first()
+    prod      = db.query(Producto).filter(Producto.identificador == item.producto).first()
+
+    registro = RegistroDeSubasta(
+        subasta=catalogo.subasta if catalogo else None,
+        duenio=prod.duenio if prod else None,
+        producto=item.producto,
+        cliente=asistente.cliente if asistente else None,
+        importe=puja_ganadora.importe,
+        comision=item.comision,
+    )
+    db.add(registro)
+    db.flush()
+
+    # Pago de la compra: nace pendiente (el ganador paga después) + reembolso 'no'.
+    importe_total = (puja_ganadora.importe or 0) + (item.comision or 0)
+    db.add(RegistroPago(registro=registro.identificador, estado="pendiente", importe_total=importe_total))
+    db.add(Reembolso(registro=registro.identificador, reembolsada="no"))
+
+    # Pago al dueño (payout): neto = puja − comisión, a acreditar en su cuenta a la vista.
+    if prod and not payout_service.existe_payout(item.producto, db):
+        payout_service.crear_payout(
+            duenio_id=prod.duenio,
+            producto_id=item.producto,
+            subasta_id=catalogo.subasta if catalogo else None,
+            importe_bruto=puja_ganadora.importe,
+            comision=item.comision,
+            origen="venta",
+            db=db,
+        )
+
+    if asistente:
+        notificacion_service.crear(
+            asistente.cliente, "ganaste",
+            f"¡Ganaste el ítem! Pujado ${puja_ganadora.importe} + comisión ${item.comision} = "
+            f"${importe_total}. El costo de envío a tu dirección declarada se suma al pagar "
+            "(o retirás en persona y perdés el seguro).",
+            db,
+        )
+        # La actividad (ganar) puede mejorar la categoría del comprador.
+        from app.services import categoria_service
+        categoria_service.recalcular(asistente.cliente, db)
+
+    db.flush()
+    return item
 
 
-def inactividad_vencida(subasta_id: int, now: datetime, db: Session) -> bool:
-    ref = referencia_inactividad(subasta_id, db)
-    return (now - ref).total_seconds() >= TIMEOUT_SEG
+def cerrar_subasta(subasta_id: int, db: Session) -> None:
+    """Cierra la subasta: adjudica todos los ítems pendientes y la marca 'cerrada'."""
+    pendientes = (
+        db.query(ItemCatalogo)
+        .join(Catalogo, ItemCatalogo.catalogo == Catalogo.identificador)
+        .filter(Catalogo.subasta == subasta_id, ItemCatalogo.subastado == "no")
+        .all()
+    )
+    for item in pendientes:
+        adjudicar_item(item.identificador, db)
+
+    subasta = db.query(Subasta).filter(Subasta.identificador == subasta_id).first()
+    if subasta:
+        subasta.estado = "cerrada"
+    db.flush()

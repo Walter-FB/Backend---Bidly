@@ -1,30 +1,14 @@
+"""Notificaciones del cliente. El push por Expo se quitó junto con la tabla
+`cliente_push_tokens`; el front las consume por polling."""
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from typing import List
 
 from app.database import get_db
 from app.models.notificacion import Notificacion
-from app.models.cliente_push_token import ClientePushToken
 from app.schemas.notificacion import NotificacionResponse
 
 router = APIRouter()
-
-
-class PushTokenCreate(BaseModel):
-    cliente: int
-    token: str
-
-
-@router.post("/push-token")
-def registrar_push_token(body: PushTokenCreate, db: Session = Depends(get_db)):
-    existing = db.query(ClientePushToken).filter(ClientePushToken.cliente == body.cliente).first()
-    if existing:
-        existing.token = body.token
-    else:
-        db.add(ClientePushToken(cliente=body.cliente, token=body.token))
-    db.commit()
-    return {"ok": True}
 
 
 @router.get("/{id}", response_model=NotificacionResponse)

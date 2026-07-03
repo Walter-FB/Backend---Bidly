@@ -1,16 +1,21 @@
+"""Registro de venta (registroDeSubasta) + pago de la compra por el ganador.
+
+Guarda importe + comisión + comprador + dueño + producto + subasta (DDL del profe)
+y suma, sobre tablas de features, el pago (registro_pago), el reembolso (reembolsos)
+y la multa por impago (multas). Moneda dual: una subasta en dólares no se cancela
+con cheque.
+"""
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import List
 
 from app.database import get_db
 from app.models.registro_subasta import RegistroDeSubasta
-from app.models.registro_pago import RegistroPago
-from app.models.reembolso import Reembolso
+from app.models.pagos import RegistroPago, Reembolso, Multa, MedioPago
 from app.models.subasta import Subasta
+from app.models.subasta_moneda import SubastaMoneda
 from app.models.persona import Persona
 from app.models.credencial import Credencial
-from app.models.multa import Multa
 from app.schemas.registro_subasta import RegistroCreate, PagarRequest, ReembolsoUpdate
 from app.services import subasta_service, multa_service, notificacion_service
 
@@ -28,7 +33,6 @@ def _enrich_registro(r: RegistroDeSubasta, db: Session) -> dict:
         if puja_ganadora else None
     )
 
-    # El front espera subasta y cliente como objetos anidados (no enteros).
     subasta_obj = db.query(Subasta).filter(Subasta.identificador == r.subasta).first()
     persona = db.query(Persona).filter(Persona.identificador == r.cliente).first()
     cred    = db.query(Credencial).filter(Credencial.cliente == r.cliente).first()
@@ -79,21 +83,13 @@ def get_registro(id: int, db: Session = Depends(get_db)):
 
 @router.get("/cliente/{cliente_id}")
 def get_registros_cliente(cliente_id: int, db: Session = Depends(get_db)):
-    registros = (
-        db.query(RegistroDeSubasta)
-        .filter(RegistroDeSubasta.cliente == cliente_id)
-        .all()
-    )
+    registros = db.query(RegistroDeSubasta).filter(RegistroDeSubasta.cliente == cliente_id).all()
     return [_enrich_registro(r, db) for r in registros]
 
 
 @router.get("/subasta/{subasta_id}")
 def get_registros_subasta(subasta_id: int, db: Session = Depends(get_db)):
-    registros = (
-        db.query(RegistroDeSubasta)
-        .filter(RegistroDeSubasta.subasta == subasta_id)
-        .all()
-    )
+    registros = db.query(RegistroDeSubasta).filter(RegistroDeSubasta.subasta == subasta_id).all()
     return [_enrich_registro(r, db) for r in registros]
 
 
@@ -134,8 +130,7 @@ def declarar_impago(id: int, db: Session = Depends(get_db)):
 
     if r.cliente:
         notificacion_service.crear(
-            r.cliente,
-            "multa",
+            r.cliente, "multa",
             f"No se pudo completar el pago. Se generó una multa de ${multa.importe}. "
             "Tenés 72hs para presentar los fondos antes de derivar el caso a la justicia.",
             db,
@@ -148,8 +143,6 @@ def declarar_impago(id: int, db: Session = Depends(get_db)):
 @router.post("/{id}/pagar")
 def pagar(id: int, body: PagarRequest, db: Session = Depends(get_db)):
     from decimal import Decimal
-    from app.models.medio_pago import MedioPago
-    from app.models.subasta_moneda import SubastaMoneda
 
     r = db.query(RegistroDeSubasta).filter(RegistroDeSubasta.identificador == id).first()
     if not r:
@@ -208,7 +201,6 @@ def update_reembolso(id: int, body: ReembolsoUpdate, db: Session = Depends(get_d
     db.commit()
 
     if body.reembolsada == "si" and r.cliente:
-        from app.services import notificacion_service
         notificacion_service.crear(r.cliente, "reembolso", "Tu pago fue reembolsado exitosamente", db)
         db.commit()
 

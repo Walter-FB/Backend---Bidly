@@ -88,25 +88,22 @@ export function formatFechaSubasta(fecha) {
   }
 }
 
-/** Todavía no iniciada (sin sesión de puja abierta). */
+/** Todavía no abierta. */
 export function esSubastaPendiente(subasta) {
   if (!subasta) return false;
-  if (subasta.estadoSubasta === 'pendiente') return true;
-  return subasta.fase === 'pendiente';
+  return subasta.estado === 'cerrada';
 }
 
-/** Finalizada: catálogo agotado o cerrada tras haberse iniciado. */
+/** Finalizada = cerrada (estado de la DDL del profe). */
 export function esSubastaFinalizada(subasta) {
   if (!subasta) return false;
-  if (subasta.estadoSubasta === 'finalizada') return true;
-  return subasta.fase === 'finalizada';
+  return subasta.estado === 'cerrada';
 }
 
-/** Subasta en vivo (puja iniciada por administración). */
+/** Subasta en vivo = abierta. */
 export function esSubastaEnVivo(subasta) {
   if (!subasta) return false;
-  if (subasta.estadoSubasta === 'iniciada') return true;
-  return subasta.fase === 'en_curso';
+  return subasta.estado === 'abierta';
 }
 
 /** Subasta en curso para el vendedor (misma lógica que en vivo). */
@@ -121,15 +118,6 @@ export function esMiSubasta(subasta, clienteId) {
 
 export function tagEstadoSubasta(subasta) {
   const sub = subasta || {};
-  const est = sub.estadoSubasta;
-  if (est === 'iniciada') return { label: 'EN VIVO', color: colors.green };
-  if (est === 'finalizada') return { label: 'FINALIZADA', color: colors.muted };
-  if (est === 'esperando') return { label: 'ESPERANDO', color: colors.blue };
-  if (est === 'pendiente') return { label: 'PENDIENTE', color: colors.gold };
-
-  // Fallback por fase (compatibilidad con respuestas sin estadoSubasta)
-  if (sub.fase === 'en_curso') return { label: 'EN VIVO', color: colors.green };
-  if (esSubastaFinalizada(sub)) return { label: 'FINALIZADA', color: colors.muted };
-  if (sub.fase === 'programada') return { label: 'ESPERANDO', color: colors.blue };
+  if (sub.estado === 'abierta') return { label: 'EN VIVO', color: colors.green };
   return { label: 'CERRADA', color: colors.muted };
 }

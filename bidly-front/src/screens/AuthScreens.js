@@ -384,17 +384,6 @@ export function CrearPasswordScreen({ navigation, route }) {
         numeroPais: '1',
         verificationToken,
       });
-      // Subir fotos de DNI en segundo plano — no bloquea el acceso si falla
-      if (fotoDNI?.frente?.uri && fotoDNI?.dorso?.uri && u?.clienteId) {
-        try {
-          const fd = new FormData();
-          fd.append('frente', { uri: fotoDNI.frente.uri, name: 'frente.jpg', type: 'image/jpeg' });
-          fd.append('dorso', { uri: fotoDNI.dorso.uri, name: 'dorso.jpg', type: 'image/jpeg' });
-          await Auth.uploadDni(u.clienteId, fd);
-        } catch (uploadErr) {
-          console.warn('No se pudieron subir las fotos del DNI:', uploadErr);
-        }
-      }
       // AuthContext setUser → RootNavigator redirige al app
     } catch (e) {
       Alert.alert('No se pudo crear la cuenta', e.message || 'Error de conexión.');

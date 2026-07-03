@@ -11,124 +11,59 @@ from app.config import settings
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    from app.database import engine
+    # Sin Alembic: la app crea sola SOLO sus tablas propias (idempotente):
+    #   producto_estado (SPEC) + las 9 tablas de features restauradas.
+    # NO toca las 16 tablas del profe ni auth (esas ya existen en la base).
+    from app.database import engine, Base
     from sqlalchemy import text
+    import app.models as models  # registra todos los modelos en Base.metadata
+
+    # producto_estado (SPEC): CREATE con CHECK + backfill desde `disponible`.
     with engine.connect() as conn:
-        conn.execute(text("ALTER TABLE subasta_estado_admin DROP CONSTRAINT IF EXISTS chk_subasta_estado_admin_estado"))
-        conn.execute(text("ALTER TABLE subasta_estado_admin ALTER COLUMN estado DROP NOT NULL"))
-        conn.execute(text("ALTER TABLE notificaciones DROP CONSTRAINT IF EXISTS chktiponot"))
-        # subasta_revision quemada: el usuario ya no crea subastas (las arma el
-        # subastador), así que no hay moderación de subastas.
-        conn.execute(text("DROP TABLE IF EXISTS subasta_revision"))
-        # El rol 'admin' genérico no existe en el enunciado: el intermediario es
-        # el subastador. Migramos cualquier cuenta admin previa a subastador.
-        conn.execute(text("UPDATE usuario_rol SET rol='subastador' WHERE rol='admin'"))
         conn.execute(text("""
-            CREATE TABLE IF NOT EXISTS cliente_push_tokens (
-                id SERIAL PRIMARY KEY,
-                cliente INTEGER UNIQUE NOT NULL REFERENCES clientes(identificador),
-                token VARCHAR NOT NULL,
-                creado_en TIMESTAMP DEFAULT NOW()
+            CREATE TABLE IF NOT EXISTS producto_estado (
+                producto      integer      NOT NULL,
+                estado        varchar(20)  NOT NULL DEFAULT 'solicitado'
+                              CONSTRAINT chk_pe_estado CHECK (estado IN
+                              ('solicitado','en_inspeccion','aceptado','rechazado')),
+                causa_rechazo varchar(300) NULL,
+                fecha_cambio  timestamp    NOT NULL DEFAULT now(),
+                CONSTRAINT pk_producto_estado PRIMARY KEY (producto),
+                CONSTRAINT fk_producto_estado_productos
+                    FOREIGN KEY (producto) REFERENCES productos (identificador)
             )
         """))
-        # Multas por impago (10% de lo ofertado). fecha_limite = 72hs para presentar fondos.
         conn.execute(text("""
-            CREATE TABLE IF NOT EXISTS multas (
-                identificador SERIAL PRIMARY KEY,
-                cliente INTEGER REFERENCES clientes(identificador),
-                pujo INTEGER REFERENCES pujos(identificador),
-                importe DECIMAL(12,2),
-                pagada VARCHAR DEFAULT 'no',
-                fechagenerada DATE
-            )
+            INSERT INTO producto_estado (producto, estado)
+            SELECT identificador,
+                   CASE WHEN disponible = 'si' THEN 'aceptado' ELSE 'solicitado' END
+            FROM productos
+            WHERE identificador NOT IN (SELECT producto FROM producto_estado)
         """))
-        conn.execute(text("ALTER TABLE multas ADD COLUMN IF NOT EXISTS fecha_limite TIMESTAMP"))
-        # Admisión de artículos a subasta (inspección → aceptación → propuesta → catálogo).
-        conn.execute(text("""
-            CREATE TABLE IF NOT EXISTS admisiones (
-                identificador SERIAL PRIMARY KEY,
-                producto INTEGER REFERENCES productos(identificador),
-                duenio INTEGER REFERENCES duenios(identificador),
-                estado VARCHAR DEFAULT 'solicitada',
-                declara_propiedad VARCHAR DEFAULT 'no',
-                declara_origen VARCHAR DEFAULT 'no',
-                direccion_envio VARCHAR,
-                observacion VARCHAR,
-                valor_base DECIMAL(18,2),
-                comision DECIMAL(18,2),
-                subasta INTEGER REFERENCES subastas(identificador),
-                gastos_devolucion DECIMAL(18,2),
-                es_coleccion VARCHAR DEFAULT 'no',
-                nombre_coleccion VARCHAR,
-                creado_en TIMESTAMP DEFAULT NOW(),
-                actualizado_en TIMESTAMP
-            )
-        """))
-        # Cuenta a la vista del dueño (declarada antes de la subasta).
-        conn.execute(text("""
-            CREATE TABLE IF NOT EXISTS cuentas_duenio (
-                identificador SERIAL PRIMARY KEY,
-                duenio INTEGER REFERENCES duenios(identificador),
-                alias VARCHAR,
-                banco VARCHAR,
-                pais VARCHAR,
-                moneda VARCHAR,
-                es_exterior VARCHAR DEFAULT 'no',
-                declarada_en TIMESTAMP DEFAULT NOW()
-            )
-        """))
-        # Pago al dueño por lo vendido (o comprado por la empresa si nadie pujó).
-        conn.execute(text("""
-            CREATE TABLE IF NOT EXISTS payouts (
-                identificador SERIAL PRIMARY KEY,
-                duenio INTEGER REFERENCES duenios(identificador),
-                producto INTEGER REFERENCES productos(identificador),
-                subasta INTEGER REFERENCES subastas(identificador),
-                importe_bruto DECIMAL(18,2),
-                comision DECIMAL(18,2),
-                importe_neto DECIMAL(18,2),
-                origen VARCHAR DEFAULT 'venta',
-                cuenta INTEGER REFERENCES cuentas_duenio(identificador),
-                estado VARCHAR DEFAULT 'pendiente',
-                creado_en TIMESTAMP DEFAULT NOW(),
-                pagado_en TIMESTAMP
-            )
-        """))
-        # Ubicación del bien en depósito (el dueño puede verla junto a la póliza).
-        conn.execute(text("""
-            CREATE TABLE IF NOT EXISTS ubicacion_bien (
-                producto INTEGER PRIMARY KEY REFERENCES productos(identificador),
-                deposito VARCHAR
-            )
-        """))
-        # Detalle ampliado del producto: obra de arte/diseñador y piezas compuestas.
-        conn.execute(text("""
-            CREATE TABLE IF NOT EXISTS producto_detalle (
-                producto INTEGER PRIMARY KEY REFERENCES productos(identificador),
-                es_obra_arte VARCHAR DEFAULT 'no',
-                artista VARCHAR,
-                fecha_obra VARCHAR,
-                historia VARCHAR,
-                cantidad_piezas INTEGER DEFAULT 1,
-                composicion VARCHAR
-            )
-        """))
-        # Envío / retiro para la factura del comprador.
-        conn.execute(text("ALTER TABLE registro_pago ADD COLUMN IF NOT EXISTS envio DECIMAL(12,2)"))
-        conn.execute(text("ALTER TABLE registro_pago ADD COLUMN IF NOT EXISTS direccion_envio VARCHAR"))
-        conn.execute(text("ALTER TABLE registro_pago ADD COLUMN IF NOT EXISTS retiro_personal VARCHAR DEFAULT 'no'"))
-        # Saldo/límite de los medios de pago (tarjetas y cuentas). El cheque usa
-        # montocheque. Backfill de tarjetas/cuentas existentes para no romper datos.
-        conn.execute(text("ALTER TABLE mediosdepago ADD COLUMN IF NOT EXISTS saldo DECIMAL(12,2)"))
-        conn.execute(text("UPDATE mediosdepago SET saldo = 500000 WHERE tipo IN ('tarjeta','cuenta') AND saldo IS NULL"))
         conn.commit()
-    from app.services.scheduler import scheduler
-    scheduler.start()
+
+    # Las 9 tablas de features (checkfirst=True → no recrea si ya existen).
+    feature_tables = [
+        models.MedioPago.__table__, models.Multa.__table__,
+        models.RegistroPago.__table__, models.Reembolso.__table__,
+        models.Payout.__table__, models.CuentaDuenio.__table__,
+        models.Admision.__table__, models.SubastaMoneda.__table__,
+        models.Notificacion.__table__,
+    ]
+    Base.metadata.create_all(bind=engine, tables=feature_tables)
+
+    # Backfill de moneda: cada subasta sin fila en subasta_moneda → 'pesos'.
+    with engine.connect() as conn:
+        conn.execute(text("""
+            INSERT INTO subasta_moneda (subasta, moneda)
+            SELECT identificador, 'pesos' FROM subastas
+            WHERE identificador NOT IN (SELECT subasta FROM subasta_moneda)
+        """))
+        conn.commit()
     yield
-    scheduler.shutdown()
 
 
-app = FastAPI(title="Bidly API", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="Bidly API", version="2.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -158,9 +93,8 @@ app.add_middleware(MaxBodySizeMiddleware, max_size=settings.MAX_REQUEST_SIZE_BYT
 
 
 # ── Manejo de errores compatible con el frontend ──────────────────────────────
-# El front (api/client.js) lee message/error/code/etc. en el NIVEL SUPERIOR del
-# body, no anidados bajo "detail" como hace FastAPI por defecto.
-# Aplanamos las respuestas de error para respetar ese contrato.
+# El front (api/client.js) lee message/error/code en el NIVEL SUPERIOR del body,
+# no anidados bajo "detail". Aplanamos las respuestas de error para respetar ese contrato.
 @app.exception_handler(StarletteHTTPException)
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     detail = exc.detail
@@ -186,12 +120,12 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     )
 
 
-# Registrar routers
+# Registrar routers — núcleo del profe + features restauradas.
 from app.routers import (
     auth, personas, clientes, subastas, catalogos, items,
     pujas, asistentes, subastadores,
-    productos, fotos, registro, notificaciones, seguros, multas,
-    admisiones, payouts, sectores,
+    productos, fotos, registro, seguros, sectores,
+    multas, admisiones, payouts, notificaciones,
 )
 
 prefix = "/api"
@@ -207,9 +141,9 @@ app.include_router(subastadores.router,     prefix=f"{prefix}/subastadores",    
 app.include_router(productos.router,        prefix=f"{prefix}/productos",        tags=["Productos"])
 app.include_router(fotos.router,            prefix=f"{prefix}/fotos",            tags=["Fotos"])
 app.include_router(registro.router,         prefix=f"{prefix}/registro-subasta", tags=["Registro"])
-app.include_router(notificaciones.router,   prefix=f"{prefix}/notificaciones",   tags=["Notificaciones"])
 app.include_router(seguros.router,          prefix=f"{prefix}/seguros",          tags=["Seguros"])
+app.include_router(sectores.router,         prefix=f"{prefix}/sectores",         tags=["Sectores"])
 app.include_router(multas.router,           prefix=f"{prefix}/multas",           tags=["Multas"])
 app.include_router(admisiones.router,       prefix=f"{prefix}/admisiones",       tags=["Admisiones"])
 app.include_router(payouts.router,          prefix=f"{prefix}/payouts",          tags=["Payouts"])
-app.include_router(sectores.router,         prefix=f"{prefix}/sectores",         tags=["Sectores"])
+app.include_router(notificaciones.router,   prefix=f"{prefix}/notificaciones",   tags=["Notificaciones"])

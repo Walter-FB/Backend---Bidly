@@ -1,7 +1,6 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
 from typing import Optional
 from decimal import Decimal
-from datetime import datetime
 
 
 class AsistenteRef(BaseModel):
@@ -24,4 +23,3 @@ class PujaResponse(BaseModel):
     item: Optional[int] = None
     importe: Optional[Decimal] = None
     ganador: Optional[str] = None
-    fechaHora: Optional[datetime] = None

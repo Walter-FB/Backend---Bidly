@@ -18,10 +18,8 @@ from decimal import Decimal
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from app.models.multa import Multa
-from app.models.medio_pago import MedioPago
+from app.models.pagos import Multa, MedioPago, Reembolso
 from app.models.registro_subasta import RegistroDeSubasta
-from app.models.reembolso import Reembolso
 from app.models.puja import Puja
 from app.models.asistente import Asistente
 from app.models.item_catalogo import ItemCatalogo

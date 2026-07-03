@@ -1,6 +1,4 @@
-import base64
-from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
 
@@ -8,13 +6,10 @@ from app.database import get_db
 from app.models.cliente import Cliente
 from app.models.persona import Persona
 from app.models.credencial import Credencial
-from app.models.medio_pago import MedioPago
-from app.models.dni_verificacion import DniVerificacion
 from app.models.empleado import EMPLEADO_SISTEMA
-from app.schemas.cliente import (
-    ClienteCreate, CategoriaUpdate, AdmitidoUpdate,
-    MedioPagoCreate, MedioPagoResponse, ClienteResponse,
-)
+from app.models.pagos import MedioPago
+from app.schemas.cliente import ClienteCreate, CategoriaUpdate, AdmitidoUpdate
+from app.schemas.pagos import MedioPagoCreate, MedioPagoResponse, VerificarMedioRequest
 
 router = APIRouter()
 
@@ -26,7 +21,7 @@ TIPO_MAP = {
 
 
 def _normalizar_tipo(tipo: str) -> str:
-    return TIPO_MAP.get(tipo, tipo.lower())
+    return TIPO_MAP.get(tipo, (tipo or "").lower())
 
 
 def _normalizar_vencimiento(v: str | None) -> str | None:
@@ -53,13 +48,12 @@ def _enrich_cliente(c: Cliente, db: Session) -> dict:
 
 @router.post("/", status_code=201)
 def crear_cliente(body: ClienteCreate, db: Session = Depends(get_db)):
-    verificador = body.verificador or EMPLEADO_SISTEMA
     c = Cliente(
         identificador=body.identificador,
         numeropais=body.numeroPais,
         admitido="no",
         categoria="comun",
-        verificador=verificador,
+        verificador=body.verificador or EMPLEADO_SISTEMA,
     )
     db.add(c)
     db.commit()
@@ -106,38 +100,22 @@ def update_admitido(id: int, body: AdmitidoUpdate, db: Session = Depends(get_db)
 
 @router.get("/{id}/metricas")
 def get_metricas(id: int, db: Session = Depends(get_db)):
-    """Participación del usuario: asistidas, ganadas, importes ofertados/pagados y
+    """Participación del usuario: asistidas, ganadas, importes ofertados/comprados y
     desglose por categoría de subasta."""
     from app.models.asistente import Asistente
     from app.models.puja import Puja
     from app.models.registro_subasta import RegistroDeSubasta
-    from app.models.registro_pago import RegistroPago
     from app.models.subasta import Subasta
 
     asistencias = db.query(Asistente).filter(Asistente.cliente == id).all()
-    asistidas = len(asistencias)
-
-    # Importe total ofertado (todas las pujas del usuario).
     pujas = (
         db.query(Puja)
         .join(Asistente, Puja.asistente == Asistente.identificador)
         .filter(Asistente.cliente == id)
         .all()
     )
-    total_ofertado = float(sum((p.importe or 0) for p in pujas))
-    cantidad_pujas = len(pujas)
-
     registros = db.query(RegistroDeSubasta).filter(RegistroDeSubasta.cliente == id).all()
-    ganadas = len(registros)
-    total_comprado = float(sum((r.importe or 0) for r in registros))
 
-    total_pagado = 0.0
-    for r in registros:
-        pago = db.query(RegistroPago).filter(RegistroPago.registro == r.identificador).first()
-        if pago and pago.estado == "pagado":
-            total_pagado += float(pago.importe_total or 0)
-
-    # Desglose de asistencias por categoría de subasta.
     por_categoria: dict = {}
     for a in asistencias:
         s = db.query(Subasta).filter(Subasta.identificador == a.subasta).first()
@@ -145,16 +123,16 @@ def get_metricas(id: int, db: Session = Depends(get_db)):
         por_categoria[cat] = por_categoria.get(cat, 0) + 1
 
     return {
-        "asistidas": asistidas,
-        "ganadas": ganadas,
-        "cantidadPujas": cantidad_pujas,
-        "totalOfertado": total_ofertado,
-        "totalComprado": total_comprado,
-        "totalPagado": total_pagado,
+        "asistidas": len(asistencias),
+        "ganadas": len(registros),
+        "cantidadPujas": len(pujas),
+        "totalOfertado": float(sum((p.importe or 0) for p in pujas)),
+        "totalComprado": float(sum((r.importe or 0) for r in registros)),
         "porCategoria": por_categoria,
     }
 
 
+# ── Medios de pago del postor + saldo ─────────────────────────────────────────
 @router.get("/{id}/saldo")
 def get_saldo(id: int, db: Session = Depends(get_db)):
     """Saldo total, comprometido y disponible del cliente (suma de sus medios)."""
@@ -187,35 +165,25 @@ def add_medio_pago(id: int, body: MedioPagoCreate, db: Session = Depends(get_db)
     db.refresh(mp)
 
     from app.services import notificacion_service, categoria_service
-    tipo_normalizado = _normalizar_tipo(body.tipo)
-    nombre_tipo = "tarjeta" if tipo_normalizado == "tarjeta" else "cuenta bancaria" if tipo_normalizado == "cuenta" else "medio de pago"
-    notificacion_service.crear(id, "medio_pago_agregado", f"Se agregó un {nombre_tipo} a tu cuenta", db)
-
-    # La diversidad de medios de pago puede mejorar la categoría.
-    mejorada = categoria_service.recalcular(id, db)
-    if mejorada:
-        notificacion_service.crear(id, "categoria", f"¡Mejoraste tu categoría a {mejorada.upper()}!", db)
+    tipo = _normalizar_tipo(body.tipo)
+    nombre = "tarjeta" if tipo == "tarjeta" else "cuenta bancaria" if tipo == "cuenta" else "cheque certificado" if tipo == "cheque" else "medio de pago"
+    notificacion_service.crear(id, "medio_pago", f"Se agregó un {nombre} a tu cuenta.", db)
+    categoria_service.recalcular(id, db)
     db.commit()
-
     return mp
 
 
-@router.post("/{id}/dni-fotos")
-async def upload_dni(
-    id: int,
-    frente: UploadFile = File(...),
-    dorso: UploadFile = File(...),
-    db: Session = Depends(get_db),
-):
-    frente_bytes = await frente.read()
-    dorso_bytes  = await dorso.read()
-
-    dni = DniVerificacion(
-        clienteid=id,
-        fotofrente=base64.b64encode(frente_bytes).decode(),
-        fotodorso=base64.b64encode(dorso_bytes).decode(),
-        creadoen=datetime.utcnow(),
-    )
-    db.add(dni)
+@router.patch("/medios-pago/{mp_id}/verificar", response_model=MedioPagoResponse)
+def verificar_medio_pago(mp_id: int, body: VerificarMedioRequest, db: Session = Depends(get_db)):
+    """[INTERNO] La empresa verifica un medio de pago (necesario para poder pujar)."""
+    mp = db.query(MedioPago).filter(MedioPago.identificador == mp_id).first()
+    if not mp:
+        raise HTTPException(404, "Medio de pago no encontrado")
+    mp.verificado = body.verificado or "si"
     db.commit()
-    return {}
+    db.refresh(mp)
+    if mp.verificado == "si":
+        from app.services import notificacion_service
+        notificacion_service.crear(mp.cliente, "medio_pago", "Tu medio de pago fue verificado. Ya podés pujar.", db)
+        db.commit()
+    return mp

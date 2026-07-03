@@ -1,49 +1,37 @@
+"""Subastas. Estado directo de la DDL del profe: 'abierta' | 'cerrada'.
+
+La arma el subastador (staff interno), le carga el catálogo y la abre/cierra.
+Sin moneda dual, sin sesión en vivo, sin timers (todo eso se quemó).
+"""
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
-from typing import Optional, List
+from typing import Optional
 
 from app.database import get_db
 from app.auth import get_optional_client
 from app.models.subasta import Subasta
-from app.models.subasta_moneda import SubastaMoneda
-from app.models.subasta_sesion import SubastaSesion
-from app.models.subasta_estado_admin import SubastaEstadoAdmin
 from app.models.asistente import Asistente
 from app.models.catalogo import Catalogo
 from app.models.item_catalogo import ItemCatalogo
-from app.models.producto import Producto
 from app.models.foto import Foto
-from app.schemas.subasta import SubastaCreate, SubastaEstadoUpdate, SesionResponse
-from app.services import subasta_service, subasta_estado_service, notificacion_service
-from app.services.subasta_sesion_service import segundos_restantes
+from app.models.subasta_moneda import SubastaMoneda
+from app.schemas.subasta import SubastaCreate, SubastaEstadoUpdate
+from app.services import subasta_service
 from app.serializers import item_to_dict
 
 router = APIRouter()
 
 
 def _ensure_subastador(persona_id: int, db: Session) -> int:
-    """Garantiza una fila en `subastadores` para la persona que arma la subasta.
-    Un subastador es una persona con matrícula/región; `subastas.subastador` es
-    FK a subastadores, así que debe existir antes de crear la subasta."""
+    """Garantiza una fila en `subastadores` para quien arma la subasta
+    (subastas.subastador es FK a subastadores)."""
     from app.models.subastador import Subastador
     s = db.query(Subastador).filter(Subastador.identificador == persona_id).first()
     if not s:
-        s = Subastador(identificador=persona_id, matricula=None, region=None)
-        db.add(s)
+        db.add(Subastador(identificador=persona_id, matricula=None, region=None))
         db.flush()
     return persona_id
-
-
-def _build_sesion_response(sesion: SubastaSesion) -> dict:
-    if not sesion:
-        return {"itemActivoId": None, "ordenActual": None, "timerDesde": None, "segundosRestantes": None}
-    return {
-        "itemActivoId": sesion.item_activo,
-        "ordenActual": sesion.orden_actual,
-        "timerDesde": sesion.timer_desde,
-        "segundosRestantes": segundos_restantes(sesion),
-    }
 
 
 @router.get("")
@@ -51,8 +39,6 @@ def _build_sesion_response(sesion: SubastaSesion) -> dict:
 def listar_subastas(
     estado: Optional[str] = None,
     categoria: Optional[str] = None,
-    moneda: Optional[str] = None,
-    publico: Optional[bool] = None,
     db: Session = Depends(get_db),
 ):
     q = db.query(Subasta)
@@ -60,20 +46,7 @@ def listar_subastas(
         q = q.filter(Subasta.estado == estado)
     if categoria:
         q = q.filter(Subasta.categoria == categoria)
-
-    subastas = q.all()
-
-    if moneda:
-        ids_con_moneda = {
-            sm.subasta
-            for sm in db.query(SubastaMoneda).filter(SubastaMoneda.moneda == moneda).all()
-        }
-        subastas = [s for s in subastas if s.identificador in ids_con_moneda]
-
-    # `publico` ya no filtra por aprobación: todas las subastas las arma el
-    # subastador, así que son válidas. El parámetro se mantiene por compatibilidad.
-
-    return subasta_service.enrich_all(subastas, db)
+    return subasta_service.enrich_all(q.all(), db)
 
 
 @router.get("/{id}")
@@ -101,19 +74,36 @@ def crear_subasta(body: SubastaCreate, db: Session = Depends(get_db)):
     )
     db.add(s)
     db.flush()
-
-    sm = SubastaMoneda(subasta=s.identificador, moneda=body.moneda)
-    db.add(sm)
-
-    # La subasta la arma el subastador: queda lista para iniciar (no hay
-    # aprobación intermedia). El scheduler la abre a la fecha/hora, o el
-    # subastador la abre manualmente.
-    subasta_estado_service.crear_estado_pendiente(s.identificador, db)
-    subasta_estado_service.pasar_a_esperando(s.identificador, db)
-
+    # Moneda de la subasta (pesos/dólares) en la tabla de features subasta_moneda.
+    db.add(SubastaMoneda(subasta=s.identificador, moneda=(body.moneda or "pesos")))
     db.commit()
     db.refresh(s)
     return subasta_service.enrich(s, db)
+
+
+@router.patch("/{id}/estado")
+def update_estado(id: int, body: SubastaEstadoUpdate, db: Session = Depends(get_db)):
+    s = db.query(Subasta).filter(Subasta.identificador == id).first()
+    if not s:
+        raise HTTPException(404, "Subasta no encontrada")
+
+    if body.estado == "cerrada":
+        # Al cerrar: adjudica los ítems pendientes (mejor postor gana / si nadie
+        # pujó la empresa lo compra a base) y marca la subasta cerrada.
+        subasta_service.cerrar_subasta(id, db)
+    else:
+        s.estado = body.estado  # 'abierta'
+    db.commit()
+    db.refresh(s)
+    return subasta_service.enrich(s, db)
+
+
+@router.get("/{id}/estado")
+def get_estado(id: int, db: Session = Depends(get_db)):
+    s = db.query(Subasta).filter(Subasta.identificador == id).first()
+    if not s:
+        raise HTTPException(404, "Subasta no encontrada")
+    return {"estado": s.estado}
 
 
 @router.get("/{id}/catalogo")
@@ -142,14 +132,6 @@ def get_catalogos(id: int, db: Session = Depends(get_db), current: dict = Depend
     return [item_to_dict(item, db, mostrar_precio=current is not None) for item in items]
 
 
-@router.get("/{id}/estado")
-def get_estado(id: int, db: Session = Depends(get_db)):
-    s = db.query(Subasta).filter(Subasta.identificador == id).first()
-    if not s:
-        raise HTTPException(404, "Subasta no encontrada")
-    return {"estado": subasta_estado_service.estado_efectivo(id, db)}
-
-
 @router.get("/{id}/portada")
 def get_portada(id: int, db: Session = Depends(get_db)):
     item = (
@@ -171,45 +153,3 @@ def get_portada(id: int, db: Session = Depends(get_db)):
 def get_asistentes(id: int, db: Session = Depends(get_db)):
     asistentes = db.query(Asistente).filter(Asistente.subasta == id).all()
     return [{col.name: getattr(a, col.name) for col in a.__table__.columns} for a in asistentes]
-
-
-@router.patch("/{id}/estado")
-def update_estado(id: int, body: SubastaEstadoUpdate, db: Session = Depends(get_db)):
-    s = db.query(Subasta).filter(Subasta.identificador == id).first()
-    if not s:
-        raise HTTPException(404, "Subasta no encontrada")
-
-    # Mapear el estado pedido a la transición real de la máquina de estados:
-    # 'abierta' -> iniciar (crea sesión + timer + estado_subasta='iniciada')
-    # 'cerrada' -> finalizar (borra sesión + estado_subasta='finalizada')
-    estado_admin = db.query(SubastaEstadoAdmin).filter(SubastaEstadoAdmin.subasta == id).first()
-    if not estado_admin:
-        subasta_estado_service.crear_estado_pendiente(id, db)
-
-    if body.estado == "abierta":
-        subasta_estado_service.iniciar_subasta(id, db)
-    elif body.estado == "cerrada":
-        from app.services import item_adjudicacion_service
-        items_pendientes = (
-            db.query(ItemCatalogo)
-            .join(Catalogo, ItemCatalogo.catalogo == Catalogo.identificador)
-            .filter(Catalogo.subasta == id, ItemCatalogo.subastado == "no")
-            .all()
-        )
-        for item in items_pendientes:
-            item_adjudicacion_service.adjudicar_manual(item.identificador, db)
-        subasta_estado_service.finalizar_subasta(id, db)
-    else:
-        s.estado = body.estado
-
-    db.commit()
-    db.refresh(s)
-    return subasta_service.enrich(s, db)
-
-
-@router.get("/{id}/sesion")
-def get_sesion(id: int, db: Session = Depends(get_db)):
-    sesion = db.query(SubastaSesion).filter(SubastaSesion.subasta == id).first()
-    if not sesion:
-        raise HTTPException(404, "Sin sesión activa")
-    return _build_sesion_response(sesion)

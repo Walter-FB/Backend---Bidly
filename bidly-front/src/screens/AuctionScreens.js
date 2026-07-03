@@ -81,20 +81,13 @@ export function ProductoScreen({ navigation, route }) {
     Promise.all([
       Subastas.obtener(subastaId),
       Subastas.catalogos(subastaId),
-      Subastas.sesion(subastaId).catch(() => null),
     ])
-      .then(([s, catalogoItems, sesion]) => {
+      .then(([s, catalogoItems]) => {
         const lista = catalogoItems || [];
         setSubasta(s);
         setItems(lista);
 
-        let activo = null;
-        if (sesion?.itemActivoId != null) {
-          activo = lista.find((i) => Number(i.identificador) === Number(sesion.itemActivoId));
-        }
-        if (!activo) {
-          activo = lista.find((i) => i.subastado !== 'si') || lista[0] || null;
-        }
+        const activo = lista.find((i) => i.subastado !== 'si') || lista[0] || null;
         setItemEnVivo(activo);
 
         const productoId = activo?.producto?.identificador ?? lista[0]?.producto?.identificador;
@@ -177,9 +170,7 @@ export function ProductoScreen({ navigation, route }) {
             </Text>
           </View>
           <View>
-            <Text style={{ color: colors.muted, fontSize: 12 }}>
-              {viva ? 'Cierra' : (subasta.estadoSubasta === 'esperando' || subasta.fase === 'programada') ? 'Abre' : 'Estado'}
-            </Text>
+            <Text style={{ color: colors.muted, fontSize: 12 }}>Estado</Text>
             <Text style={{ color: colors.gold, fontSize: 20, fontWeight: '800' }}>
               {etiquetaTiempoSubasta(subasta)}
             </Text>
@@ -292,41 +283,7 @@ export function SubastaEnVivoScreen({ navigation, route }) {
   // Mantener ref actualizada para usarla en callbacks sin crear dependencias.
   useEffect(() => { asistenteIdRef.current = asistenteId; }, [asistenteId]);
 
-  // Obtener segundosRestantes del backend (sesión o detalle de subasta).
-  useEffect(() => {
-    if (!subastaId) return;
-    const syncTimer = () => {
-      Promise.all([
-        Subastas.sesion(subastaId).catch(() => null),
-        Subastas.obtener(subastaId),
-      ])
-        .then(([sesion, sub]) => {
-          const secs = sesion?.segundosRestantes ?? sub?.segundosRestantes;
-          if (mounted.current && secs != null) {
-            baselineRef.current = { fetchedAt: Date.now(), segundos: Number(secs) };
-          }
-        })
-        .catch(() => {});
-    };
-    syncTimer();
-    const interval = setInterval(syncTimer, 10000);
-    return () => clearInterval(interval);
-  }, [subastaId]);
-
-  // Countdown local a partir del baseline del backend.
-  useEffect(() => {
-    const tick = () => {
-      const b = baselineRef.current;
-      if (b) {
-        setTimeLeft(Math.max(0, Math.floor(b.segundos - (Date.now() - b.fetchedAt) / 1000)));
-        return;
-      }
-      setTimeLeft(null);
-    };
-    tick();
-    const interval = setInterval(tick, 1000);
-    return () => clearInterval(interval);
-  }, []);
+  // Sin timer de servidor: la subasta está 'abierta' hasta que el subastador la cierra.
 
   // Inscribir al usuario como asistente.
   useEffect(() => {
@@ -667,10 +624,7 @@ export function GanasteScreen({ navigation, route }) {
       <BottomBar>
         <Btn
           title="Continuar al pago"
-          onPress={() => navigation.navigate('MedioPago', {
-            registroId,
-            subastaId, itemId, moneda, importe, comision, titulo,
-          })}
+          onPress={() => navigation.navigate('MedioPago', { registroId, subastaId, itemId, moneda, importe, comision, titulo })}
         />
       </BottomBar>
     </Screen>
@@ -776,7 +730,7 @@ export function SubastaAdminScreen({ navigation, route }) {
 
   const pujaTop = pujas[0];
   const moneda = subasta?.moneda || 'pesos';
-  const enVivo = subasta?.estadoSubasta === 'iniciada' || subasta?.fase === 'en_curso';
+  const enVivo = subasta?.estado === 'abierta';
   const itemActivoAdjudicado = itemActivo?.subastado === 'si';
   const tituloAdmin = tituloSubasta(subasta, items);
   const tagEstado = tagEstadoSubasta(subasta);

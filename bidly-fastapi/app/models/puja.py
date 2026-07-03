@@ -14,4 +14,3 @@ class Puja(Base):
 
     asistente_rel = relationship("Asistente", back_populates="pujas_rel")
     item_rel      = relationship("ItemCatalogo", back_populates="pujas_rel")
-    fecha_rel     = relationship("PujoFecha", back_populates="puja_rel", uselist=False)

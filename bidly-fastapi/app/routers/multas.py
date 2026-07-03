@@ -2,8 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models.multa import Multa
-from app.schemas.multa import MultaUpdate
+from app.models.pagos import Multa
+from app.schemas.pagos import MultaUpdate
 from app.services import multa_service
 
 router = APIRouter()

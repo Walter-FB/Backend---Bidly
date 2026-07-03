@@ -1,47 +1,37 @@
 // BIDLY — Home, Filtros, Notificaciones (+ shared AuctionCard).
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Alert } from 'react-native';
-import { useNotifBadge } from '../hooks/useNotifBadge';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { Screen, Header, Title, Sub, SectionLabel, Btn, Chip, Card, Field, LiveBadge, Tag, ImgBox, Display } from '../components/ui';
+import { Screen, Header, Title, SectionLabel, Btn, Chip, Card, LiveBadge, Tag, ImgBox, Display } from '../components/ui';
 import { colors } from '../theme/theme';
 import { Subastas, Notificaciones } from '../api/endpoints';
 import { BASE_URL } from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import { useNotifBadge } from '../hooks/useNotifBadge';
 import { tituloSubasta, subtituloSubasta, esSubastaFinalizada } from '../utils/subasta';
 import { etiquetaTiempoSubasta, esSubastaEnVivo } from '../utils/tiempo';
 
 // Convierte una Subasta del backend al shape que espera AuctionCard.
-// Mapea el valor de moneda de la BD ('pesos'/'dolares') al símbolo de pantalla
-function simboloMoneda(moneda) {
-  return moneda === 'dolares' ? 'U$D' : '$';
-}
-
 function mapSubasta(s) {
   return {
     id: s.identificador,
     subastaId: s.identificador,
     title: tituloSubasta(s),
     cat: subtituloSubasta(s),
-    puja: s.precioBase ? s.precioBase.toLocaleString('es-AR') : '—',
+    puja: s.precioBase ? Number(s.precioBase).toLocaleString('es-AR') : '—',
     ppl: s.totalAsistentes || 0,
     time: etiquetaTiempoSubasta(s),
-    estadoSubasta: s.estadoSubasta,
-    fase: s.fase,
-    fechaInicioReal: s.fechaInicioReal,
-    segundosRestantes: s.segundosRestantes,
     totalItems: s.totalItems,
     itemsPendientes: s.itemsPendientes,
-    lead: false,
     estado: s.estado,
-    moneda: s.moneda || 'pesos',
-    simbolo: simboloMoneda(s.moneda),
+    simbolo: '$',
     portadaUrl: `${BASE_URL}/subastas/${s.identificador}/portada`,
     ubicacion: s.ubicacion,
     subastador: s.subastador,
     fecha: s.fecha,
     hora: s.hora,
+    categoria: s.categoria,
   };
 }
 
@@ -56,9 +46,7 @@ function HomeTopBar({ navigation }) {
         <View>
           <Ionicons name="notifications-outline" size={21} color="#fff" />
           {unreadCount > 0 && (
-            <View style={s.badge}>
-              <Text style={s.badgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
-            </View>
+            <View style={s.badge}><Text style={s.badgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text></View>
           )}
         </View>
       </TouchableOpacity>
@@ -84,9 +72,7 @@ export function AuctionCard({ a, onPress }) {
           <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', marginTop: 8 }}>
             <Text>
               <Text style={{ color: colors.muted, fontSize: 11, fontWeight: '700' }}>PUJA </Text>
-              <Text style={{ color: colors.green, fontSize: 20, fontWeight: '800' }}>
-                {a.simbolo || '$'} {a.puja}
-              </Text>
+              <Text style={{ color: colors.green, fontSize: 20, fontWeight: '800' }}>{a.simbolo || '$'} {a.puja}</Text>
             </Text>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
               <Ionicons name="person-outline" size={13} color={colors.muted} />
@@ -100,37 +86,7 @@ export function AuctionCard({ a, onPress }) {
           <Ionicons name="time-outline" size={14} color={colors.gold} />
           <Text style={{ color: colors.gold, fontSize: 13, fontWeight: '800' }}>{a.time}</Text>
         </View>
-        {a.lead
-          ? <Tag label="✓ Liderando" color={colors.green} fill={colors.green} />
-          : <Btn title="Ver subasta" onPress={onPress} style={{ paddingVertical: 9, paddingHorizontal: 18 }} />}
-      </View>
-    </Card>
-  );
-}
-
-// ─── PROXIMA CARD ─────────────────────────────────────────────────────────────
-function ProximaCard({ a, onPress }) {
-  return (
-    <Card el style={{ padding: 14 }}>
-      <View style={{ flexDirection: 'row', gap: 12 }}>
-        <ImgBox style={{ width: 74, height: 74 }} size={26} src={a.portadaUrl} />
-        <View style={{ flex: 1 }}>
-          <Display style={{ fontSize: 15 }} numberOfLines={1}>{a.title}</Display>
-          <Text style={{ color: colors.muted, fontSize: 12, marginTop: 2 }}>{a.cat}</Text>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 8 }}>
-            <Ionicons name="calendar-outline" size={13} color={colors.blue} />
-            <Text style={{ color: colors.blue, fontSize: 12, fontWeight: '700' }}>
-              {a.fecha ? a.fecha : '—'}{a.hora ? `  ·  ${a.hora.slice(0, 5)}hs` : ''}
-            </Text>
-          </View>
-        </View>
-      </View>
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-          <Ionicons name="time-outline" size={14} color={colors.gold} />
-          <Text style={{ color: colors.gold, fontSize: 13, fontWeight: '800' }}>{a.time}</Text>
-        </View>
-        <Btn title="Ver detalles" onPress={onPress} style={{ paddingVertical: 9, paddingHorizontal: 18 }} />
+        <Btn title="Ver subasta" onPress={onPress} style={{ paddingVertical: 9, paddingHorizontal: 18 }} />
       </View>
     </Card>
   );
@@ -162,63 +118,21 @@ export function HomeScreen({ navigation }) {
     cargarSubastas({ ...(estadoParam ? { estado: estadoParam } : {}), ...filtros });
   }, [tab, filtros, cargarSubastas]);
 
-  // En tab En vivo, refrescar detalle para fase y timer correctos.
-  useEffect(() => {
-    if (tab !== 'vivo' || subastas.length === 0) return;
-    let cancelled = false;
-    const refreshDetalle = async () => {
-      try {
-        const detalles = await Promise.all(
-          subastas.map((a) => Subastas.obtener(a.id).catch(() => null))
-        );
-        if (cancelled) return;
-        setSubastas((prev) => prev.map((a, i) => {
-          const det = detalles[i];
-          return det ? mapSubasta(det) : a;
-        }));
-      } catch { /* silencioso */ }
-    };
-    refreshDetalle();
-    const id = setInterval(refreshDetalle, 10000);
-    return () => { cancelled = true; clearInterval(id); };
-  }, [tab, subastas.length]);
-
-  // En tab Próximamente, refrescar el countdown cada 30 segundos.
-  useEffect(() => {
-    if (tab !== 'prox') return;
-    let cancelled = false;
-    const refresh = async () => {
-      try {
-        const resultado = await Subastas.listar({});
-        if (cancelled) return;
-        setSubastas((resultado || []).map(mapSubasta));
-      } catch { /* silencioso */ }
-    };
-    const id = setInterval(refresh, 30000);
-    return () => { cancelled = true; clearInterval(id); };
-  }, [tab]);
-
-  // Recibir filtros aplicados desde FiltrosScreen
   useEffect(() => {
     const unsubscribe = navigation.addListener('focus', () => {
       const params = navigation.getState?.()?.routes?.slice(-1)?.[0]?.params;
-      if (params?.filtrosAplicados) {
-        setFiltros(params.filtrosAplicados);
-      }
+      if (params?.filtrosAplicados) setFiltros(params.filtrosAplicados);
     });
     return unsubscribe;
   }, [navigation]);
 
-  const esProxima = (a) => a.estadoSubasta === 'esperando' || a.fase === 'programada';
-
-  const subrastasFiltradas = subastas.filter((a) => {
+  const subastasFiltradas = subastas.filter((a) => {
     if (tab === 'vivo') return esSubastaEnVivo(a);
     if (tab === 'term') return esSubastaFinalizada(a);
-    if (tab === 'prox') return esProxima(a);
     return true;
   });
 
-  const tituloTab = { vivo: 'En vivo', term: 'Finalizadas', prox: 'Próximamente', todas: 'Todas' };
+  const tituloTab = { vivo: 'En vivo', term: 'Finalizadas', todas: 'Todas' };
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
@@ -234,26 +148,20 @@ export function HomeScreen({ navigation }) {
             <Text style={{ color: colors.muted, fontSize: 14 }}>Buscar subastas, categorías…</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={() => navigation.navigate('Filtros', { filtrosActuales: filtros })} style={s.filterBtn}>
-            <Ionicons name="options-outline" size={20} color="#fff" /></TouchableOpacity>
+            <Ionicons name="options-outline" size={20} color="#fff" />
+          </TouchableOpacity>
         </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 14 }}>
           <View style={{ flexDirection: 'row', gap: 9 }}>
             <Chip label="Todas" active={tab === 'todas'} onPress={() => setTab('todas')} />
             <Chip label="En vivo" active={tab === 'vivo'} dot onPress={() => setTab('vivo')} />
-            <Chip label="Próximamente" active={tab === 'prox'} onPress={() => setTab('prox')} />
             <Chip label="Terminadas" active={tab === 'term'} onPress={() => setTab('term')} />
           </View>
         </ScrollView>
       </View>
-      <ScrollView
-        contentContainerStyle={{ padding: 22, paddingBottom: 110 }}
-        showsVerticalScrollIndicator={false}
-        onRefresh={undefined}
-      >
+      <ScrollView contentContainerStyle={{ padding: 22, paddingBottom: 110 }} showsVerticalScrollIndicator={false}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
-          <Display style={{ fontSize: 18 }}>
-            {tituloTab[tab] || 'Todas'} · {subrastasFiltradas.length}
-          </Display>
+          <Display style={{ fontSize: 18 }}>{tituloTab[tab] || 'Todas'} · {subastasFiltradas.length}</Display>
           <Text style={{ color: colors.muted, fontSize: 13 }}>Más recientes ↓</Text>
         </View>
 
@@ -274,26 +182,12 @@ export function HomeScreen({ navigation }) {
 
         {!loading && !error && (
           <View style={{ gap: 14 }}>
-            {subrastasFiltradas.length === 0 ? (
-              <Text style={{ color: colors.muted, textAlign: 'center', marginTop: 30 }}>
-                {tab === 'prox' ? 'No hay subastas programadas por el momento.' : 'No hay subastas disponibles.'}
-              </Text>
+            {subastasFiltradas.length === 0 ? (
+              <Text style={{ color: colors.muted, textAlign: 'center', marginTop: 30 }}>No hay subastas disponibles.</Text>
             ) : (
-              subrastasFiltradas.map((a) =>
-                tab === 'prox' ? (
-                  <ProximaCard
-                    key={a.id}
-                    a={a}
-                    onPress={() => navigation.navigate('Producto', { subastaId: a.id, subasta: a })}
-                  />
-                ) : (
-                  <AuctionCard
-                    key={a.id}
-                    a={a}
-                    onPress={() => navigation.navigate('Producto', { subastaId: a.id, subasta: a })}
-                  />
-                )
-              )
+              subastasFiltradas.map((a) => (
+                <AuctionCard key={a.id} a={a} onPress={() => navigation.navigate('Producto', { subastaId: a.id, subasta: a })} />
+              ))
             )}
           </View>
         )}
@@ -307,20 +201,17 @@ export function FiltrosScreen({ navigation, route }) {
   const filtrosActuales = route.params?.filtrosActuales || {};
   const [estado, setEstado] = useState(filtrosActuales.estado || 'abierta');
   const [cat, setCat] = useState(filtrosActuales.categoria || '');
-  const [mon, setMon] = useState(filtrosActuales.moneda || 'pesos');
 
   const aplicar = () => {
     const filtros = {};
     if (estado) filtros.estado = estado;
     if (cat) filtros.categoria = cat;
-    if (mon) filtros.moneda = mon;
     navigation.navigate('Home', { filtrosAplicados: filtros });
   };
 
   const limpiar = () => {
     setEstado('abierta');
     setCat('');
-    setMon('pesos');
     navigation.navigate('Home', { filtrosAplicados: {} });
   };
 
@@ -341,12 +232,6 @@ export function FiltrosScreen({ navigation, route }) {
             <Chip key={k || 'todas'} label={l} active={cat === k} onPress={() => setCat(k)} />
           ))}
         </View>
-        <SectionLabel>Moneda</SectionLabel>
-        <View style={{ flexDirection: 'row', gap: 9 }}>
-          <Chip label="Todas" active={mon === ''} onPress={() => setMon('')} />
-          <Chip label="Pesos $" active={mon === 'pesos'} dot={mon === 'pesos'} onPress={() => setMon('pesos')} />
-          <Chip label="Dólares U$D" active={mon === 'dolares'} dot={mon === 'dolares'} onPress={() => setMon('dolares')} />
-        </View>
       </ScrollView>
       <View style={{ flexDirection: 'row', gap: 12, paddingHorizontal: 22, paddingBottom: 28, paddingTop: 14 }}>
         <Btn title="Limpiar" kind="ghost" onPress={limpiar} style={{ flex: 1 }} />
@@ -362,95 +247,69 @@ export function NotificacionesScreen({ navigation }) {
   const [notifs, setNotifs] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  const cargar = () => {
+  useEffect(() => {
     if (!user?.clienteId) { setLoading(false); return; }
     Notificaciones.porCliente(user.clienteId)
       .then((data) => setNotifs(Array.isArray(data) ? data : data ? [data] : []))
       .catch(() => setNotifs([]))
       .finally(() => setLoading(false));
-  };
+  }, [user]);
 
-  useEffect(() => { cargar(); }, [user]);
-
-  const mapNotif = (n, i) => ({
-    key: n.identificador ?? i,
-    id: n.identificador,
-    tipo: n.tipo || '',
-    t: tipoLabel(n.tipo),
-    d: n.mensaje || '',
-    a: n.fechaHora ? new Date(n.fechaHora).toLocaleString('es-AR') : '',
-    unread: n.leida === false || n.leida === 'no',
-  });
-
-  const tocarNotif = async (n) => {
-    if (n.unread && n.id) {
-      Notificaciones.marcarLeida(n.id).catch(() => {});
-      setNotifs((prev) => prev.map((x) => x.identificador === n.id ? { ...x, leida: 'si' } : x));
-    }
-    if (n.tipo === 'ganaste') {
-      navigation.navigate('Main', { screen: 'Subastas', params: { initialTab: 'ganadas' } });
+  const tocar = async (n) => {
+    if ((n.leida === false || n.leida === 'no') && n.identificador) {
+      Notificaciones.marcarLeida(n.identificador).catch(() => {});
+      setNotifs((prev) => prev.map((x) => x.identificador === n.identificador ? { ...x, leida: 'si' } : x));
     }
   };
-
-  const lista = notifs.map(mapNotif);
 
   return (
     <Screen scroll contentStyle={{ paddingHorizontal: 22 }}>
       <Header />
       <Title>Notificaciones</Title>
       {loading && <ActivityIndicator color={colors.blue} style={{ marginTop: 20 }} />}
-      {!loading && lista.length === 0 && (
+      {!loading && notifs.length === 0 && (
         <Text style={{ color: colors.muted, marginTop: 20, textAlign: 'center' }}>Sin notificaciones.</Text>
       )}
       <View style={{ gap: 12, marginTop: 8 }}>
-        {lista.map((n) => (
-          <TouchableOpacity key={n.key} activeOpacity={0.82} onPress={() => tocarNotif(n)}>
-            <Card el={n.unread} style={{ opacity: n.unread ? 1 : 0.7 }}>
-              <View style={{ flexDirection: 'row', gap: 12 }}>
-                <View style={s.notifIcon}>
-                  <Ionicons name={iconoNotif(n.tipo)} size={18} color={colors.blue} />
-                </View>
+        {notifs.map((n, i) => {
+          const unread = n.leida === false || n.leida === 'no';
+          return (
+            <TouchableOpacity key={n.identificador ?? i} activeOpacity={0.82} onPress={() => tocar(n)}>
+              <Card el={unread} style={{ opacity: unread ? 1 : 0.7, flexDirection: 'row', gap: 12 }}>
+                <View style={s.notifIcon}><Ionicons name={iconoNotif(n.tipo)} size={18} color={colors.blue} /></View>
                 <View style={{ flex: 1 }}>
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                    <Display style={{ fontSize: 13.5, flex: 1 }}>{n.t}</Display>
-                    {n.unread && <View style={{ width: 8, height: 8, borderRadius: 8, backgroundColor: colors.red, marginTop: 3 }} />}
+                    <Display style={{ fontSize: 13.5, flex: 1 }}>{tipoLabel(n.tipo)}</Display>
+                    {unread && <View style={{ width: 8, height: 8, borderRadius: 8, backgroundColor: colors.red, marginTop: 3 }} />}
                   </View>
-                  <Text style={{ color: colors.muted, fontSize: 13, marginVertical: 4, lineHeight: 18 }}>{n.d}</Text>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Text style={{ color: colors.faint, fontSize: 11.5 }}>{n.a}</Text>
-                    {n.tipo === 'ganaste' && (
-                      <Text style={{ color: colors.blue, fontSize: 12, fontWeight: '700' }}>Ir a pagar →</Text>
-                    )}
-                  </View>
+                  <Text style={{ color: colors.muted, fontSize: 13, marginVertical: 4, lineHeight: 18 }}>{n.mensaje}</Text>
+                  <Text style={{ color: colors.faint, fontSize: 11.5 }}>
+                    {n.fechahora ? new Date(n.fechahora).toLocaleString('es-AR') : ''}
+                  </Text>
                 </View>
-              </View>
-            </Card>
-          </TouchableOpacity>
-        ))}
+              </Card>
+            </TouchableOpacity>
+          );
+        })}
       </View>
     </Screen>
   );
 }
 
 function tipoLabel(tipo) {
-  const labels = {
-    ganaste: '¡Ganaste una subasta!',
-    lider: 'Vas al frente',
-    perdiste: 'Te superaron',
-    subasta_creada: 'Nueva subasta',
-    subasta_por_cerrar: 'Subasta por cerrar',
+  const l = {
+    ganaste: '¡Ganaste una subasta!', multa: 'Multa generada', admision: 'Admisión de tu bien',
+    seguro: 'Seguro contratado', payout: 'Cobro disponible', medio_pago: 'Medio de pago', retiro: 'Retiro personal',
   };
-  return labels[tipo] || tipo || 'Notificación';
+  return l[tipo] || tipo || 'Notificación';
 }
-
 function iconoNotif(tipo) {
-  if (tipo === 'ganaste') return 'trophy-outline';
-  if (tipo === 'lider') return 'trending-up-outline';
-  if (tipo === 'perdiste') return 'arrow-down-outline';
-  if (tipo === 'subasta_creada') return 'add-circle-outline';
-  return 'notifications-outline';
+  const i = {
+    ganaste: 'trophy-outline', multa: 'warning-outline', admision: 'cube-outline',
+    seguro: 'shield-checkmark-outline', payout: 'cash-outline', medio_pago: 'card-outline',
+  };
+  return i[tipo] || 'notifications-outline';
 }
-
 
 const s = StyleSheet.create({
   topbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 22, paddingBottom: 4 },

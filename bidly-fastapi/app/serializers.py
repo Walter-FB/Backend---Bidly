@@ -1,18 +1,15 @@
 """
 Serializadores compartidos.
 
-El frontend (React Native) espera
-objetos en camelCase y con relaciones ANIDADAS (p. ej. item.producto.identificador,
-puja.asistente.numeroPostor). La serialización ORM cruda devolvía columnas planas
-en minúscula y las FK como enteros, rompiendo el contrato. Estos helpers producen
-el shape correcto y se reutilizan en todos los routers.
+El frontend (React Native) espera objetos en camelCase y con relaciones ANIDADAS
+(p. ej. item.producto.identificador, puja.asistente.numeroPostor). Estos helpers
+producen ese shape y se reutilizan en los routers.
 """
 from sqlalchemy.orm import Session
 
 from app.models.item_catalogo import ItemCatalogo
 from app.models.producto import Producto
 from app.models.puja import Puja
-from app.models.pujo_fecha import PujoFecha
 from app.models.asistente import Asistente
 
 
@@ -51,12 +48,10 @@ def asistente_ref(asistente_id, db: Session) -> dict | None:
 
 
 def puja_to_dict(p: Puja, db: Session) -> dict:
-    fecha = db.query(PujoFecha).filter(PujoFecha.pujo == p.identificador).first()
     return {
         "identificador": p.identificador,
         "importe": p.importe,
         "ganador": p.ganador,
         "item": p.item,
         "asistente": asistente_ref(p.asistente, db),
-        "fechaHora": fecha.fechahora if fecha else None,
     }

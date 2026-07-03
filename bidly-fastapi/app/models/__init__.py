@@ -1,3 +1,9 @@
+# Esquema final = 28 tablas:
+#   16 del profe (EstructuraActual.sql)
+#   auth: credenciales, usuario_rol  (el esquema del profe no tiene login)
+#   producto_estado                  (aprobación interna de productos, SPEC)
+#   9 features restauradas: mediosdepago, multas, subasta_moneda, admisiones,
+#   cuentas_duenio, payouts, notificaciones, registro_pago, reembolsos.
 from app.models.persona import Persona
 from app.models.sector import Sector
 from app.models.empleado import Empleado
@@ -14,29 +20,21 @@ from app.models.asistente import Asistente
 from app.models.puja import Puja
 from app.models.registro_subasta import RegistroDeSubasta
 from app.models.credencial import Credencial
-from app.models.subasta_moneda import SubastaMoneda
-from app.models.pujo_fecha import PujoFecha
-from app.models.reembolso import Reembolso
-from app.models.medio_pago import MedioPago
-from app.models.notificacion import Notificacion
-from app.models.multa import Multa
-from app.models.subasta_estado_admin import SubastaEstadoAdmin
-from app.models.subasta_sesion import SubastaSesion
 from app.models.usuario_rol import UsuarioRol
-from app.models.dni_verificacion import DniVerificacion
-from app.models.registro_pago import RegistroPago
+from app.models.producto_estado import ProductoEstado
+# Features restauradas
+from app.models.pagos import (
+    MedioPago, Multa, RegistroPago, Reembolso, Payout, CuentaDuenio,
+)
 from app.models.admision import Admision
-from app.models.cuenta_duenio import CuentaDuenio
-from app.models.payout import Payout
-from app.models.ubicacion_bien import UbicacionBien
-from app.models.producto_detalle import ProductoDetalle
+from app.models.subasta_moneda import SubastaMoneda
+from app.models.notificacion import Notificacion
 
 __all__ = [
     "Persona", "Sector", "Empleado", "Duenio", "Cliente", "Subastador", "Seguro",
     "Subasta", "Catalogo", "ItemCatalogo", "Producto", "Foto",
-    "Asistente", "Puja", "RegistroDeSubasta", "Credencial",
-    "SubastaMoneda", "PujoFecha", "Reembolso", "MedioPago",
-    "Notificacion", "Multa", "SubastaEstadoAdmin", "SubastaSesion",
-    "UsuarioRol", "DniVerificacion", "RegistroPago",
-    "Admision", "CuentaDuenio", "Payout", "UbicacionBien", "ProductoDetalle",
+    "Asistente", "Puja", "RegistroDeSubasta",
+    "Credencial", "UsuarioRol", "ProductoEstado",
+    "MedioPago", "Multa", "RegistroPago", "Reembolso", "Payout", "CuentaDuenio",
+    "Admision", "SubastaMoneda", "Notificacion",
 ]

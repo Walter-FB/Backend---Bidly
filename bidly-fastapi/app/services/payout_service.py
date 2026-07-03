@@ -9,8 +9,7 @@ from datetime import datetime
 from decimal import Decimal
 from sqlalchemy.orm import Session
 
-from app.models.payout import Payout
-from app.models.cuenta_duenio import CuentaDuenio
+from app.models.pagos import Payout, CuentaDuenio
 from app.models.producto import Producto
 from app.models.subasta import Subasta
 

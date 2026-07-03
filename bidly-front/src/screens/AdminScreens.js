@@ -1,311 +1,37 @@
-// BIDLY — Panel del subastador: admisiones a validar + subastas que corre.
+// BIDLY — Panel interno del subastador (staff). Todo esto es INTERNO: un usuario
+// normal no ve nada de acá. Tres funciones:
+//   1) Admisiones: tasar bienes (inspección, proponer valor+comisión, rechazar, colecciones).
+//   2) Postores: verificar y admitir postores asignándoles categoría.
+//   3) Subastas: crear / abrir / cerrar / adjudicar.
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { Display, Tag, Chip, Card, SectionLabel, Row, Btn, LiveBadge, SuccessBanner, ErrorBanner, Field } from '../components/ui';
+import { Display, Tag, Chip, Card, SectionLabel, Row, Btn, Field } from '../components/ui';
 import { colors } from '../theme/theme';
 import { Subastas, Pujas, Items, Admisiones, Clientes } from '../api/endpoints';
-import { BASE_URL } from '../api/client';
-import { tituloSubasta, formatFechaSubasta, tagEstadoSubasta } from '../utils/subasta';
+import { tituloSubasta, tagEstadoSubasta } from '../utils/subasta';
 
-function formatAdminError(e) {
-  if (e?.status === 301) return 'Error HTTP→HTTPS. Usá https en app.json o recargá la app.';
-  if (e?.data?.code === 'NOT_APPROVED') return 'La subasta debe estar aprobada antes de iniciar la puja.';
-  if (e?.status === 0) return e.message || 'Sin conexión al backend.';
-  return e?.data?.error || e?.message || 'Error desconocido';
+function fmtError(e) {
+  return e?.data?.message || e?.data?.error || e?.message || 'Error desconocido';
 }
-
-const FILTROS_SUBASTA = [
-  ['todas', 'Todas'],
-  ['abierta', 'Abiertas'],
-  ['cerrada', 'Cerradas'],
-  ['con_items', 'Con ítems'],
-];
 
 export function DashboardAdminScreen() {
   const insets = useSafeAreaInsets();
   const nav = useNavigation();
-
   const [tab, setTab] = useState('admisiones');
-  const [subastas, setSubastas] = useState([]);
-  const [filtroLista, setFiltroLista] = useState('con_items');
-  const [loadingSubastas, setLoadingSubastas] = useState(false);
-  const [selId, setSelId] = useState(null);
-  const [items, setItems] = useState([]);
-  const [asistentes, setAsistentes] = useState([]);
-  const [pujas, setPujas] = useState([]);
-  const [activeIdx, setActiveIdx] = useState(0);
-  const [ctrl, setCtrl] = useState(false);
-  const [lastRefresh, setLastRefresh] = useState('—');
-  const [admisiones, setAdmisiones] = useState([]);
-  const [loadingAdmisiones, setLoadingAdmisiones] = useState(false);
-  const [admisionesCount, setAdmisionesCount] = useState(0);
-  const [postores, setPostores] = useState([]);
-  const [loadingPostores, setLoadingPostores] = useState(false);
-  const [successMsg, setSuccessMsg] = useState(null);
-  const [errorMsg, setErrorMsg] = useState(null);
+  const [msg, setMsg] = useState(null);
+  const [err, setErr] = useState(null);
   const mounted = useRef(true);
-
   useEffect(() => () => { mounted.current = false; }, []);
 
-  const selSubasta = subastas.find(s => s.identificador === selId) ?? null;
-  const activeItem = items[activeIdx] ?? null;
-
-  const subastasFiltradas = subastas.filter((sub) => {
-    if (filtroLista === 'abierta') return sub.estado === 'abierta';
-    if (filtroLista === 'cerrada') return sub.estado === 'cerrada';
-    if (filtroLista === 'con_items') return (sub.totalItems ?? 0) > 0;
-    return true;
-  });
-
-  const loadSubastas = useCallback(async () => {
-    setLoadingSubastas(true);
-    try {
-      const params = { publico: false };
-      if (filtroLista === 'abierta' || filtroLista === 'cerrada') {
-        params.estado = filtroLista;
-      }
-      const data = await Subastas.listar(params);
-      if (mounted.current) setSubastas(Array.isArray(data) ? data : []);
-    } catch (e) {
-      if (mounted.current) setErrorMsg(formatAdminError(e));
-    } finally {
-      if (mounted.current) setLoadingSubastas(false);
-    }
-  }, [filtroLista]);
-
-  useEffect(() => { loadSubastas(); }, [loadSubastas]);
-
-  const loadAdmisiones = useCallback(async () => {
-    setLoadingAdmisiones(true);
-    try {
-      const [lista, countData] = await Promise.all([
-        Admisiones.listar(),
-        Admisiones.contarPendientes(),
-      ]);
-      if (!mounted.current) return;
-      setAdmisiones(Array.isArray(lista) ? lista : []);
-      setAdmisionesCount(Number(countData?.pendientes ?? 0));
-    } catch (e) {
-      if (mounted.current) setErrorMsg(formatAdminError(e));
-    } finally {
-      if (mounted.current) setLoadingAdmisiones(false);
-    }
-  }, []);
-
-  useEffect(() => { loadAdmisiones(); }, [loadAdmisiones]);
-
-  const loadPostores = useCallback(async () => {
-    setLoadingPostores(true);
-    try {
-      const lista = await Clientes.pendientes();
-      if (mounted.current) setPostores(Array.isArray(lista) ? lista : []);
-    } catch (e) {
-      if (mounted.current) setErrorMsg(formatAdminError(e));
-    } finally {
-      if (mounted.current) setLoadingPostores(false);
-    }
-  }, []);
-
-  useEffect(() => { loadPostores(); }, [loadPostores]);
-
-  const refreshContexto = useCallback(async () => {
-    if (!selId || !mounted.current) return;
-    try {
-      const [sub, its, asis, sesion] = await Promise.all([
-        Subastas.obtener(selId),
-        Subastas.catalogos(selId),
-        Subastas.asistentes(selId),
-        Subastas.sesion(selId).catch(() => null),
-      ]);
-      if (!mounted.current) return;
-      const list = Array.isArray(its) ? its : [];
-      const subMerged = sesion?.segundosRestantes != null
-        ? { ...sub, segundosRestantes: sesion.segundosRestantes }
-        : sub;
-      setSubastas(prev => prev.map(s => s.identificador === selId ? { ...s, ...subMerged, totalItems: list.length } : s));
-      setItems(list);
-      setAsistentes(Array.isArray(asis) ? asis : []);
-      if (sesion?.itemActivoId != null) {
-        const idx = list.findIndex((i) => Number(i.identificador) === Number(sesion.itemActivoId));
-        if (idx >= 0) setActiveIdx(idx);
-      } else {
-        const firstFree = list.findIndex((i) => i.subastado !== 'si');
-        if (firstFree >= 0) setActiveIdx(firstFree);
-      }
-      setLastRefresh(new Date().toLocaleTimeString('es-AR', { hour12: false }));
-    } catch (e) {
-      if (mounted.current) setErrorMsg(formatAdminError(e));
-    }
-  }, [selId]);
-
-  const abrirSubasta = useCallback((id) => {
-    setSelId(id);
-    setTab('subastas');
-  }, []);
-
-  const verComoUsuario = useCallback((item) => {
-    if (!selSubasta || !item) return;
-    const titulo = tituloSubasta(selSubasta, items);
-    if (selSubasta.estadoSubasta === 'iniciada' || selSubasta.fase === 'en_curso') {
-      nav.navigate('SubastaEnVivo', {
-        subastaId: selSubasta.identificador,
-        itemId: item.identificador,
-        productoId: item.producto?.identificador,
-        precioBase: item.precioBase,
-        titulo,
-        moneda: selSubasta.moneda,
-        comision: item.comision,
-        fecha: selSubasta.fecha,
-        hora: selSubasta.hora,
-        categoriaSubasta: selSubasta.categoria,
-      });
-    } else {
-      nav.navigate('Producto', { subastaId: selSubasta.identificador, subasta: selSubasta });
-    }
-  }, [selSubasta, items, nav]);
-
-  useEffect(() => {
-    if (!selId) {
-      setItems([]);
-      setAsistentes([]);
-      setPujas([]);
-      setActiveIdx(0);
-      return;
-    }
-    setItems([]);
-    setPujas([]);
-    setActiveIdx(0);
-    let cancelled = false;
-    (async () => {
-      try {
-        const [its, asis, sesion] = await Promise.all([
-          Subastas.catalogos(selId),
-          Subastas.asistentes(selId),
-          Subastas.sesion(selId).catch(() => null),
-        ]);
-        if (cancelled) return;
-        const list = Array.isArray(its) ? its : [];
-        setItems(list);
-        setAsistentes(Array.isArray(asis) ? asis : []);
-        if (sesion?.itemActivoId != null) {
-          const idx = list.findIndex((i) => Number(i.identificador) === Number(sesion.itemActivoId));
-          setActiveIdx(idx >= 0 ? idx : 0);
-        } else {
-          const firstFree = list.findIndex(i => i.subastado !== 'si');
-          setActiveIdx(firstFree >= 0 ? firstFree : 0);
-        }
-      } catch (e) {
-        if (!cancelled && mounted.current) setErrorMsg(formatAdminError(e));
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [selId]);
-
-  useEffect(() => {
-    if (!selId) return;
-    refreshContexto();
-    const id = setInterval(refreshContexto, 5000);
-    return () => clearInterval(id);
-  }, [selId, refreshContexto]);
-
-  useEffect(() => {
-    const iid = activeItem?.identificador;
-    if (!iid) { setPujas([]); return; }
-    const tick = async () => {
-      if (!mounted.current) return;
-      try {
-        const data = await Pujas.porItem(iid);
-        if (mounted.current) setPujas(Array.isArray(data) ? data : []);
-      } catch { if (mounted.current) setPujas([]); }
-    };
-    tick();
-    const id = setInterval(tick, 5000);
-    return () => clearInterval(id);
-  }, [activeItem?.identificador]);
-
-  const runAdminAction = useCallback(async (action, okMessage) => {
-    if (ctrl) return;
-    setCtrl(true);
-    setErrorMsg(null);
-    try {
-      await action();
-      if (mounted.current && okMessage) setSuccessMsg(okMessage);
-    } catch (e) {
-      if (mounted.current) setErrorMsg(formatAdminError(e));
-    } finally {
-      if (mounted.current) setCtrl(false);
-    }
-  }, [ctrl]);
-
-  const iniciarPuja = useCallback(async () => {
-    if (!selId) return;
-    await runAdminAction(async () => {
-      await Subastas.actualizarEstado(selId, 'abierta');
-      await refreshContexto();
-      await loadSubastas();
-    }, 'Puja iniciada — en vivo');
-  }, [selId, runAdminAction, refreshContexto, loadSubastas]);
-
-  const cerrarSubasta = useCallback(async () => {
-    if (!selId) return;
-    await runAdminAction(async () => {
-      await Subastas.actualizarEstado(selId, 'cerrada');
-      await refreshContexto();
-      await loadSubastas();
-    }, 'Subasta cerrada');
-  }, [selId, runAdminAction, refreshContexto, loadSubastas]);
-
-  const adjudicarItemActivo = useCallback(async () => {
-    const item = items[activeIdx];
-    if (!item?.identificador || item.subastado === 'si') return;
-    await runAdminAction(async () => {
-      await Items.adjudicar(item.identificador);
-      await refreshContexto();
-    }, 'Ítem adjudicado');
-  }, [items, activeIdx, runAdminAction, refreshContexto]);
-
-  const pedirInspeccion = useCallback(async (id, direccion) => {
-    await runAdminAction(async () => {
-      await Admisiones.pedirInspeccion(id, direccion);
-      await loadAdmisiones();
-    }, 'Inspección solicitada');
-  }, [runAdminAction, loadAdmisiones]);
-
-  const rechazarAdmision = useCallback(async (id, observacion) => {
-    await runAdminAction(async () => {
-      await Admisiones.rechazar(id, observacion);
-      await loadAdmisiones();
-    }, 'Admisión rechazada');
-  }, [runAdminAction, loadAdmisiones]);
-
-  const proponerAdmision = useCallback(async (id, valorBase, comision, subastaId) => {
-    await runAdminAction(async () => {
-      await Admisiones.proponer(id, valorBase, comision || null, subastaId);
-      await loadAdmisiones();
-    }, 'Propuesta enviada al dueño');
-  }, [runAdminAction, loadAdmisiones]);
-
-  const admitirPostor = useCallback(async (id, categoria) => {
-    await runAdminAction(async () => {
-      await Clientes.actualizarCategoria(id, categoria);
-      await Clientes.admitir(id, 'si');
-      await loadPostores();
-    }, 'Postor admitido');
-  }, [runAdminAction, loadPostores]);
-
-  const crearColeccion = useCallback(async (payload) => {
-    await runAdminAction(async () => {
-      await Admisiones.crearColeccion(payload);
-      await loadAdmisiones();
-    }, 'Colección creada');
-  }, [runAdminAction, loadAdmisiones]);
-
-  const admisionesLabel = admisionesCount > 0
-    ? `Admisiones (${admisionesCount})`
-    : 'Admisiones';
+  const banner = (setter, texto, ms = 2500) => {
+    setter(texto);
+    setTimeout(() => { if (mounted.current) setter(null); }, ms);
+  };
+  const onOk = (t) => banner(setMsg, t);
+  const onErr = (t) => banner(setErr, t);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg, paddingTop: insets.top }}>
@@ -313,348 +39,30 @@ export function DashboardAdminScreen() {
         <TouchableOpacity onPress={() => nav.goBack()} hitSlop={10}>
           <Ionicons name="chevron-back" size={28} color="#fff" />
         </TouchableOpacity>
-        <Display style={{ color: colors.blueLogo, fontSize: 19 }}>Subastador</Display>
+        <Display style={{ color: colors.blueLogo, fontSize: 19 }}>Panel interno</Display>
         <Tag label="SUBASTADOR" color={colors.blue} />
       </View>
 
       <View style={s.tabRow}>
-        {[
-          ['admisiones', admisionesLabel],
-          ['postores', postores.length > 0 ? `Postores (${postores.length})` : 'Postores'],
-          ['subastas', 'Subastas'],
-        ].map(([k, label]) => (
+        {[['admisiones', 'Admisiones'], ['postores', 'Postores'], ['subastas', 'Subastas']].map(([k, label]) => (
           <TouchableOpacity key={k} onPress={() => setTab(k)} style={[s.tabBtn, tab === k && s.tabActive]}>
-            <Text style={[s.tabTxt, tab === k && { color: '#fff', fontWeight: '700' }]} numberOfLines={1}>
-              {label}
-            </Text>
+            <Text style={[s.tabTxt, tab === k && { color: '#fff', fontWeight: '700' }]}>{label}</Text>
           </TouchableOpacity>
         ))}
       </View>
 
-      <SuccessBanner message={successMsg} onDismiss={() => setSuccessMsg(null)} />
-      <ErrorBanner message={errorMsg} onDismiss={() => setErrorMsg(null)} />
-      {ctrl && (
-        <View style={{ paddingVertical: 8, alignItems: 'center' }}>
-          <ActivityIndicator color={colors.blue} />
-          <Text style={{ color: colors.muted, fontSize: 12, marginTop: 6 }}>Procesando…</Text>
-        </View>
-      )}
-      <Text style={{ color: colors.muted, fontSize: 10, textAlign: 'center', marginBottom: 4 }} numberOfLines={1}>
-        API: {BASE_URL}
-      </Text>
+      {msg && <View style={s.okBanner}><Text style={s.okText}>{msg}</Text></View>}
+      {err && <View style={s.errBanner}><Text style={s.errText}>{err}</Text></View>}
 
-      <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 48 }} showsVerticalScrollIndicator={false}>
-        {tab === 'admisiones' ? (
-          <AdmisionesSection
-            admisiones={admisiones}
-            subastas={subastas}
-            loading={loadingAdmisiones}
-            ctrl={ctrl}
-            onRefresh={loadAdmisiones}
-            onInspeccionar={pedirInspeccion}
-            onRechazar={rechazarAdmision}
-            onProponer={proponerAdmision}
-            onColeccion={crearColeccion}
-          />
-        ) : tab === 'postores' ? (
-          <PostoresSection
-            postores={postores}
-            loading={loadingPostores}
-            ctrl={ctrl}
-            onRefresh={loadPostores}
-            onAdmitir={admitirPostor}
-          />
-        ) : selId ? (
-          <EstadoSection
-            subasta={selSubasta}
-            items={items}
-            asistentes={asistentes}
-            pujas={pujas}
-            activeIdx={activeIdx}
-            activeItem={activeItem}
-            onBack={() => setSelId(null)}
-            onSelectItem={setActiveIdx}
-            onVerComoUsuario={verComoUsuario}
-            onAbrir={iniciarPuja}
-            onCerrar={cerrarSubasta}
-            onAdjudicar={adjudicarItemActivo}
-            onRefresh={refreshContexto}
-            ctrl={ctrl}
-            lastRefresh={lastRefresh}
-          />
-        ) : (
-          <SubastasListSection
-            subastas={subastasFiltradas}
-            total={subastas.length}
-            loading={loadingSubastas}
-            filtro={filtroLista}
-            onFiltro={setFiltroLista}
-            onSelect={abrirSubasta}
-            onRefresh={loadSubastas}
-            onCrear={() => nav.navigate('CrearSubasta')}
-          />
-        )}
-      </ScrollView>
+      {tab === 'admisiones' ? <AdmisionesTab onOk={onOk} onErr={onErr} />
+        : tab === 'postores' ? <PostoresTab onOk={onOk} onErr={onErr} />
+        : <CorrerSubastas onOk={onOk} onErr={onErr} />}
     </View>
   );
 }
 
-function SubastasListSection({
-  subastas, total, loading, filtro, onFiltro, onSelect, onRefresh, onCrear,
-}) {
-  return (
-    <View style={{ gap: 12, paddingTop: 14 }}>
-      <Btn title="+ Crear subasta" onPress={onCrear} />
-      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-        <View style={{ flexDirection: 'row', gap: 8, paddingBottom: 4 }}>
-          {FILTROS_SUBASTA.map(([k, label]) => (
-            <Chip key={k} label={label} active={filtro === k} onPress={() => onFiltro(k)} />
-          ))}
-        </View>
-      </ScrollView>
-
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Text style={{ color: colors.muted, fontSize: 12.5 }}>
-          {subastas.length} mostradas · {total} en total
-        </Text>
-        <TouchableOpacity onPress={onRefresh} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-          <Ionicons name="refresh" size={16} color={colors.blue} />
-          <Text style={{ color: colors.blue, fontSize: 13, fontWeight: '700' }}>Actualizar</Text>
-        </TouchableOpacity>
-      </View>
-
-      {loading && <ActivityIndicator color={colors.blue} />}
-
-      {!loading && subastas.length === 0 && (
-        <Text style={{ color: colors.muted, fontSize: 13, textAlign: 'center', paddingVertical: 24 }}>
-          Nada con este filtro. Probá «Todas» o actualizá.
-        </Text>
-      )}
-
-      {subastas.map((sub) => {
-        const tag = tagEstadoSubasta(sub);
-        return (
-          <TouchableOpacity key={sub.identificador} onPress={() => onSelect(sub.identificador)} activeOpacity={0.85}>
-            <Card el style={{ gap: 6 }}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ color: colors.muted, fontSize: 11.5, fontWeight: '700' }}>#{sub.identificador}</Text>
-                  <Display style={{ fontSize: 14.5, lineHeight: 18 }} numberOfLines={2}>
-                    {sub.titulo || tituloSubasta(sub)}
-                  </Display>
-                </View>
-                <View style={{ alignItems: 'flex-end', gap: 4 }}>
-                  <Tag label={tag.label} color={tag.color} />
-                </View>
-              </View>
-              <Text style={{ color: colors.muted, fontSize: 12 }}>
-                {sub.categoria ?? '—'} · {sub.moneda ?? '—'} · {formatFechaSubasta(sub.fecha)}
-              </Text>
-              <Text style={{ color: colors.muted, fontSize: 12 }}>
-                {sub.totalItems ?? 0} ítems · {sub.totalAsistentes ?? 0} asistentes
-              </Text>
-            </Card>
-          </TouchableOpacity>
-        );
-      })}
-    </View>
-  );
-}
-
-function EstadoSection({
-  subasta, items, asistentes, pujas, activeIdx, activeItem, onBack, onSelectItem, onVerComoUsuario,
-  onAbrir, onCerrar, onAdjudicar, onRefresh, ctrl, lastRefresh,
-}) {
-  const tag = tagEstadoSubasta(subasta || {});
-  const isOpen = subasta?.estadoSubasta === 'iniciada' || subasta?.fase === 'en_curso';
-  const isPendiente = subasta?.estadoSubasta === 'pendiente' || subasta?.fase === 'pendiente';
-  const isEsperando = subasta?.estadoSubasta === 'esperando'
-    || (!subasta?.estadoSubasta && subasta?.fase === 'programada');
-  const isFinalizada = subasta?.estadoSubasta === 'finalizada' || subasta?.fase === 'finalizada';
-  const itemActivo = activeItem ?? items[activeIdx];
-  const itemActivoAdjudicado = itemActivo?.subastado === 'si';
-  const allAdjudicados = items.length > 0 && items.every(i => i.subastado === 'si');
-  const datosInconsistentes = isOpen && allAdjudicados;
-
-  return (
-    <View style={{ gap: 12, paddingTop: 14 }}>
-      <TouchableOpacity onPress={onBack} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 4 }}>
-        <Ionicons name="chevron-back" size={20} color={colors.blue} />
-        <Text style={{ color: colors.blue, fontSize: 14, fontWeight: '700' }}>Volver al listado</Text>
-      </TouchableOpacity>
-
-      {datosInconsistentes && (
-        <View style={s.warn}>
-          <Ionicons name="alert-circle-outline" size={14} color={colors.gold} />
-          <Text style={{ color: colors.gold, fontSize: 12.5, flex: 1 }}>
-            Todos los ítems están adjudicados pero la subasta sigue abierta. Cerrala abajo.
-          </Text>
-        </View>
-      )}
-
-      <Card>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-          <Display style={{ fontSize: 15 }} numberOfLines={2}>{tituloSubasta(subasta, items)}</Display>
-          {isOpen ? <LiveBadge /> : <Tag label={tag.label} color={tag.color} />}
-        </View>
-        <Row k="ID" v={`#${subasta?.identificador ?? '—'}`} />
-        <Row k="Categoría" v={subasta?.categoria ?? '—'} />
-        <Row k="Moneda" v={subasta?.moneda ?? '—'} />
-        <Row k="Fecha" v={subasta?.fecha ?? '—'} />
-        <Row
-          k="Estado subasta"
-          v={subasta?.estadoSubasta ?? subasta?.fase ?? '—'}
-          vc={
-            subasta?.estadoSubasta === 'iniciada' ? colors.green
-              : subasta?.estadoSubasta === 'finalizada' ? colors.muted
-              : subasta?.estadoSubasta === 'esperando' ? colors.blue
-              : subasta?.estadoSubasta === 'pendiente' ? colors.gold
-              : undefined
-          }
-        />
-        <Row k="Asistentes" v={String(asistentes.length)} />
-        {isOpen && subasta?.segundosRestantes != null ? (
-          <Row k="Timer" v={`${Math.floor(subasta.segundosRestantes / 60)}m ${subasta.segundosRestantes % 60}s`} vc={colors.gold} />
-        ) : null}
-        <Row k="Último refresh" v={lastRefresh} />
-      </Card>
-
-      <SectionLabel>Catálogo ({items.length} ítems)</SectionLabel>
-      {items.length === 0 && (
-        <Text style={{ color: colors.muted, fontSize: 13 }}>Sin ítems en catálogo</Text>
-      )}
-      {items.map((item, idx) => {
-        const adj = item.subastado === 'si';
-        const active = idx === activeIdx;
-        return (
-          <TouchableOpacity
-            key={item.identificador}
-            onPress={() => (active ? onVerComoUsuario(item) : onSelectItem(idx))}
-            activeOpacity={active ? 0.75 : 0.85}
-            style={[s.itemRow, active && { borderColor: colors.blue, borderWidth: 1.5 }, adj && { opacity: 0.5 }]}
-          >
-            <View style={{ flex: 1 }}>
-              <Text style={{ color: adj ? colors.muted : '#fff', fontSize: 13, fontWeight: '700' }}>
-                {active ? '▶ ' : ''}{item.producto?.descripcionCatalogo ?? `Ítem #${item.identificador}`}
-              </Text>
-              <Text style={{ color: colors.muted, fontSize: 11.5, marginTop: 2 }}>
-                Base: {Number(item.precioBase).toLocaleString('es-AR')} · Comisión: {item.comision}
-              </Text>
-              {active && (
-                <Text style={{ color: colors.blue, fontSize: 11, marginTop: 4, fontWeight: '700' }}>
-                  Tocá para ver la subasta como usuario →
-                </Text>
-              )}
-            </View>
-            {adj
-              ? <Tag label="ADJUDICADO" color={colors.green} />
-              : active ? <Tag label="ACTIVO" color={colors.blue} /> : null}
-          </TouchableOpacity>
-        );
-      })}
-
-      <SectionLabel>Pujas del ítem activo</SectionLabel>
-      {pujas.length === 0 && (
-        <Text style={{ color: colors.muted, fontSize: 13 }}>Sin pujas en este ítem</Text>
-      )}
-      {pujas.slice(0, 5).map((p, i) => (
-        <View key={p.identificador ?? i} style={[s.pujaRow, i === 0 && { borderColor: colors.green }]}>
-          <Text style={{ color: i === 0 ? colors.green : '#fff', fontWeight: '800', fontSize: 15 }}>
-            ${Number(p.importe).toLocaleString('es-AR')}
-          </Text>
-          <View style={{ alignItems: 'flex-end' }}>
-            <Text style={{ color: colors.muted, fontSize: 12 }}>Asistente #{p.asistente?.identificador ?? '?'}</Text>
-            <Text style={{ color: colors.muted, fontSize: 11 }}>
-              {p.fechaHora ? String(p.fechaHora).slice(11, 19) : ''}
-            </Text>
-          </View>
-          {p.ganador === 'si' && <Tag label="GANADOR" color={colors.gold} />}
-        </View>
-      ))}
-
-      <SectionLabel>Control</SectionLabel>
-      <View style={{ flexDirection: 'row', gap: 10 }}>
-        {isOpen ? (
-          <Btn title="Subasta iniciada" kind="ghost" style={{ flex: 1 }} disabled />
-        ) : isFinalizada ? (
-          <Btn title="Subasta finalizada" kind="ghost" style={{ flex: 1 }} disabled />
-        ) : (
-          <Btn
-            title={ctrl ? 'Procesando…' : 'Iniciar puja'}
-            kind="primary"
-            style={{ flex: 1 }}
-            onPress={onAbrir}
-            disabled={ctrl || !isEsperando}
-          />
-        )}
-        <Btn title={ctrl ? '…' : 'Cerrar'} kind="danger" style={{ flex: 1 }} onPress={onCerrar} disabled={ctrl || !isOpen} />
-      </View>
-      {isOpen && itemActivo && !itemActivoAdjudicado && (
-        <Btn
-          title={ctrl ? 'Adjudicando…' : 'Adjudicar ítem activo'}
-          onPress={onAdjudicar}
-          disabled={ctrl}
-          style={{ marginTop: 8 }}
-        />
-      )}
-      <Btn title="Refrescar" kind="ghost" onPress={onRefresh} disabled={ctrl} style={{ marginTop: 4 }} />
-    </View>
-  );
-}
-
-const CATEGORIAS_POSTOR = ['comun', 'especial', 'plata', 'oro', 'platino'];
-
-function PostoresSection({ postores, loading, ctrl, onRefresh, onAdmitir }) {
-  return (
-    <View style={{ gap: 12, paddingTop: 14 }}>
-      <Text style={{ color: colors.muted, fontSize: 13, lineHeight: 20 }}>
-        Postores registrados pendientes de admisión. Verificá sus datos, asigná una categoría y admitilos.
-      </Text>
-      <View style={{ flexDirection: 'row', justifyContent: 'flex-end' }}>
-        <TouchableOpacity onPress={onRefresh} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-          <Ionicons name="refresh" size={16} color={colors.blue} />
-          <Text style={{ color: colors.blue, fontSize: 13, fontWeight: '700' }}>Actualizar</Text>
-        </TouchableOpacity>
-      </View>
-      {loading && <ActivityIndicator color={colors.blue} />}
-      {!loading && postores.length === 0 && (
-        <Text style={{ color: colors.muted, fontSize: 13, textAlign: 'center', paddingVertical: 28 }}>
-          No hay postores pendientes de admisión.
-        </Text>
-      )}
-      {postores.map((p) => (
-        <PostorCard key={p.identificador} p={p} ctrl={ctrl} onAdmitir={onAdmitir} />
-      ))}
-    </View>
-  );
-}
-
-function PostorCard({ p, ctrl, onAdmitir }) {
-  const [cat, setCat] = useState('comun');
-  return (
-    <Card el style={{ gap: 8 }}>
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 8 }}>
-        <View style={{ flex: 1 }}>
-          <Text style={{ color: colors.muted, fontSize: 11.5, fontWeight: '700' }}>#{p.identificador}</Text>
-          <Display style={{ fontSize: 14.5, lineHeight: 18 }} numberOfLines={2}>{p.nombre || 'Postor'}</Display>
-          <Text style={{ color: colors.muted, fontSize: 12 }}>{p.email || '—'}</Text>
-        </View>
-        <Tag label="PENDIENTE" color={colors.gold} />
-      </View>
-      <Text style={{ color: colors.muted, fontSize: 12 }}>Categoría a asignar:</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-        <View style={{ flexDirection: 'row', gap: 8, paddingVertical: 2 }}>
-          {CATEGORIAS_POSTOR.map((c) => (
-            <Chip key={c} label={c} active={cat === c} onPress={() => setCat(c)} />
-          ))}
-        </View>
-      </ScrollView>
-      <Btn title={ctrl ? 'Procesando…' : `Admitir como ${cat.toUpperCase()}`} onPress={() => onAdmitir(p.identificador, cat)} disabled={ctrl} />
-    </Card>
-  );
-}
-
-const ADMISION_ADMIN_LABEL = {
+// ─── TAB 1: ADMISIONES (tasación) ─────────────────────────────────────────────
+const ADM_META = {
   solicitada:       { label: 'A REVISAR', color: colors.gold },
   en_inspeccion:    { label: 'EN INSPECCIÓN', color: colors.blue },
   propuesta:        { label: 'PROPUESTA ENVIADA', color: colors.gold },
@@ -663,114 +71,70 @@ const ADMISION_ADMIN_LABEL = {
   rechazada_duenio: { label: 'DEVUELTA', color: colors.muted },
 };
 
-function ColeccionBuilder({ admisiones, subastas, ctrl, onColeccion }) {
-  const [abierto, setAbierto] = useState(false);
-  const [nombre, setNombre] = useState('');
-  const [subastaId, setSubastaId] = useState(null);
-  const [sel, setSel] = useState({}); // admisionId -> valorBase
+function AdmisionesTab({ onOk, onErr }) {
+  const [admisiones, setAdmisiones] = useState([]);
+  const [subastas, setSubastas] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [ctrl, setCtrl] = useState(false);
 
-  const candidatas = (admisiones || []).filter((a) => a.estado === 'solicitada' || a.estado === 'en_inspeccion');
-  const disponibles = (subastas || []).filter((s) => s.estadoSubasta !== 'finalizada');
+  const cargar = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [adm, subs] = await Promise.all([Admisiones.listar(), Subastas.listar()]);
+      setAdmisiones(Array.isArray(adm) ? adm : []);
+      setSubastas(Array.isArray(subs) ? subs : []);
+    } catch (e) { onErr(fmtError(e)); } finally { setLoading(false); }
+  }, [onErr]);
+  useEffect(() => { cargar(); }, [cargar]);
 
-  const toggle = (id) => setSel((s) => {
-    const n = { ...s };
-    if (id in n) delete n[id]; else n[id] = '';
-    return n;
-  });
-
-  const crear = () => {
-    const ids = Object.keys(sel);
-    if (!nombre.trim()) return Alert.alert('Nombre', 'Ponele un nombre a la colección (ej. "Colección Juan Pérez").');
-    if (!subastaId) return Alert.alert('Subasta', 'Elegí a qué subasta asignar la colección.');
-    if (ids.length < 2) return Alert.alert('Ítems', 'Elegí al menos 2 bienes para armar la colección.');
-    const items = ids.map((id) => ({ admisionId: Number(id), valorBase: Number(sel[id]) }));
-    if (items.some((it) => !it.valorBase || it.valorBase <= 0)) return Alert.alert('Valores', 'Completá el valor base de cada bien.');
-    onColeccion({ subastaId, nombreColeccion: nombre.trim(), items });
-    setAbierto(false); setNombre(''); setSubastaId(null); setSel({});
+  const run = async (fn, ok) => {
+    if (ctrl) return;
+    setCtrl(true);
+    try { await fn(); onOk(ok); await cargar(); }
+    catch (e) { onErr(fmtError(e)); } finally { setCtrl(false); }
   };
 
-  if (!abierto) {
-    return (
-      <Btn title="+ Armar colección" kind="ghost" onPress={() => setAbierto(true)} disabled={candidatas.length < 2} />
-    );
-  }
-  return (
-    <Card el style={{ gap: 8 }}>
-      <Text style={{ color: '#fff', fontWeight: '700' }}>Nueva colección</Text>
-      <Field placeholder='Nombre (ej. "Colección Juan Pérez")' value={nombre} onChangeText={setNombre} />
-      <Text style={{ color: colors.muted, fontSize: 12 }}>Asignar a subasta:</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-        <View style={{ flexDirection: 'row', gap: 8, paddingVertical: 2 }}>
-          {disponibles.map((s) => (
-            <Chip key={s.identificador} label={`#${s.identificador}`} active={subastaId === s.identificador} onPress={() => setSubastaId(s.identificador)} />
-          ))}
-        </View>
-      </ScrollView>
-      <Text style={{ color: colors.muted, fontSize: 12 }}>Bienes (≥2, mismo dueño idealmente):</Text>
-      {candidatas.map((a) => (
-        <View key={a.identificador} style={{ gap: 6 }}>
-          <TouchableOpacity onPress={() => toggle(a.identificador)} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <Ionicons name={a.identificador in sel ? 'checkbox' : 'square-outline'} size={20} color={a.identificador in sel ? colors.blue : colors.muted} />
-            <Text style={{ color: '#fff', fontSize: 13, flex: 1 }} numberOfLines={1}>#{a.identificador} · {a.producto?.titulo || 'Producto'} (dueño {a.duenio})</Text>
-          </TouchableOpacity>
-          {a.identificador in sel && (
-            <Field placeholder="Valor base ($)" value={sel[a.identificador]} onChangeText={(v) => setSel((s) => ({ ...s, [a.identificador]: v }))} keyboardType="numeric" />
-          )}
-        </View>
-      ))}
-      <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
-        <Btn title="Cancelar" kind="ghost" onPress={() => setAbierto(false)} style={{ flex: 1 }} />
-        <Btn title={ctrl ? 'Creando…' : 'Crear colección'} onPress={crear} disabled={ctrl} style={{ flex: 1 }} />
-      </View>
-    </Card>
-  );
-}
+  const disponibles = (subastas || []).filter((s) => s.estado !== 'cerrada');
 
-function AdmisionesSection({ admisiones, subastas, loading, ctrl, onRefresh, onInspeccionar, onRechazar, onProponer, onColeccion }) {
   return (
-    <View style={{ gap: 12, paddingTop: 14 }}>
-      <Text style={{ color: colors.muted, fontSize: 13, lineHeight: 20 }}>
-        Artículos que los usuarios ofrecen a subasta. Pedí la inspección, rechazá con motivo o aceptá
-        proponiendo valor base y comisión (asignándolo a una subasta).
-      </Text>
-      <ColeccionBuilder admisiones={admisiones} subastas={subastas} ctrl={ctrl} onColeccion={onColeccion} />
-      <View style={{ flexDirection: 'row', justifyContent: 'flex-end' }}>
-        <TouchableOpacity onPress={onRefresh} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-          <Ionicons name="refresh" size={16} color={colors.blue} />
-          <Text style={{ color: colors.blue, fontSize: 13, fontWeight: '700' }}>Actualizar</Text>
-        </TouchableOpacity>
-      </View>
-      {loading && <ActivityIndicator color={colors.blue} />}
-      {!loading && admisiones.length === 0 && (
-        <Text style={{ color: colors.muted, fontSize: 13, textAlign: 'center', paddingVertical: 28 }}>
-          No hay solicitudes de admisión.
+    <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 48 }}>
+      <View style={{ paddingTop: 14, gap: 12 }}>
+        <Text style={{ color: colors.muted, fontSize: 13, lineHeight: 19 }}>
+          Bienes que los usuarios ofrecen a subasta. Pedí inspección, rechazá con motivo, o aceptá
+          proponiendo valor base + comisión y asignándolo a una subasta. Colecciones = varios bienes de un mismo dueño.
         </Text>
-      )}
-      {admisiones.map((a) => (
-        <AdmisionAdminCard
-          key={a.identificador}
-          a={a}
-          subastas={subastas}
-          ctrl={ctrl}
-          onInspeccionar={onInspeccionar}
-          onRechazar={onRechazar}
-          onProponer={onProponer}
-        />
-      ))}
-    </View>
+        <ColeccionBuilder admisiones={admisiones} subastas={disponibles} ctrl={ctrl}
+          onCrear={(payload) => run(() => Admisiones.crearColeccion(payload), 'Colección creada')} />
+        <View style={{ flexDirection: 'row', justifyContent: 'flex-end' }}>
+          <TouchableOpacity onPress={cargar} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <Ionicons name="refresh" size={16} color={colors.blue} />
+            <Text style={{ color: colors.blue, fontSize: 13, fontWeight: '700' }}>Actualizar</Text>
+          </TouchableOpacity>
+        </View>
+        {loading && <ActivityIndicator color={colors.blue} />}
+        {!loading && admisiones.length === 0 && (
+          <Text style={{ color: colors.muted, fontSize: 13, textAlign: 'center', paddingVertical: 24 }}>
+            No hay solicitudes de admisión.
+          </Text>
+        )}
+        {admisiones.map((a) => (
+          <AdmisionAdminCard key={a.identificador} a={a} subastas={disponibles} ctrl={ctrl}
+            onInspeccionar={(id, dir) => run(() => Admisiones.pedirInspeccion(id, dir), 'Inspección solicitada')}
+            onRechazar={(id, obs) => run(() => Admisiones.rechazar(id, obs), 'Admisión rechazada')}
+            onProponer={(id, vb, com, sid) => run(() => Admisiones.proponer(id, vb, com, sid), 'Propuesta enviada al dueño')} />
+        ))}
+      </View>
+    </ScrollView>
   );
 }
 
 function AdmisionAdminCard({ a, subastas, ctrl, onInspeccionar, onRechazar, onProponer }) {
-  const meta = ADMISION_ADMIN_LABEL[a.estado] || ADMISION_ADMIN_LABEL.solicitada;
+  const meta = ADM_META[a.estado] || ADM_META.solicitada;
   const [direccion, setDireccion] = useState('Depósito BIDLY · Av. Corrientes 1234, CABA');
   const [observacion, setObservacion] = useState('');
   const [valorBase, setValorBase] = useState('');
   const [comision, setComision] = useState('');
   const [subastaId, setSubastaId] = useState(null);
-
-  // Se puede asignar a cualquier subasta no finalizada (recién creada = 'esperando').
-  const disponibles = (subastas || []).filter((sub) => sub.estadoSubasta !== 'finalizada');
   const accionable = a.estado === 'solicitada' || a.estado === 'en_inspeccion';
 
   const proponer = () => {
@@ -778,7 +142,6 @@ function AdmisionAdminCard({ a, subastas, ctrl, onInspeccionar, onRechazar, onPr
     if (!subastaId) return Alert.alert('Subasta', 'Elegí a qué subasta asignar el bien.');
     onProponer(a.identificador, Number(valorBase), comision ? Number(comision) : null, subastaId);
   };
-
   const rechazar = () => {
     if (!observacion.trim()) return Alert.alert('Motivo', 'Ingresá el motivo del rechazo.');
     onRechazar(a.identificador, observacion.trim());
@@ -798,13 +161,9 @@ function AdmisionAdminCard({ a, subastas, ctrl, onInspeccionar, onRechazar, onPr
       <Text style={{ color: colors.muted, fontSize: 12 }}>
         {a.producto?.fotos ?? 0} fotos · propiedad: {a.declaraPropiedad} · origen: {a.declaraOrigen}
       </Text>
-      {a.estado === 'rechazada' && a.observacion && (
-        <Text style={{ color: colors.red, fontSize: 12 }}>Motivo: {a.observacion}</Text>
-      )}
+      {a.estado === 'rechazada' && a.observacion && <Text style={{ color: colors.red, fontSize: 12 }}>Motivo: {a.observacion}</Text>}
       {a.estado === 'propuesta' && (
-        <Text style={{ color: colors.muted, fontSize: 12 }}>
-          Propuesto: base ${a.valorBase} · comisión ${a.comision} · subasta #{a.subastaId}
-        </Text>
+        <Text style={{ color: colors.muted, fontSize: 12 }}>Propuesto: base ${a.valorBase} · comisión ${a.comision} · subasta #{a.subastaId}</Text>
       )}
 
       {a.estado === 'solicitada' && (
@@ -813,7 +172,6 @@ function AdmisionAdminCard({ a, subastas, ctrl, onInspeccionar, onRechazar, onPr
           <Btn title="Pedir inspección" onPress={() => onInspeccionar(a.identificador, direccion)} disabled={ctrl || !direccion.trim()} />
         </>
       )}
-
       {a.estado === 'en_inspeccion' && (
         <>
           <SectionLabel>Aceptar y proponer</SectionLabel>
@@ -822,21 +180,16 @@ function AdmisionAdminCard({ a, subastas, ctrl, onInspeccionar, onRechazar, onPr
           <Text style={{ color: colors.muted, fontSize: 12 }}>Asignar a subasta:</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             <View style={{ flexDirection: 'row', gap: 8, paddingVertical: 2 }}>
-              {disponibles.length === 0 && <Text style={{ color: colors.muted, fontSize: 12 }}>No hay subastas disponibles</Text>}
-              {disponibles.map((sub) => (
-                <Chip
-                  key={sub.identificador}
-                  label={`#${sub.identificador} · ${sub.categoria ?? ''}`}
-                  active={subastaId === sub.identificador}
-                  onPress={() => setSubastaId(sub.identificador)}
-                />
+              {subastas.length === 0 && <Text style={{ color: colors.muted, fontSize: 12 }}>No hay subastas disponibles</Text>}
+              {subastas.map((sub) => (
+                <Chip key={sub.identificador} label={`#${sub.identificador} · ${sub.categoria ?? ''}`}
+                  active={subastaId === sub.identificador} onPress={() => setSubastaId(sub.identificador)} />
               ))}
             </View>
           </ScrollView>
           <Btn title="Aceptar y proponer" onPress={proponer} disabled={ctrl} />
         </>
       )}
-
       {accionable && (
         <>
           <SectionLabel>Rechazar</SectionLabel>
@@ -848,25 +201,292 @@ function AdmisionAdminCard({ a, subastas, ctrl, onInspeccionar, onRechazar, onPr
   );
 }
 
+function ColeccionBuilder({ admisiones, subastas, ctrl, onCrear }) {
+  const [abierto, setAbierto] = useState(false);
+  const [nombre, setNombre] = useState('');
+  const [subastaId, setSubastaId] = useState(null);
+  const [sel, setSel] = useState({}); // admisionId -> valorBase
+  const [duenio, setDuenio] = useState(null); // colección = un solo dueño (consigna)
+
+  const candidatas = (admisiones || []).filter((a) => a.estado === 'solicitada' || a.estado === 'en_inspeccion');
+  const visibles = duenio == null ? candidatas : candidatas.filter((a) => a.duenio === duenio);
+
+  const toggle = (a) => setSel((s) => {
+    const n = { ...s };
+    if (a.identificador in n) { delete n[a.identificador]; }
+    else { n[a.identificador] = ''; }
+    return n;
+  });
+
+  const onToggle = (a) => {
+    if (duenio == null) setDuenio(a.duenio);
+    else if (a.duenio !== duenio && !(a.identificador in sel)) {
+      return Alert.alert('Un solo dueño', 'La colección lleva el nombre del dueño: todos los bienes deben ser del mismo.');
+    }
+    toggle(a);
+    // Si quedó vacía, liberar el dueño.
+    setTimeout(() => setSel((cur) => { if (Object.keys(cur).length === 0) setDuenio(null); return cur; }), 0);
+  };
+
+  const crear = () => {
+    const ids = Object.keys(sel);
+    if (!nombre.trim()) return Alert.alert('Nombre', 'Ponele un nombre (ej. "Colección Juan Pérez").');
+    if (!subastaId) return Alert.alert('Subasta', 'Elegí a qué subasta asignar la colección.');
+    if (ids.length < 2) return Alert.alert('Ítems', 'Elegí al menos 2 bienes del mismo dueño.');
+    const items = ids.map((id) => ({ admisionId: Number(id), valorBase: Number(sel[id]) }));
+    if (items.some((it) => !it.valorBase || it.valorBase <= 0)) return Alert.alert('Valores', 'Completá el valor base de cada bien.');
+    onCrear({ subastaId, nombreColeccion: nombre.trim(), items });
+    setAbierto(false); setNombre(''); setSubastaId(null); setSel({}); setDuenio(null);
+  };
+
+  if (!abierto) {
+    return <Btn title="+ Armar colección" kind="ghost" onPress={() => setAbierto(true)} disabled={candidatas.length < 2} />;
+  }
+  return (
+    <Card el style={{ gap: 8 }}>
+      <Text style={{ color: '#fff', fontWeight: '700' }}>Nueva colección (un solo dueño)</Text>
+      <Field placeholder='Nombre (ej. "Colección Juan Pérez")' value={nombre} onChangeText={setNombre} />
+      <Text style={{ color: colors.muted, fontSize: 12 }}>Asignar a subasta:</Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        <View style={{ flexDirection: 'row', gap: 8, paddingVertical: 2 }}>
+          {subastas.map((s2) => (
+            <Chip key={s2.identificador} label={`#${s2.identificador}`} active={subastaId === s2.identificador} onPress={() => setSubastaId(s2.identificador)} />
+          ))}
+        </View>
+      </ScrollView>
+      <Text style={{ color: colors.muted, fontSize: 12 }}>
+        Bienes (≥2, mismo dueño){duenio != null ? ` · dueño ${duenio}` : ''}:
+      </Text>
+      {visibles.map((a) => (
+        <View key={a.identificador} style={{ gap: 6 }}>
+          <TouchableOpacity onPress={() => onToggle(a)} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Ionicons name={a.identificador in sel ? 'checkbox' : 'square-outline'} size={20} color={a.identificador in sel ? colors.blue : colors.muted} />
+            <Text style={{ color: '#fff', fontSize: 13, flex: 1 }} numberOfLines={1}>
+              #{a.identificador} · {a.producto?.titulo || 'Producto'} (dueño {a.duenio})
+            </Text>
+          </TouchableOpacity>
+          {a.identificador in sel && (
+            <Field placeholder="Valor base ($)" value={sel[a.identificador]} keyboardType="numeric"
+              onChangeText={(v) => setSel((s2) => ({ ...s2, [a.identificador]: v }))} />
+          )}
+        </View>
+      ))}
+      <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
+        <Btn title="Cancelar" kind="ghost" onPress={() => { setAbierto(false); setSel({}); setDuenio(null); }} style={{ flex: 1 }} />
+        <Btn title={ctrl ? 'Creando…' : 'Crear colección'} onPress={crear} disabled={ctrl} style={{ flex: 1 }} />
+      </View>
+    </Card>
+  );
+}
+
+// ─── TAB 2: POSTORES ──────────────────────────────────────────────────────────
+const CATEGORIAS_POSTOR = ['comun', 'especial', 'plata', 'oro', 'platino'];
+
+function PostoresTab({ onOk, onErr }) {
+  const [postores, setPostores] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [ctrl, setCtrl] = useState(false);
+
+  const cargar = useCallback(async () => {
+    setLoading(true);
+    try { const l = await Clientes.pendientes(); setPostores(Array.isArray(l) ? l : []); }
+    catch (e) { onErr(fmtError(e)); } finally { setLoading(false); }
+  }, [onErr]);
+  useEffect(() => { cargar(); }, [cargar]);
+
+  const admitir = async (id, categoria) => {
+    if (ctrl) return;
+    setCtrl(true);
+    try { await Clientes.actualizarCategoria(id, categoria); await Clientes.admitir(id, 'si'); onOk('Postor admitido'); await cargar(); }
+    catch (e) { onErr(fmtError(e)); } finally { setCtrl(false); }
+  };
+
+  return (
+    <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 48 }}>
+      <View style={{ paddingTop: 14, gap: 12 }}>
+        <Text style={{ color: colors.muted, fontSize: 13, lineHeight: 19 }}>
+          Postores registrados pendientes de admisión. Verificá sus datos, asigná una categoría y admitilos.
+        </Text>
+        <View style={{ flexDirection: 'row', justifyContent: 'flex-end' }}>
+          <TouchableOpacity onPress={cargar} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <Ionicons name="refresh" size={16} color={colors.blue} />
+            <Text style={{ color: colors.blue, fontSize: 13, fontWeight: '700' }}>Actualizar</Text>
+          </TouchableOpacity>
+        </View>
+        {loading && <ActivityIndicator color={colors.blue} />}
+        {!loading && postores.length === 0 && (
+          <Text style={{ color: colors.muted, fontSize: 13, textAlign: 'center', paddingVertical: 24 }}>
+            No hay postores pendientes.
+          </Text>
+        )}
+        {postores.map((p) => <PostorCard key={p.identificador} p={p} ctrl={ctrl} onAdmitir={admitir} />)}
+      </View>
+    </ScrollView>
+  );
+}
+
+function PostorCard({ p, ctrl, onAdmitir }) {
+  const [cat, setCat] = useState('comun');
+  return (
+    <Card el style={{ gap: 8 }}>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 8 }}>
+        <View style={{ flex: 1 }}>
+          <Text style={{ color: colors.muted, fontSize: 11.5, fontWeight: '700' }}>#{p.identificador}</Text>
+          <Display style={{ fontSize: 14.5, lineHeight: 18 }} numberOfLines={2}>{p.nombre || 'Postor'}</Display>
+          <Text style={{ color: colors.muted, fontSize: 12 }}>{p.email || '—'}</Text>
+        </View>
+        <Tag label="PENDIENTE" color={colors.gold} />
+      </View>
+      <Text style={{ color: colors.muted, fontSize: 12 }}>Categoría a asignar:</Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        <View style={{ flexDirection: 'row', gap: 8, paddingVertical: 2 }}>
+          {CATEGORIAS_POSTOR.map((cc) => <Chip key={cc} label={cc} active={cat === cc} onPress={() => setCat(cc)} />)}
+        </View>
+      </ScrollView>
+      <Btn title={ctrl ? 'Procesando…' : `Admitir como ${cat.toUpperCase()}`} onPress={() => onAdmitir(p.identificador, cat)} disabled={ctrl} />
+    </Card>
+  );
+}
+
+// ─── TAB 3: CORRER SUBASTAS ───────────────────────────────────────────────────
+function CorrerSubastas({ onOk, onErr }) {
+  const nav = useNavigation();
+  const [subastas, setSubastas] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [selId, setSelId] = useState(null);
+  const [items, setItems] = useState([]);
+  const [pujasPorItem, setPujasPorItem] = useState({});
+  const [ctrl, setCtrl] = useState(false);
+
+  const cargar = useCallback(async () => {
+    setLoading(true);
+    try { const data = await Subastas.listar(); setSubastas(Array.isArray(data) ? data : []); }
+    catch (e) { onErr(fmtError(e)); } finally { setLoading(false); }
+  }, [onErr]);
+  useEffect(() => { cargar(); }, [cargar]);
+
+  const abrirDetalle = useCallback(async (id) => {
+    setSelId(id);
+    try {
+      const its = await Subastas.catalogos(id);
+      const lista = Array.isArray(its) ? its : [];
+      setItems(lista);
+      const pujas = {};
+      await Promise.all(lista.map(async (it) => {
+        try { pujas[it.identificador] = await Pujas.porItem(it.identificador); } catch { pujas[it.identificador] = []; }
+      }));
+      setPujasPorItem(pujas);
+    } catch (e) { onErr(fmtError(e)); }
+  }, [onErr]);
+
+  const accion = async (fn, ok) => {
+    if (ctrl) return;
+    setCtrl(true);
+    try { await fn(); onOk(ok); } catch (e) { onErr(fmtError(e)); } finally { setCtrl(false); }
+  };
+  const abrir = (id) => accion(async () => { await Subastas.actualizarEstado(id, 'abierta'); await cargar(); await abrirDetalle(id); }, 'Subasta abierta');
+  const cerrar = (id) => accion(async () => { await Subastas.actualizarEstado(id, 'cerrada'); await cargar(); await abrirDetalle(id); }, 'Subasta cerrada');
+  const adjudicar = (itemId) => accion(async () => { await Items.adjudicar(itemId); await abrirDetalle(selId); }, 'Ítem adjudicado');
+
+  const sel = subastas.find((x) => x.identificador === selId) || null;
+
+  if (sel) {
+    const abierta = sel.estado === 'abierta';
+    return (
+      <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 48 }}>
+        <View style={{ paddingTop: 14, gap: 12 }}>
+          <TouchableOpacity onPress={() => setSelId(null)} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <Ionicons name="chevron-back" size={20} color={colors.blue} />
+            <Text style={{ color: colors.blue, fontSize: 14, fontWeight: '700' }}>Volver al listado</Text>
+          </TouchableOpacity>
+          <Card>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <Display style={{ fontSize: 15, flex: 1 }} numberOfLines={2}>{tituloSubasta(sel, items)}</Display>
+              <Tag label={tagEstadoSubasta(sel).label} color={tagEstadoSubasta(sel).color} />
+            </View>
+            <Row k="ID" v={`#${sel.identificador}`} />
+            <Row k="Categoría" v={sel.categoria ?? '—'} />
+            <Row k="Moneda" v={sel.moneda ?? 'pesos'} />
+            <Row k="Fecha" v={sel.fecha ?? '—'} />
+            <Row k="Ítems" v={`${sel.totalItems ?? 0} (${sel.itemsPendientes ?? 0} pendientes)`} />
+          </Card>
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <Btn title={ctrl ? '…' : 'Abrir puja'} onPress={() => abrir(sel.identificador)} disabled={ctrl || abierta} style={{ flex: 1 }} />
+            <Btn title={ctrl ? '…' : 'Cerrar'} kind="danger" onPress={() => cerrar(sel.identificador)} disabled={ctrl || !abierta} style={{ flex: 1 }} />
+          </View>
+          <SectionLabel>Catálogo</SectionLabel>
+          {items.length === 0 && <Text style={{ color: colors.muted, fontSize: 13 }}>Sin ítems en catálogo.</Text>}
+          {items.map((it) => {
+            const pujas = pujasPorItem[it.identificador] || [];
+            const top = pujas[0];
+            const adjudicado = it.subastado === 'si';
+            return (
+              <Card key={it.identificador} el style={{ gap: 6 }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                  <Display style={{ fontSize: 13.5, flex: 1 }} numberOfLines={2}>
+                    {it.producto?.descripcionCatalogo || `Ítem #${it.identificador}`}
+                  </Display>
+                  {adjudicado && <Tag label="ADJUDICADO" color={colors.green} />}
+                </View>
+                <Text style={{ color: colors.muted, fontSize: 12 }}>
+                  Base: {Number(it.precioBase ?? 0).toLocaleString('es-AR')} · {pujas.length} pujas
+                  {top ? ` · mejor $${Number(top.importe).toLocaleString('es-AR')}` : ''}
+                </Text>
+                {!adjudicado && <Btn title={ctrl ? 'Adjudicando…' : 'Adjudicar ítem'} onPress={() => adjudicar(it.identificador)} disabled={ctrl} />}
+              </Card>
+            );
+          })}
+        </View>
+      </ScrollView>
+    );
+  }
+
+  return (
+    <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 48 }}>
+      <View style={{ paddingTop: 14, gap: 12 }}>
+        <Btn title="+ Crear subasta" onPress={() => nav.navigate('CrearSubasta')} />
+        <View style={{ flexDirection: 'row', justifyContent: 'flex-end' }}>
+          <TouchableOpacity onPress={cargar} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <Ionicons name="refresh" size={16} color={colors.blue} />
+            <Text style={{ color: colors.blue, fontSize: 13, fontWeight: '700' }}>Actualizar</Text>
+          </TouchableOpacity>
+        </View>
+        {loading && <ActivityIndicator color={colors.blue} />}
+        {!loading && subastas.length === 0 && (
+          <Text style={{ color: colors.muted, fontSize: 13, textAlign: 'center', paddingVertical: 24 }}>No hay subastas todavía.</Text>
+        )}
+        {subastas.map((sub) => {
+          const tag = tagEstadoSubasta(sub);
+          return (
+            <TouchableOpacity key={sub.identificador} onPress={() => abrirDetalle(sub.identificador)} activeOpacity={0.85}>
+              <Card el style={{ gap: 6 }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ color: colors.muted, fontSize: 11.5, fontWeight: '700' }}>#{sub.identificador}</Text>
+                    <Display style={{ fontSize: 14.5, lineHeight: 18 }} numberOfLines={2}>{tituloSubasta(sub)}</Display>
+                  </View>
+                  <Tag label={tag.label} color={tag.color} />
+                </View>
+                <Text style={{ color: colors.muted, fontSize: 12 }}>
+                  {sub.categoria ?? '—'} · {sub.moneda ?? 'pesos'} · {sub.fecha ?? '—'} · {sub.totalItems ?? 0} ítems · {sub.totalAsistentes ?? 0} asistentes
+                </Text>
+              </Card>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </ScrollView>
+  );
+}
+
 const s = StyleSheet.create({
-  topbar: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 20, height: 52,
-  },
+  topbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, height: 52 },
   tabRow: { flexDirection: 'row', borderBottomWidth: 1, borderColor: colors.border },
-  tabBtn: { flex: 1, paddingVertical: 12, alignItems: 'center', paddingHorizontal: 8 },
+  tabBtn: { flex: 1, paddingVertical: 12, alignItems: 'center' },
   tabActive: { borderBottomWidth: 2, borderBottomColor: colors.blue },
-  tabTxt: { color: colors.muted, fontSize: 13, fontWeight: '600' },
-  itemRow: {
-    backgroundColor: colors.card, borderRadius: 10, borderWidth: 1, borderColor: colors.border,
-    padding: 12, flexDirection: 'row', alignItems: 'center', gap: 10,
-  },
-  pujaRow: {
-    backgroundColor: colors.card, borderRadius: 10, borderWidth: 1, borderColor: colors.border,
-    padding: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-  },
-  warn: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: colors.gold + '22', borderRadius: 8, padding: 10,
-  },
+  tabTxt: { color: colors.muted, fontSize: 13.5, fontWeight: '600' },
+  okBanner: { backgroundColor: 'rgba(55,214,111,0.14)', paddingVertical: 8, paddingHorizontal: 16 },
+  okText: { color: colors.green, fontSize: 13, fontWeight: '700', textAlign: 'center' },
+  errBanner: { backgroundColor: 'rgba(226,57,80,0.14)', paddingVertical: 8, paddingHorizontal: 16 },
+  errText: { color: colors.red, fontSize: 13, fontWeight: '700', textAlign: 'center' },
 });

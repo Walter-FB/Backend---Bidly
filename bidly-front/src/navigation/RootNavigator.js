@@ -1,4 +1,4 @@
-// BIDLY — root stack. Splash -> (Auth | App), with the full screen graph.
+// BIDLY — root stack. Splash -> (Auth | App), with the surviving screen graph.
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useAuth } from '../context/AuthContext';
@@ -8,7 +8,7 @@ import { SplashScreen, LoginScreen, FotoDNIScreen, RegistroScreen, VerificarEmai
 import { FiltrosScreen, NotificacionesScreen } from '../screens/HomeScreens';
 import { ProductoScreen, SubastaEnVivoScreen, GanasteScreen, SubastaFinalizadaScreen, SubastaAdminScreen } from '../screens/AuctionScreens';
 import { MedioPagoScreen, SeguroScreen, ConfirmarPagoScreen, PagoConfirmadoScreen, MultaScreen, ReembolsoScreen } from '../screens/PaymentScreens';
-import { MisComprasScreen, HistorialScreen, PublicarScreen, DatosGanadorScreen, CompraDetalleScreen, DatosPersonalesScreen, CrearSubastaScreen, MisProductosScreen, MisAdmisionesScreen, MisCobrosScreen, MisMetricasScreen, SeguroBienScreen } from '../screens/AccountScreens';
+import { MisComprasScreen, HistorialScreen, PublicarScreen, DatosGanadorScreen, CompraDetalleScreen, DatosPersonalesScreen, CrearSubastaScreen, MisProductosScreen, MisMetricasScreen, MisAdmisionesScreen, MisCobrosScreen } from '../screens/AccountScreens';
 import { DashboardAdminScreen } from '../screens/AdminScreens';
 
 const Stack = createNativeStackNavigator();
@@ -54,13 +54,12 @@ export default function RootNavigator() {
           <Stack.Screen name="MisAdmisiones" component={MisAdmisionesScreen} />
           <Stack.Screen name="MisCobros" component={MisCobrosScreen} />
           <Stack.Screen name="MisMetricas" component={MisMetricasScreen} />
-          <Stack.Screen name="SeguroBien" component={SeguroBienScreen} />
           <Stack.Screen name="DatosGanador" component={DatosGanadorScreen} />
           <Stack.Screen name="DatosPersonales" component={DatosPersonalesScreen} />
           <Stack.Screen name="CrearSubasta" component={CrearSubastaScreen} />
           <Stack.Screen name="MisProductos" component={MisProductosScreen} />
           <Stack.Screen name="SubastaAdmin" component={SubastaAdminScreen} />
-          {/* panel del subastador (role-gated) */}
+          {/* panel interno del subastador (role-gated) */}
           {isSubastador && <Stack.Screen name="DashboardAdmin" component={DashboardAdminScreen} />}
         </Stack.Group>
       )}

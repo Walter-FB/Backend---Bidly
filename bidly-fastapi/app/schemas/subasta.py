@@ -1,6 +1,6 @@
-from pydantic import BaseModel, ConfigDict
-from typing import Optional, Any
-from datetime import date, time, datetime
+from pydantic import BaseModel
+from typing import Optional
+from datetime import date, time
 from decimal import Decimal
 
 
@@ -14,18 +14,11 @@ class SubastaCreate(BaseModel):
     tieneDeposito: Optional[str] = None
     seguridadPropia: Optional[str] = None
     categoria: Optional[str] = None
-    moneda: str
+    moneda: Optional[str] = "pesos"  # 'pesos' | 'dolares' → subasta_moneda
 
 
 class SubastaEstadoUpdate(BaseModel):
-    estado: str
-
-
-class SesionResponse(BaseModel):
-    itemActivoId: Optional[int] = None
-    ordenActual: Optional[int] = None
-    timerDesde: Optional[datetime] = None
-    segundosRestantes: Optional[int] = None
+    estado: str  # 'abierta' | 'cerrada'
 
 
 class SubastaResponse(BaseModel):
@@ -39,15 +32,8 @@ class SubastaResponse(BaseModel):
     tienedeposito: Optional[str] = None
     seguridadpropia: Optional[str] = None
     categoria: Optional[str] = None
-    moneda: Optional[str] = None
     precioBase: Optional[Decimal] = None
     totalItems: Optional[int] = None
+    itemsPendientes: Optional[int] = None
     titulo: Optional[str] = None
     totalAsistentes: Optional[int] = None
-    fase: Optional[str] = None
-    segundosRestantes: Optional[int] = None
-    itemsPendientes: Optional[int] = None
-    algunaVezAbierta: Optional[bool] = None
-    fechaApertura: Optional[datetime] = None
-    estadoSubasta: Optional[str] = None
-    fechaInicioReal: Optional[datetime] = None
