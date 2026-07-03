@@ -97,6 +97,9 @@ def adjudicar_item(item_id: int, db: Session) -> ItemCatalogo:
     if not item or item.subastado == "si":
         return item
 
+    catalogo_item = db.query(Catalogo).filter(Catalogo.identificador == item.catalogo).first()
+    subasta_id = catalogo_item.subasta if catalogo_item else None
+
     puja_ganadora = (
         db.query(Puja)
         .filter(Puja.item == item_id)
@@ -107,6 +110,7 @@ def adjudicar_item(item_id: int, db: Session) -> ItemCatalogo:
 
     if not puja_ganadora:
         _comprar_por_empresa(item, db)
+        _cerrar_si_completa(subasta_id, db)
         db.flush()
         return item
 
@@ -155,8 +159,27 @@ def adjudicar_item(item_id: int, db: Session) -> ItemCatalogo:
         from app.services import categoria_service
         categoria_service.recalcular(asistente.cliente, db)
 
+    # Si con este ítem se agotó el catálogo, la subasta se cierra sola.
+    _cerrar_si_completa(subasta_id, db)
     db.flush()
     return item
+
+
+def _cerrar_si_completa(subasta_id, db: Session) -> None:
+    """Si no quedan ítems pendientes, marca la subasta 'cerrada' (así deja de
+    figurar como en vivo/abierta)."""
+    if not subasta_id:
+        return
+    pendientes = (
+        db.query(ItemCatalogo)
+        .join(Catalogo, ItemCatalogo.catalogo == Catalogo.identificador)
+        .filter(Catalogo.subasta == subasta_id, ItemCatalogo.subastado == "no")
+        .count()
+    )
+    if pendientes == 0:
+        s = db.query(Subasta).filter(Subasta.identificador == subasta_id).first()
+        if s and s.estado != "cerrada":
+            s.estado = "cerrada"
 
 
 def cerrar_subasta(subasta_id: int, db: Session) -> None:

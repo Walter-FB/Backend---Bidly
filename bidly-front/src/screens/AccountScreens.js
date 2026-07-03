@@ -50,19 +50,24 @@ const ESTADO_PRODUCTO_LABEL = {
 // Mapea un RegistroDeSubasta del backend al shape de ListRow.
 function mapRegistro(r) {
   const fecha = r.subasta?.fecha ? new Date(r.subasta.fecha).toLocaleDateString('es-AR') : '—';
+  const pagada = r.estadoPago === 'pagado';
+  const reembolsada = r.reembolsada === 'si';
   return {
     id: r.identificador,
     title: tituloSubasta(r.subasta),
     date: fecha,
     sub: subtituloSubasta(r.subasta),
     price: r.importe ? Number(r.importe).toLocaleString('es-AR', { maximumFractionDigits: 2 }) : '—',
-    tag: 'Ganada',
-    tagColor: colors.green,
+    tag: reembolsada ? 'Reembolsada' : pagada ? 'Pagada' : 'A pagar',
+    tagColor: reembolsada ? colors.muted : pagada ? colors.green : colors.gold,
     registroId: r.identificador,
     importe: r.importe,
     comision: r.comision,
     subastaId: r.subasta?.identificador,
     productoId: r.producto,
+    estadoPago: r.estadoPago,
+    reembolsada: r.reembolsada,
+    moneda: r.subasta?.moneda || 'pesos',
   };
 }
 
@@ -313,8 +318,14 @@ export function MisSubastasScreen({ navigation, route }) {
         )}
         {tab === 'ganadas' && (
           <View style={{ gap: 14 }}>
-            {ganadas.map((g) => (
-              <TouchableOpacity key={g.registroId} activeOpacity={0.85} onPress={() => irAGanaste(navigation, g)}>
+            {ganadas.map((g) => {
+              const yaPaga = g.estadoPago === 'pagado' || g.reembolsada === 'si';
+              return (
+              <TouchableOpacity
+                key={g.registroId}
+                activeOpacity={0.85}
+                onPress={() => (yaPaga ? navigation.navigate('CompraDetalle', g) : irAGanaste(navigation, g))}
+              >
                 <Card el style={{ gap: 6 }}>
                   <View style={{ flexDirection: 'row', gap: 12 }}>
                     <ImgBox
@@ -325,15 +336,17 @@ export function MisSubastasScreen({ navigation, route }) {
                     <View style={{ flex: 1, gap: 4 }}>
                       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                         <Display style={{ fontSize: 15, flex: 1, paddingRight: 8 }} numberOfLines={2}>{g.title}</Display>
-                        <Tag label="¡Ganaste!" color={colors.green} />
+                        <Tag label={g.tag} color={g.tagColor} />
                       </View>
                       <Text style={{ color: colors.muted, fontSize: 13 }}>{g.sub} · {g.date}</Text>
                       <Text style={{ color: colors.green, fontSize: 14, fontWeight: '800' }}>$ {g.price}</Text>
+                      {!yaPaga && <Text style={{ color: colors.gold, fontSize: 12, fontWeight: '700' }}>Tocá para pagar →</Text>}
                     </View>
                   </View>
                 </Card>
               </TouchableOpacity>
-            ))}
+              );
+            })}
           </View>
         )}
         {tab !== 'ganadas' && (
@@ -979,8 +992,9 @@ export function MisMetricasScreen() {
 
 // ─── COMPRA DETALLE ───────────────────────────────────────────────────────────
 export function CompraDetalleScreen({ route }) {
-  const { registroId, title, date, sub, importe, comision, subastaId } = route.params || {};
+  const { registroId, title, date, sub, importe, comision, subastaId, estadoPago, reembolsada } = route.params || {};
   const total = importe != null ? Number(importe) + Number(comision || 0) : null;
+  const pagada = estadoPago === 'pagado';
 
   return (
     <Screen>
@@ -989,7 +1003,11 @@ export function CompraDetalleScreen({ route }) {
         <Title>Mi compra</Title>
         <Sub>Registro #{registroId || '—'}</Sub>
         <Card el style={{ marginTop: 12, gap: 8 }}>
-          <Display style={{ fontSize: 16, lineHeight: 20 }}>{title || 'Artículo'}</Display>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <Display style={{ fontSize: 16, lineHeight: 20, flex: 1, paddingRight: 8 }}>{title || 'Artículo'}</Display>
+            <Tag label={reembolsada === 'si' ? 'REEMBOLSADA' : pagada ? 'PAGADA ✓' : 'A PAGAR'}
+                 color={reembolsada === 'si' ? colors.muted : pagada ? colors.green : colors.gold} />
+          </View>
           {sub ? <Text style={{ color: colors.muted, fontSize: 13 }}>{sub}</Text> : null}
           {date ? <Text style={{ color: colors.faint, fontSize: 12 }}>{date}</Text> : null}
         </Card>

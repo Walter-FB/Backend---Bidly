@@ -88,22 +88,27 @@ export function formatFechaSubasta(fecha) {
   }
 }
 
+/** Todos los ítems ya adjudicados (no queda nada por subastar). */
+function todoAdjudicado(subasta) {
+  return !!subasta && (subasta.totalItems ?? 0) > 0 && (subasta.itemsPendientes ?? 1) === 0;
+}
+
 /** Todavía no abierta. */
 export function esSubastaPendiente(subasta) {
   if (!subasta) return false;
   return subasta.estado === 'cerrada';
 }
 
-/** Finalizada = cerrada (estado de la DDL del profe). */
+/** Finalizada = cerrada, o ya se adjudicó todo el catálogo (aunque no la cerraron). */
 export function esSubastaFinalizada(subasta) {
   if (!subasta) return false;
-  return subasta.estado === 'cerrada';
+  return subasta.estado === 'cerrada' || todoAdjudicado(subasta);
 }
 
-/** Subasta en vivo = abierta. */
+/** Subasta en vivo = abierta Y todavía con ítems por subastar. */
 export function esSubastaEnVivo(subasta) {
   if (!subasta) return false;
-  return subasta.estado === 'abierta';
+  return subasta.estado === 'abierta' && !todoAdjudicado(subasta);
 }
 
 /** Subasta en curso para el vendedor (misma lógica que en vivo). */

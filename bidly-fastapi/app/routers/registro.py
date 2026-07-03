@@ -148,6 +148,11 @@ def pagar(id: int, body: PagarRequest, db: Session = Depends(get_db)):
     if not r:
         raise HTTPException(404, "Registro no encontrado")
 
+    # No permitir pagar dos veces la misma compra.
+    pago_existente = db.query(RegistroPago).filter(RegistroPago.registro == id).first()
+    if pago_existente and pago_existente.estado == "pagado":
+        raise HTTPException(409, detail={"message": "Esta compra ya está pagada.", "code": "ALREADY_PAID"})
+
     # Moneda: una subasta en dólares se cancela en dólares (transferencia o tarjeta
     # internacional), no con cheque.
     sm = db.query(SubastaMoneda).filter(SubastaMoneda.subasta == r.subasta).first()
