@@ -23,6 +23,26 @@ def _moneda(subasta_id: int, db: Session) -> str:
     return sm.moneda if sm else "pesos"
 
 
+def _ensure_duenio(persona_id: int, db: Session) -> None:
+    """Garantiza una fila en `duenios` para el comprador antes de asignarle un
+    producto (productos.duenio es FK NOT NULL a duenios). Un postor puede no ser
+    dueño todavía; al ganar un bien pasa a serlo."""
+    from sqlalchemy import func
+    from app.models.duenio import Duenio
+    from app.models.empleado import Empleado, EMPLEADO_SISTEMA
+    if db.query(Duenio).filter(Duenio.identificador == persona_id).first():
+        return
+    emp = db.query(Empleado).order_by(func.random()).first()
+    db.add(Duenio(
+        identificador=persona_id,
+        verificacionfinanciera="no",
+        verificacionjudicial="no",
+        calificacionriesgo=3,
+        verificador=emp.identificador if emp else EMPLEADO_SISTEMA,
+    ))
+    db.flush()
+
+
 def enrich(subasta: Subasta, db: Session) -> dict:
     data: dict = {col.name: getattr(subasta, col.name) for col in subasta.__table__.columns}
     data["moneda"] = _moneda(subasta.identificador, db)
@@ -158,6 +178,14 @@ def adjudicar_item(item_id: int, db: Session) -> ItemCatalogo:
         # La actividad (ganar) puede mejorar la categoría del comprador.
         from app.services import categoria_service
         categoria_service.recalcular(asistente.cliente, db)
+
+    # El comprador pasa a ser el nuevo dueño de la pieza (registración del nuevo
+    # dueño). Se hace DESPUÉS del payout, que se acredita al dueño original (el
+    # vendedor). El registroDeSubasta ya guardó al vendedor como `duenio`.
+    if prod and asistente and asistente.cliente:
+        _ensure_duenio(asistente.cliente, db)
+        prod.duenio = asistente.cliente
+        prod.disponible = "no"  # vendido: ya no está disponible para otro catálogo
 
     # Si con este ítem se agotó el catálogo, la subasta se cierra sola.
     _cerrar_si_completa(subasta_id, db)

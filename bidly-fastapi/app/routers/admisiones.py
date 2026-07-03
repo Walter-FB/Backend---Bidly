@@ -27,6 +27,7 @@ from app.models.subasta import Subasta
 from app.models.catalogo import Catalogo
 from app.models.item_catalogo import ItemCatalogo
 from app.models.seguro import Seguro
+from app.models.ubicacion_bien import UbicacionBien
 from app.models.empleado import EMPLEADO_SISTEMA
 from app.schemas.admision import (
     AdmisionCreate, InspeccionRequest, RechazarAdmisionRequest,
@@ -37,6 +38,7 @@ from app.services import notificacion_service
 router = APIRouter()
 
 COMPANIA_SEGURO = "Aseguradora BIDLY S.A."
+DEPOSITO_DEFECTO = "Depósito Central BIDLY"
 
 
 class ItemColeccion(BaseModel):
@@ -87,10 +89,31 @@ def _asegurar_producto(producto_id: int, valor_base, db: Session) -> None:
     prod.seguro = nropoliza
 
 
+def _asignar_ubicacion(producto_id: int, deposito: Optional[str], db: Session) -> None:
+    """Registra en qué depósito quedó guardada la pieza, para que el dueño pueda
+    verla desde la app (enunciado). Usa la dirección de inspección como depósito y
+    genera un sector/estante determinístico. Idempotente (un bien → una ubicación)."""
+    if producto_id is None:
+        return
+    if db.query(UbicacionBien).filter(UbicacionBien.producto == producto_id).first():
+        return
+    sector = f"Sector {chr(65 + producto_id % 6)} · Estante {producto_id % 20 + 1}"
+    db.add(UbicacionBien(
+        producto=producto_id,
+        deposito=(deposito or DEPOSITO_DEFECTO),
+        sector=sector,
+        ingresado_en=datetime.utcnow(),
+    ))
+    db.flush()
+
+
 def _to_dict(a: Admision, db: Session) -> dict:
     prod = db.query(Producto).filter(Producto.identificador == a.producto).first()
     n_fotos = db.query(Foto).filter(Foto.producto == a.producto).count() if a.producto else 0
     sub = db.query(Subasta).filter(Subasta.identificador == a.subasta).first() if a.subasta else None
+    # Ubicación en depósito + póliza del seguro (visibles cuando el bien fue aceptado).
+    ub = db.query(UbicacionBien).filter(UbicacionBien.producto == a.producto).first() if a.producto else None
+    seg = db.query(Seguro).filter(Seguro.nropoliza == prod.seguro).first() if (prod and prod.seguro) else None
     return {
         "identificador": a.identificador,
         "estado": a.estado,
@@ -118,6 +141,16 @@ def _to_dict(a: Admision, db: Session) -> dict:
         "esColeccion": a.es_coleccion,
         "nombreColeccion": a.nombre_coleccion,
         "creadoEn": a.creado_en.isoformat() if a.creado_en else None,
+        # Ubicación en depósito + póliza (el dueño las ve una vez aceptado el bien).
+        "ubicacion": {"deposito": ub.deposito, "sector": ub.sector} if ub else None,
+        "poliza": {
+            "nroPoliza": seg.nropoliza,
+            "compania": seg.compania,
+            "importe": float(seg.importe) if seg.importe is not None else None,
+        } if seg else None,
+        # Aviso a autoridades por duda de origen.
+        "alertaOrigen": a.alerta_origen or "no",
+        "alertaOrigenMotivo": a.alerta_origen_motivo,
     }
 
 
@@ -200,6 +233,8 @@ def aprobar_duenio(id: int, db: Session = Depends(get_db)):
 
     # De cada bien recibido para la venta se contrata un seguro según el valor base.
     _asegurar_producto(a.producto, valor, db)
+    # Y queda guardado en un depósito (el dueño puede ver la ubicación desde la app).
+    _asignar_ubicacion(a.producto, a.direccion_envio, db)
 
     a.estado = "aprobada"
     a.actualizado_en = datetime.utcnow()
@@ -284,6 +319,30 @@ def rechazar(id: int, body: RechazarAdmisionRequest, db: Session = Depends(get_d
         a.duenio, "admision",
         f"Tu artículo no fue aceptado. Motivo: {body.observacion}. "
         "Será devuelto con cargo a tu cuenta.",
+        db,
+    )
+    db.commit()
+    return _to_dict(a, db)
+
+
+class AlertarOrigenRequest(BaseModel):
+    motivo: str
+
+
+@router.patch("/{id}/alertar-origen")
+def alertar_origen(id: int, body: AlertarOrigenRequest, db: Session = Depends(get_db)):
+    """La empresa tiene dudas sobre el origen del bien: avisa a las autoridades
+    (queda registrado con motivo y fecha) y le pide al dueño que acredite el origen
+    lícito. No bloquea el circuito; deja constancia del aviso (enunciado)."""
+    a = _get(id, db)
+    a.alerta_origen = "si"
+    a.alerta_origen_motivo = body.motivo
+    a.alerta_origen_en = datetime.utcnow()
+    a.actualizado_en = datetime.utcnow()
+    db.commit()
+    notificacion_service.crear(
+        a.duenio, "admision",
+        f"Necesitamos que acredites el origen lícito de tu bien. Motivo: {body.motivo}.",
         db,
     )
     db.commit()

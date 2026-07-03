@@ -24,6 +24,13 @@ class Admision(Base):
     declara_propiedad = Column(String, default="no")   # 'si' | 'no'
     declara_origen    = Column(String, default="no")   # 'si' | 'no' (origen lícito)
 
+    # Aviso a autoridades ante duda de origen (enunciado): la empresa marca la
+    # admisión como observada, se registra el motivo y se le pide al dueño que
+    # acredite el origen lícito.
+    alerta_origen        = Column(String, default="no")   # 'si' | 'no'
+    alerta_origen_motivo = Column(String)
+    alerta_origen_en     = Column(DateTime)
+
     # Datos del proceso.
     direccion_envio   = Column(String)                 # a dónde enviar para inspección
     observacion       = Column(String)                 # causas de rechazo

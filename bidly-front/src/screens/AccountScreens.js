@@ -958,6 +958,11 @@ export function MisAdmisionesScreen({ navigation }) {
                 {a.esColeccion === 'si' && a.nombreColeccion && (
                   <Text style={{ color: colors.blue, fontSize: 12 }}>Colección: {a.nombreColeccion}</Text>
                 )}
+                {a.alertaOrigen === 'si' && (
+                  <Text style={{ color: colors.red, fontSize: 12.5 }}>
+                    ⚠ Acreditá el origen lícito del bien{a.alertaOrigenMotivo ? `: ${a.alertaOrigenMotivo}` : ''}
+                  </Text>
+                )}
                 {a.estado === 'en_inspeccion' && <Text style={{ color: colors.muted, fontSize: 12.5 }}>Enviá el bien a: {a.direccionEnvio}</Text>}
                 {a.estado === 'rechazada' && <Text style={{ color: colors.red, fontSize: 12.5 }}>Motivo: {a.observacion}</Text>}
                 {a.estado === 'propuesta' && (
@@ -972,7 +977,15 @@ export function MisAdmisionesScreen({ navigation }) {
                   </>
                 )}
                 {a.estado === 'aprobada' && (
-                  <Text style={{ color: colors.green, fontSize: 12.5 }}>Incluido en la subasta y asegurado. ¡Suerte con el remate!</Text>
+                  <>
+                    <Text style={{ color: colors.green, fontSize: 12.5 }}>Incluido en la subasta y asegurado. ¡Suerte con el remate!</Text>
+                    {a.ubicacion && (
+                      <Row k="Depósito" v={`${a.ubicacion.deposito}${a.ubicacion.sector ? ` · ${a.ubicacion.sector}` : ''}`} />
+                    )}
+                    {a.poliza && (
+                      <Row k="Póliza" v={`${a.poliza.nroPoliza} · $${Number(a.poliza.importe || 0).toLocaleString('es-AR')}`} />
+                    )}
+                  </>
                 )}
               </Card>
             );

@@ -42,13 +42,13 @@ async def lifespan(app: FastAPI):
         """))
         conn.commit()
 
-    # Las 9 tablas de features (checkfirst=True → no recrea si ya existen).
+    # Las tablas de features (checkfirst=True → no recrea si ya existen).
     feature_tables = [
         models.MedioPago.__table__, models.Multa.__table__,
         models.RegistroPago.__table__, models.Reembolso.__table__,
         models.Payout.__table__, models.CuentaDuenio.__table__,
         models.Admision.__table__, models.SubastaMoneda.__table__,
-        models.Notificacion.__table__,
+        models.Notificacion.__table__, models.UbicacionBien.__table__,
     ]
     Base.metadata.create_all(bind=engine, tables=feature_tables)
 
@@ -62,6 +62,10 @@ async def lifespan(app: FastAPI):
         # Flujo de solicitud de reembolso (el comprador pide, la empresa acepta/rechaza).
         conn.execute(text("ALTER TABLE reembolsos ADD COLUMN IF NOT EXISTS estado VARCHAR DEFAULT 'ninguno'"))
         conn.execute(text("ALTER TABLE reembolsos ADD COLUMN IF NOT EXISTS motivo VARCHAR"))
+        # Aviso a autoridades por duda de origen (columnas nuevas en la tabla propia admisiones).
+        conn.execute(text("ALTER TABLE admisiones ADD COLUMN IF NOT EXISTS alerta_origen VARCHAR DEFAULT 'no'"))
+        conn.execute(text("ALTER TABLE admisiones ADD COLUMN IF NOT EXISTS alerta_origen_motivo VARCHAR"))
+        conn.execute(text("ALTER TABLE admisiones ADD COLUMN IF NOT EXISTS alerta_origen_en TIMESTAMP"))
         conn.commit()
     yield
 

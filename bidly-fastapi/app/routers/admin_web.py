@@ -119,15 +119,22 @@ function admCard(a,disp){
   return '<div class="card"><div class="row"><div><div class="title">'+esc(a.producto&&a.producto.titulo||('Producto #'+(a.producto&&a.producto.identificador)))+'</div>'
     +'<div class="muted">#'+a.identificador+' · dueño '+a.duenio+' · '+(a.producto&&a.producto.fotos||0)+' fotos · propiedad:'+esc(a.declaraPropiedad)+' · origen:'+esc(a.declaraOrigen)+'</div>'
     +(a.esColeccion==='si'?'<div class="muted" style="color:var(--blue)">Colección: '+esc(a.nombreColeccion)+'</div>':'')+'</div>'
-    +'<span class="st" style="background:'+col+'">'+lbl+'</span></div>'+acc+'</div>';
+    +'<span class="st" style="background:'+col+'">'+lbl+'</span></div>'+acc+origenBox(a)+'</div>';
 }
 function rechazoBox(a){return '<input id="obs'+a.identificador+'" placeholder="Motivo del rechazo"><button class="act b-red" onclick="rechazar('+a.identificador+')">Rechazar y devolver</button>'}
+function origenBox(a){
+  if(a.alertaOrigen==='si')return '<div class="muted" style="color:var(--red);margin-top:6px">⚠ Origen observado — autoridades avisadas'+(a.alertaOrigenMotivo?': '+esc(a.alertaOrigenMotivo):'')+'</div>';
+  if(!['solicitada','en_inspeccion'].includes(a.estado))return '';
+  return '<input id="org'+a.identificador+'" placeholder="Motivo de la duda de origen (opcional)"><button class="act b-ghost" onclick="alertarOrigen('+a.identificador+')">⚠ Alertar origen a autoridades</button>';
+}
 async function insp(id){const dir=document.getElementById('dir'+id).value;try{await api('/admisiones/'+id+'/inspeccion','PATCH',{direccionEnvio:dir});toast('Inspección solicitada');loadAdm()}catch(e){toast(e.message,false)}}
 async function proponer(id){const vb=+document.getElementById('vb'+id).value,co=document.getElementById('co'+id).value,su=+document.getElementById('su'+id).value;
   if(!vb||vb<=0)return toast('Ingresá un valor base',false);if(!su)return toast('Elegí una subasta',false);
   try{await api('/admisiones/'+id+'/proponer','PATCH',{valorBase:vb,comision:co?+co:null,subastaId:su});toast('Propuesta enviada al dueño');loadAdm()}catch(e){toast(e.message,false)}}
 async function rechazar(id){const o=document.getElementById('obs'+id).value;if(!o.trim())return toast('Ingresá el motivo',false);
   try{await api('/admisiones/'+id+'/rechazar','PATCH',{observacion:o.trim()});toast('Admisión rechazada');loadAdm()}catch(e){toast(e.message,false)}}
+async function alertarOrigen(id){const m=(document.getElementById('org'+id).value||'').trim();
+  try{await api('/admisiones/'+id+'/alertar-origen','PATCH',{motivo:m||'Sin especificar'});toast('Aviso de origen registrado');loadAdm()}catch(e){toast(e.message,false)}}
 
 // ── POSTORES ──
 async function loadPos(){const el=document.getElementById('pos');el.innerHTML='Cargando…';
