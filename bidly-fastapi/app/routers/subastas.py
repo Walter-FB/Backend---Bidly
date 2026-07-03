@@ -93,6 +93,9 @@ def update_estado(id: int, body: SubastaEstadoUpdate, db: Session = Depends(get_
         subasta_service.cerrar_subasta(id, db)
     else:
         s.estado = body.estado  # 'abierta'
+        if body.estado == "abierta":
+            # Al abrir la puja, liberar los ítems sin ganador real (así queda pujable).
+            subasta_service.reabrir_items(id, db)
     db.commit()
     db.refresh(s)
     return subasta_service.enrich(s, db)

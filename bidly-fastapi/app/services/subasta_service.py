@@ -182,6 +182,36 @@ def _cerrar_si_completa(subasta_id, db: Session) -> None:
             s.estado = "cerrada"
 
 
+def reabrir_items(subasta_id: int, db: Session) -> None:
+    """Al abrir la puja, los ítems que NO tienen un ganador real (los que compró la
+    empresa por falta de pujas, o que quedaron adjudicados sin venta) vuelven a estar
+    disponibles para pujar. Los ítems con ganador real (puja ganadora) NO se tocan.
+
+    Así, abrir una subasta siempre la deja pujable — evita que quede 'en vivo' pero
+    sin nada para ofertar."""
+    from app.models.pagos import Payout
+    items = (
+        db.query(ItemCatalogo)
+        .join(Catalogo, ItemCatalogo.catalogo == Catalogo.identificador)
+        .filter(Catalogo.subasta == subasta_id)
+        .all()
+    )
+    for it in items:
+        if it.subastado != "si":
+            continue
+        gano = (
+            db.query(Puja)
+            .filter(Puja.item == it.identificador, Puja.ganador == "si")
+            .first()
+        )
+        if gano:
+            continue  # venta real a un postor → no se reabre
+        it.subastado = "no"
+        # Deshacer la "compra por la empresa" de ese bien (ya no la compró).
+        db.query(Payout).filter(Payout.producto == it.producto, Payout.origen == "empresa").delete()
+    db.flush()
+
+
 def cerrar_subasta(subasta_id: int, db: Session) -> None:
     """Cierra la subasta: adjudica todos los ítems pendientes y la marca 'cerrada'."""
     pendientes = (
