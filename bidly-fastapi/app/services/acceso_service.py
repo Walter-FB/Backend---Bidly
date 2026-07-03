@@ -16,6 +16,8 @@ from app.models.cliente import Cliente
 from app.models.subasta import Subasta
 from app.models.pagos import MedioPago
 from app.models.asistente import Asistente
+from app.models.item_catalogo import ItemCatalogo
+from app.models.catalogo import Catalogo
 
 CATEGORIAS = ["comun", "especial", "plata", "oro", "platino"]
 
@@ -42,9 +44,19 @@ def tiene_medio_verificado(cliente_id: int, db: Session) -> bool:
 
 
 def _subasta_viva(subasta_id: int, db: Session) -> bool:
-    """En vivo = abierta (estado directo de la DDL del profe)."""
+    """En vivo = abierta Y con ítems por subastar. Si ya se adjudicó todo el
+    catálogo, la subasta terminó (aunque el estado haya quedado 'abierta') y no
+    debe contar como "conexión activa"."""
     sub = db.query(Subasta).filter(Subasta.identificador == subasta_id).first()
-    return bool(sub and sub.estado == "abierta")
+    if not sub or sub.estado != "abierta":
+        return False
+    pendientes = (
+        db.query(ItemCatalogo)
+        .join(Catalogo, ItemCatalogo.catalogo == Catalogo.identificador)
+        .filter(Catalogo.subasta == subasta_id, ItemCatalogo.subastado == "no")
+        .count()
+    )
+    return pendientes > 0
 
 
 def conectado_en_otra_viva(cliente_id: int, subasta_id: int, db: Session) -> bool:
