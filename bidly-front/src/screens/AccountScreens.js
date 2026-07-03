@@ -815,15 +815,16 @@ export function PublicarScreen({ navigation }) {
   const set = (k) => (v) => setF((s) => ({ ...s, [k]: v }));
 
   const elegirFoto = async () => {
+    if (fotos.length >= MIN_FOTOS) return;
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
       Alert.alert('Permiso requerido', 'Necesitamos acceso a tu galería para agregar fotos.');
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'], allowsMultipleSelection: true, quality: 0.7,
+      mediaTypes: ['images'], allowsMultipleSelection: true, selectionLimit: MIN_FOTOS - fotos.length, quality: 0.7,
     });
-    if (!result.canceled) setFotos((prev) => [...prev, ...result.assets]);
+    if (!result.canceled) setFotos((prev) => [...prev, ...result.assets].slice(0, MIN_FOTOS));
   };
 
   const quitarFoto = (idx) => setFotos((prev) => prev.filter((_, i) => i !== idx));
@@ -880,7 +881,7 @@ export function PublicarScreen({ navigation }) {
       <ScrollView contentContainerStyle={{ paddingHorizontal: 22, paddingBottom: 30 }} showsVerticalScrollIndicator={false}>
         <Title>Publicar{'\n'}producto</Title>
         <Sub>Completá los datos y se enviará a revisión de Bidly.</Sub>
-        <SectionLabel>Fotos ({fotos.length}, mínimo {MIN_FOTOS})</SectionLabel>
+        <SectionLabel>Fotos ({fotos.length}/{MIN_FOTOS}){fotos.length >= MIN_FOTOS ? ' ✓' : ''}</SectionLabel>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
           {fotos.map((foto, i) => (
             <TouchableOpacity key={i} style={s.photo} onPress={() => quitarFoto(i)} activeOpacity={0.8}>
@@ -888,11 +889,13 @@ export function PublicarScreen({ navigation }) {
               <View style={s.removeOverlay}><Ionicons name="close-circle" size={20} color="#fff" /></View>
             </TouchableOpacity>
           ))}
-          <TouchableOpacity style={[s.photo, s.photoAdd]} onPress={elegirFoto}>
-            <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}>
-              <Ionicons name="add" size={26} color={colors.blue} />
-            </View>
-          </TouchableOpacity>
+          {fotos.length < MIN_FOTOS && (
+            <TouchableOpacity style={[s.photo, s.photoAdd]} onPress={elegirFoto}>
+              <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}>
+                <Ionicons name="add" size={26} color={colors.blue} />
+              </View>
+            </TouchableOpacity>
+          )}
         </View>
 
         <SectionLabel>Datos del producto</SectionLabel>
