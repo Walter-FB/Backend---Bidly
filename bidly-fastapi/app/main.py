@@ -126,6 +126,7 @@ from app.routers import (
     pujas, asistentes, subastadores,
     productos, fotos, registro, seguros, sectores,
     multas, admisiones, payouts, notificaciones,
+    admin_web,
 )
 
 prefix = "/api"
@@ -147,3 +148,5 @@ app.include_router(multas.router,           prefix=f"{prefix}/multas",          
 app.include_router(admisiones.router,       prefix=f"{prefix}/admisiones",       tags=["Admisiones"])
 app.include_router(payouts.router,          prefix=f"{prefix}/payouts",          tags=["Payouts"])
 app.include_router(notificaciones.router,   prefix=f"{prefix}/notificaciones",   tags=["Notificaciones"])
+# Panel de administración como WEB (no /api): se abre en el navegador en /admin.
+app.include_router(admin_web.router,         tags=["Admin Web"])
