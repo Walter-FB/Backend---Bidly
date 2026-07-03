@@ -491,11 +491,8 @@ export function MisSubastasScreen({ navigation, route }) {
         </View>
         )}
       </ScrollView>
-      {isSubastador && (
-        <BottomBar>
-          <Btn title="+ Nueva subasta" onPress={() => navigation.navigate('CrearSubasta')} />
-        </BottomBar>
-      )}
+      {/* La creación de subastas es exclusiva del subastador y vive en su panel
+          (DashboardAdmin → Subastas → "+ Crear subasta"), no en las pestañas. */}
     </View>
   );
 }
