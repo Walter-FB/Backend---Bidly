@@ -145,20 +145,32 @@ def get_medios_pago(id: int, db: Session = Depends(get_db)):
     return db.query(MedioPago).filter(MedioPago.cliente == id).all()
 
 
+# Fondos "verificados por la empresa": el usuario NO carga plata en la app. La
+# tarjeta/cuenta tiene un cupo disponible y el cheque un monto certificado, que
+# los asigna internamente el sistema (no es un wallet donde uno carga saldo).
+CUPO_TARJETA_CUENTA = 500000
+MONTO_CHEQUE = 10000
+
+
 @router.post("/{id}/medios-pago", response_model=MedioPagoResponse, status_code=201)
 def add_medio_pago(id: int, body: MedioPagoCreate, db: Session = Depends(get_db)):
+    tipo = _normalizar_tipo(body.tipo)
+    # Montos internos (no los ingresa el usuario).
+    montocheque = MONTO_CHEQUE if tipo == "cheque" else None
+    saldo = None if tipo == "cheque" else CUPO_TARJETA_CUENTA
+
     mp = MedioPago(
         cliente=id,
-        tipo=_normalizar_tipo(body.tipo),
+        tipo=tipo,
         numerotarjeta=body.numeroTarjeta,
         vencimiento=_normalizar_vencimiento(body.vencimiento),
         titular=body.titular,
         numerocuenta=body.numeroCuenta,
         banco=body.banco,
         numerocheque=body.numeroCheque,
-        montocheque=body.montoCheque,
-        saldo=body.saldo,
-        verificado=body.verificado or "no",
+        montocheque=montocheque,
+        saldo=saldo,
+        verificado=body.verificado or "si",
     )
     db.add(mp)
     db.commit()

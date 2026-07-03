@@ -117,7 +117,7 @@ export function MedioPagoScreen({ navigation, route }) {
   const [medioTipo, setMedioTipo] = useState('tarjeta'); // 'tarjeta' | 'cuenta' | 'cheque'
   const [nuevo, setNuevo] = useState({
     subtipo: 'credito', numeroTarjeta: '', vencimiento: '', titular: '',
-    saldo: '100000', numeroCuenta: '', banco: '', numeroCheque: '', montoCheque: '10000',
+    numeroCuenta: '', banco: '', numeroCheque: '',
   });
   const [guardando, setGuardando] = useState(false);
   const setN = (k) => (v) => setNuevo((s) => ({ ...s, [k]: v }));
@@ -133,6 +133,7 @@ export function MedioPagoScreen({ navigation, route }) {
   useEffect(cargar, [user]);
 
   const onAgregar = async () => {
+    // El usuario NO carga plata: los fondos los verifica/asigna la empresa (backend).
     let payload = { verificado: 'si', titular: nuevo.titular.trim() };
     if (medioTipo === 'tarjeta') {
       const numero = cardDigits(nuevo.numeroTarjeta);
@@ -140,16 +141,13 @@ export function MedioPagoScreen({ navigation, route }) {
       if (!numero || !vencimiento || !nuevo.titular.trim()) return Alert.alert('Campos requeridos', 'Completá los datos de la tarjeta.');
       if (!isValidCardNumber(numero)) return Alert.alert('Número inválido', 'La tarjeta debe tener entre 13 y 19 dígitos.');
       if (!isValidCardExpiry(vencimiento)) return Alert.alert('Vencimiento inválido', 'Usá el formato MM/AA (ej: 12/28).');
-      if (!nuevo.saldo || Number(nuevo.saldo) <= 0) return Alert.alert('Saldo requerido', 'Ingresá el saldo disponible de la tarjeta.');
-      payload = { ...payload, tipo: 'tarjeta', numeroTarjeta: numero, vencimiento, banco: nuevo.subtipo, saldo: Number(nuevo.saldo) };
+      payload = { ...payload, tipo: 'tarjeta', numeroTarjeta: numero, vencimiento, banco: nuevo.subtipo };
     } else if (medioTipo === 'cuenta') {
       if (!nuevo.numeroCuenta.trim() || !nuevo.banco.trim()) return Alert.alert('Campos requeridos', 'Completá cuenta y banco.');
-      if (!nuevo.saldo || Number(nuevo.saldo) <= 0) return Alert.alert('Fondos requeridos', 'Ingresá los fondos reservados en la cuenta.');
-      payload = { ...payload, tipo: 'cuenta', numeroCuenta: nuevo.numeroCuenta.trim(), banco: nuevo.banco.trim(), saldo: Number(nuevo.saldo) };
+      payload = { ...payload, tipo: 'cuenta', numeroCuenta: nuevo.numeroCuenta.trim(), banco: nuevo.banco.trim() };
     } else {
       if (!nuevo.numeroCheque.trim()) return Alert.alert('Campos requeridos', 'Ingresá el número de cheque.');
-      if (!nuevo.montoCheque || Number(nuevo.montoCheque) <= 0) return Alert.alert('Monto requerido', 'Ingresá el monto certificado del cheque.');
-      payload = { ...payload, tipo: 'cheque', numeroCheque: nuevo.numeroCheque.trim(), montoCheque: Number(nuevo.montoCheque) };
+      payload = { ...payload, tipo: 'cheque', numeroCheque: nuevo.numeroCheque.trim() };
     }
 
     setGuardando(true);
@@ -158,9 +156,9 @@ export function MedioPagoScreen({ navigation, route }) {
       setMedios((m) => [...m, guardada]);
       setSelIdx(medios.length);
       setMostrarForm(false);
-      setNuevo({ subtipo: 'credito', numeroTarjeta: '', vencimiento: '', titular: '', saldo: '100000', numeroCuenta: '', banco: '', numeroCheque: '', montoCheque: '10000' });
+      setNuevo({ subtipo: 'credito', numeroTarjeta: '', vencimiento: '', titular: '', numeroCuenta: '', banco: '', numeroCheque: '' });
       Clientes.saldo(user.clienteId).then(setSaldoInfo).catch(() => {});
-      Alert.alert('Medio agregado', 'Ya podés usarlo para pujar en subastas.');
+      Alert.alert('Medio agregado', 'La empresa verificó tus fondos. Ya podés usarlo para pujar.');
     } catch (e) {
       Alert.alert('Error', e.message || 'No se pudo guardar el medio de pago.');
     } finally {
@@ -242,7 +240,6 @@ export function MedioPagoScreen({ navigation, route }) {
                 <Field placeholder="Número de tarjeta" value={nuevo.numeroTarjeta} onChangeText={(v) => setN('numeroTarjeta')(formatCardNumber(v))} keyboardType="numeric" maxLength={23} />
                 <Field placeholder="Vencimiento (MM/AA)" value={nuevo.vencimiento} onChangeText={(v) => setN('vencimiento')(formatCardExpiry(v))} keyboardType="numeric" maxLength={5} />
                 <Field placeholder="Titular" value={nuevo.titular} onChangeText={(v) => setN('titular')(v.toUpperCase())} autoCapitalize="characters" />
-                <Field placeholder="Saldo disponible ($)" value={nuevo.saldo} onChangeText={setN('saldo')} keyboardType="numeric" />
               </>
             )}
             {medioTipo === 'cuenta' && (
@@ -250,19 +247,17 @@ export function MedioPagoScreen({ navigation, route }) {
                 <Field placeholder="Número de cuenta / CBU" value={nuevo.numeroCuenta} onChangeText={setN('numeroCuenta')} />
                 <Field placeholder="Banco" value={nuevo.banco} onChangeText={setN('banco')} />
                 <Field placeholder="Titular" value={nuevo.titular} onChangeText={setN('titular')} />
-                <Field placeholder="Fondos reservados ($)" value={nuevo.saldo} onChangeText={setN('saldo')} keyboardType="numeric" />
               </>
             )}
             {medioTipo === 'cheque' && (
               <>
                 <Field placeholder="Número de cheque" value={nuevo.numeroCheque} onChangeText={setN('numeroCheque')} />
                 <Field placeholder="Titular" value={nuevo.titular} onChangeText={setN('titular')} />
-                <Field placeholder="Monto certificado ($)" value={nuevo.montoCheque} onChangeText={setN('montoCheque')} keyboardType="numeric" />
-                <Text style={{ color: colors.muted, fontSize: 11.5 }}>
-                  Tus compras no podrán superar el monto del cheque.
-                </Text>
               </>
             )}
+            <Text style={{ color: colors.muted, fontSize: 11.5 }}>
+              La empresa verifica los fondos del medio. No cargás plata en la app.
+            </Text>
 
             <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
               <Btn title="Cancelar" kind="ghost" onPress={() => setMostrarForm(false)} style={{ flex: 1 }} />
@@ -277,24 +272,28 @@ export function MedioPagoScreen({ navigation, route }) {
           </TouchableOpacity>
         )}
       </ScrollView>
-      <BottomBar>
-        {esFlujoPago ? (
-          <Btn
-            title="Continuar"
-            disabled={medios.length === 0}
-            onPress={() => navigation.navigate('Seguro', {
-              ...params,
-              medioPagoId: medioSeleccionado?.identificador,
-              medioPagoLabel: !medioSeleccionado ? '—'
-                : medioSeleccionado.tipo === 'cheque' ? `Cheque ${medioSeleccionado.numeroCheque || ''}`.trim()
-                : medioSeleccionado.tipo === 'cuenta' ? `Cuenta ${medioSeleccionado.banco || ''}`.trim()
-                : `${tipoTarjetaLabel(medioSeleccionado)} **** ${cardDigits(medioSeleccionado.numeroTarjeta).slice(-4)}`,
-            })}
-          />
-        ) : (
-          <Btn title="Listo" onPress={() => navigation.goBack()} />
-        )}
-      </BottomBar>
+      {/* Cuando el form está abierto no mostramos "Listo" para no confundir con
+          "Guardar" (antes tocaban Listo y no se guardaba nada). */}
+      {(esFlujoPago || !mostrarForm) && (
+        <BottomBar>
+          {esFlujoPago ? (
+            <Btn
+              title="Continuar"
+              disabled={medios.length === 0}
+              onPress={() => navigation.navigate('Seguro', {
+                ...params,
+                medioPagoId: medioSeleccionado?.identificador,
+                medioPagoLabel: !medioSeleccionado ? '—'
+                  : medioSeleccionado.tipo === 'cheque' ? `Cheque ${medioSeleccionado.numeroCheque || ''}`.trim()
+                  : medioSeleccionado.tipo === 'cuenta' ? `Cuenta ${medioSeleccionado.banco || ''}`.trim()
+                  : `${tipoTarjetaLabel(medioSeleccionado)} **** ${cardDigits(medioSeleccionado.numeroTarjeta).slice(-4)}`,
+              })}
+            />
+          ) : (
+            <Btn title="Listo" onPress={() => navigation.goBack()} />
+          )}
+        </BottomBar>
+      )}
     </Screen>
     </KeyboardAvoidingView>
   );
