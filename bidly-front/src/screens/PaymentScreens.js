@@ -117,7 +117,7 @@ export function MedioPagoScreen({ navigation, route }) {
   const [medioTipo, setMedioTipo] = useState('tarjeta'); // 'tarjeta' | 'cuenta' | 'cheque'
   const [nuevo, setNuevo] = useState({
     subtipo: 'credito', numeroTarjeta: '', vencimiento: '', titular: '',
-    numeroCuenta: '', banco: '', numeroCheque: '',
+    numeroCuenta: '', banco: '', numeroCheque: '', montoCheque: '',
   });
   const [guardando, setGuardando] = useState(false);
   const setN = (k) => (v) => setNuevo((s) => ({ ...s, [k]: v }));
@@ -147,7 +147,8 @@ export function MedioPagoScreen({ navigation, route }) {
       payload = { ...payload, tipo: 'cuenta', numeroCuenta: nuevo.numeroCuenta.trim(), banco: nuevo.banco.trim() };
     } else {
       if (!nuevo.numeroCheque.trim()) return Alert.alert('Campos requeridos', 'Ingresá el número de cheque.');
-      payload = { ...payload, tipo: 'cheque', numeroCheque: nuevo.numeroCheque.trim() };
+      if (!nuevo.montoCheque || Number(nuevo.montoCheque) <= 0) return Alert.alert('Monto del cheque', 'Ingresá el monto por el que está certificado el cheque.');
+      payload = { ...payload, tipo: 'cheque', numeroCheque: nuevo.numeroCheque.trim(), montoCheque: Number(nuevo.montoCheque) };
     }
 
     setGuardando(true);
@@ -156,7 +157,7 @@ export function MedioPagoScreen({ navigation, route }) {
       setMedios((m) => [...m, guardada]);
       setSelIdx(medios.length);
       setMostrarForm(false);
-      setNuevo({ subtipo: 'credito', numeroTarjeta: '', vencimiento: '', titular: '', numeroCuenta: '', banco: '', numeroCheque: '' });
+      setNuevo({ subtipo: 'credito', numeroTarjeta: '', vencimiento: '', titular: '', numeroCuenta: '', banco: '', numeroCheque: '', montoCheque: '' });
       Clientes.saldo(user.clienteId).then(setSaldoInfo).catch(() => {});
       Alert.alert('Medio agregado', 'La empresa verificó tus fondos. Ya podés usarlo para pujar.');
     } catch (e) {
@@ -167,6 +168,12 @@ export function MedioPagoScreen({ navigation, route }) {
   };
 
   const medioSeleccionado = medios[selIdx];
+  // Total disponible = suma de lo que hay en cada medio (coincide con lo que se ve
+  // abajo de cada uno). El cheque aporta su monto; la tarjeta/cuenta su cupo.
+  const totalDisponible = medios.reduce(
+    (acc, m) => acc + Number(m.tipo === 'cheque' ? (m.montoCheque || 0) : (m.saldo || 0)),
+    0,
+  );
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
@@ -180,12 +187,12 @@ export function MedioPagoScreen({ navigation, route }) {
         <Title>Medio de pago</Title>
         <Sub>{esFlujoPago ? 'Elegí un medio para continuar con el pago.' : 'Administrá tus medios (tarjeta, cuenta o cheque) para pujar.'}</Sub>
 
-        {saldoInfo && medios.length > 0 && (
+        {medios.length > 0 && (
           <Card el style={{ marginBottom: 12 }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
               <Text style={{ color: colors.muted, fontSize: 13, fontWeight: '700' }}>Disponible para pujar</Text>
               <Text style={{ color: colors.green, fontSize: 20, fontWeight: '800' }}>
-                ${Number(saldoInfo.disponible).toLocaleString('es-AR')}
+                ${totalDisponible.toLocaleString('es-AR')}
               </Text>
             </View>
             <Text style={{ color: colors.faint, fontSize: 11.5, marginTop: 4 }}>
@@ -261,11 +268,17 @@ export function MedioPagoScreen({ navigation, route }) {
               <>
                 <Field placeholder="Número de cheque" value={nuevo.numeroCheque} onChangeText={setN('numeroCheque')} />
                 <Field placeholder="Titular" value={nuevo.titular} onChangeText={setN('titular')} />
+                <Field placeholder="Monto certificado del cheque ($)" value={nuevo.montoCheque} onChangeText={setN('montoCheque')} keyboardType="numeric" />
+                <Text style={{ color: colors.muted, fontSize: 11.5 }}>
+                  Es el importe por el que está certificado el cheque que entregás. Tus compras no podrán superar ese monto.
+                </Text>
               </>
             )}
-            <Text style={{ color: colors.muted, fontSize: 11.5 }}>
-              La empresa verifica los fondos del medio. No cargás plata en la app.
-            </Text>
+            {medioTipo !== 'cheque' && (
+              <Text style={{ color: colors.muted, fontSize: 11.5 }}>
+                La empresa verifica los fondos de la {medioTipo === 'cuenta' ? 'cuenta' : 'tarjeta'}. No cargás plata en la app.
+              </Text>
+            )}
 
             <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
               <Btn title="Cancelar" kind="ghost" onPress={() => setMostrarForm(false)} style={{ flex: 1 }} />
