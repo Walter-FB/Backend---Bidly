@@ -59,6 +59,9 @@ async def lifespan(app: FastAPI):
             SELECT identificador, 'pesos' FROM subastas
             WHERE identificador NOT IN (SELECT subasta FROM subasta_moneda)
         """))
+        # Flujo de solicitud de reembolso (el comprador pide, la empresa acepta/rechaza).
+        conn.execute(text("ALTER TABLE reembolsos ADD COLUMN IF NOT EXISTS estado VARCHAR DEFAULT 'ninguno'"))
+        conn.execute(text("ALTER TABLE reembolsos ADD COLUMN IF NOT EXISTS motivo VARCHAR"))
         conn.commit()
     yield
 

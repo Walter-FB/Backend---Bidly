@@ -981,11 +981,50 @@ export function MisMetricasScreen() {
   );
 }
 
-// ─── COMPRA DETALLE ───────────────────────────────────────────────────────────
+// ─── COMPRA DETALLE (con solicitud de reembolso) ─────────────────────────────
+const REEMBOLSO_LABEL = {
+  ninguno:    null,
+  solicitado: { label: 'REEMBOLSO PEDIDO', color: colors.gold },
+  aceptado:   { label: 'REEMBOLSADA', color: colors.muted },
+  rechazado:  { label: 'REEMBOLSO RECHAZADO', color: colors.red },
+};
+
 export function CompraDetalleScreen({ route }) {
-  const { registroId, title, date, sub, importe, comision, subastaId, estadoPago, reembolsada } = route.params || {};
+  const { registroId } = route.params || {};
+  const [reg, setReg] = useState(route.params || {});
+  const [loading, setLoading] = useState(!!registroId);
+  const [ctrl, setCtrl] = useState(false);
+  const [form, setForm] = useState(false);
+  const [motivo, setMotivo] = useState('');
+
+  const cargar = () => {
+    if (!registroId) { setLoading(false); return; }
+    RegistroSubasta.obtener(registroId)
+      .then((r) => setReg({ ...route.params, ...r, title: route.params?.title || tituloSubasta(r.subasta) }))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  };
+  useEffect(cargar, [registroId]);
+
+  const title = reg.title || 'Artículo';
+  const importe = reg.importe;
+  const comision = reg.comision;
   const total = importe != null ? Number(importe) + Number(comision || 0) : null;
-  const pagada = estadoPago === 'pagado';
+  const pagada = reg.estadoPago === 'pagado';
+  const rEstado = reg.reembolsoEstado || (reg.reembolsada === 'si' ? 'aceptado' : 'ninguno');
+  const rMeta = REEMBOLSO_LABEL[rEstado];
+
+  const solicitar = async () => {
+    if (!motivo.trim()) return Alert.alert('Motivo', 'Contanos por qué querés el reembolso.');
+    setCtrl(true);
+    try {
+      await RegistroSubasta.solicitarReembolso(registroId, motivo.trim());
+      setForm(false); setMotivo('');
+      Alert.alert('Solicitud enviada', 'La empresa va a revisar tu pedido de reembolso y te va a responder.');
+      cargar();
+    } catch (e) { Alert.alert('No se pudo solicitar', e.message || 'Intentá de nuevo.'); }
+    finally { setCtrl(false); }
+  };
 
   return (
     <Screen>
@@ -993,14 +1032,15 @@ export function CompraDetalleScreen({ route }) {
       <ScrollView contentContainerStyle={{ paddingHorizontal: 22, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
         <Title>Mi compra</Title>
         <Sub>Registro #{registroId || '—'}</Sub>
+        {loading && <ActivityIndicator color={colors.blue} style={{ marginTop: 12 }} />}
         <Card el style={{ marginTop: 12, gap: 8 }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <Display style={{ fontSize: 16, lineHeight: 20, flex: 1, paddingRight: 8 }}>{title || 'Artículo'}</Display>
-            <Tag label={reembolsada === 'si' ? 'REEMBOLSADA' : pagada ? 'PAGADA ✓' : 'A PAGAR'}
-                 color={reembolsada === 'si' ? colors.muted : pagada ? colors.green : colors.gold} />
+            <Display style={{ fontSize: 16, lineHeight: 20, flex: 1, paddingRight: 8 }}>{title}</Display>
+            <Tag label={rMeta ? rMeta.label : pagada ? 'PAGADA ✓' : 'A PAGAR'}
+                 color={rMeta ? rMeta.color : pagada ? colors.green : colors.gold} />
           </View>
-          {sub ? <Text style={{ color: colors.muted, fontSize: 13 }}>{sub}</Text> : null}
-          {date ? <Text style={{ color: colors.faint, fontSize: 12 }}>{date}</Text> : null}
+          {reg.sub ? <Text style={{ color: colors.muted, fontSize: 13 }}>{reg.sub}</Text> : null}
+          {reg.date ? <Text style={{ color: colors.faint, fontSize: 12 }}>{reg.date}</Text> : null}
         </Card>
         <SectionLabel>Importes</SectionLabel>
         <Card el>
@@ -1012,6 +1052,38 @@ export function CompraDetalleScreen({ route }) {
             </View>
           )}
         </Card>
+
+        <SectionLabel>Reembolso</SectionLabel>
+        {rEstado === 'solicitado' && (
+          <Card el>
+            <Text style={{ color: colors.gold, fontWeight: '700' }}>Solicitud enviada ⏳</Text>
+            <Text style={{ color: colors.muted, fontSize: 12.5, marginTop: 4 }}>La empresa está revisando tu pedido. Te avisamos cuando responda.</Text>
+            {reg.motivoReembolso ? <Text style={{ color: colors.faint, fontSize: 12, marginTop: 4 }}>Motivo: {reg.motivoReembolso}</Text> : null}
+          </Card>
+        )}
+        {rEstado === 'aceptado' && (
+          <Card el><Text style={{ color: colors.green, fontWeight: '700' }}>Reembolso aceptado ✓</Text>
+            <Text style={{ color: colors.muted, fontSize: 12.5, marginTop: 4 }}>Se te acreditó el dinero de la compra.</Text></Card>
+        )}
+        {rEstado === 'rechazado' && (
+          <Card el><Text style={{ color: colors.red, fontWeight: '700' }}>Reembolso rechazado</Text>
+            {reg.motivoReembolso ? <Text style={{ color: colors.muted, fontSize: 12.5, marginTop: 4 }}>Motivo: {reg.motivoReembolso}</Text> : null}</Card>
+        )}
+        {rEstado === 'ninguno' && !pagada && (
+          <Text style={{ color: colors.muted, fontSize: 13 }}>Vas a poder pedir el reembolso una vez que la compra esté pagada.</Text>
+        )}
+        {rEstado === 'ninguno' && pagada && !form && (
+          <Btn title="Solicitar reembolso" kind="danger" onPress={() => setForm(true)} />
+        )}
+        {form && (
+          <Card el style={{ gap: 10 }}>
+            <Field placeholder="Motivo del reembolso (producto dañado, no llegó, etc.)" value={motivo} onChangeText={setMotivo} multiline />
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <Btn title="Cancelar" kind="ghost" onPress={() => setForm(false)} style={{ flex: 1 }} />
+              <Btn title={ctrl ? 'Enviando…' : 'Enviar solicitud'} onPress={solicitar} disabled={ctrl} style={{ flex: 1 }} />
+            </View>
+          </Card>
+        )}
       </ScrollView>
     </Screen>
   );

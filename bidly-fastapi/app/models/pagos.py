@@ -64,7 +64,10 @@ class Reembolso(Base):
     __tablename__ = "reembolsos"
 
     registro    = Column(Integer, ForeignKey("registrodesubasta.identificador"), primary_key=True)
-    reembolsada = Column(String, default="no")
+    reembolsada = Column(String, default="no")   # 'si' cuando la empresa lo acredita
+    # Flujo de solicitud: ninguno → solicitado → aceptado | rechazado.
+    estado      = Column(String, default="ninguno")
+    motivo      = Column(String)
 
 
 class Payout(Base):

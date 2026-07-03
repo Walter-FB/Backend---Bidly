@@ -98,6 +98,10 @@ export const RegistroSubasta = {
   // El usuario no dispone de los fondos → multa del 10% y bloqueo.
   impago: (id) => api.post(`/registro-subasta/${id}/impago`, {}),
   reembolso: (id, reembolsada) => api.patch(`/registro-subasta/${id}/reembolso`, { reembolsada }),
+  // Flujo de reembolso: el comprador solicita, la empresa acepta/rechaza.
+  solicitarReembolso: (id, motivo) => api.post(`/registro-subasta/${id}/solicitar-reembolso`, { motivo }),
+  reembolsosSolicitados: () => api.get('/registro-subasta/reembolsos/solicitados'),
+  resolverReembolso: (id, aceptar, motivo) => api.patch(`/registro-subasta/${id}/reembolso-resolver`, { aceptar, motivo }),
 };
 
 // ─── MULTAS ──────────────────────────────────────────────────────────────────

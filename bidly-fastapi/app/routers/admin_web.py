@@ -46,6 +46,7 @@ PAGE = r"""<!doctype html>
   <button id="t-adm" class="active" onclick="show('adm')">Admisiones</button>
   <button id="t-pos" onclick="show('pos')">Postores</button>
   <button id="t-sub" onclick="show('sub')">Subastas</button>
+  <button id="t-reem" onclick="show('reem')">Reembolsos</button>
 </nav>
 <main>
   <section id="s-adm">
@@ -74,6 +75,11 @@ PAGE = r"""<!doctype html>
     </div>
     <div id="sub"></div>
   </section>
+  <section id="s-reem" style="display:none">
+    <p class="hint">Solicitudes de reembolso de los compradores. Aceptá (se acredita el dinero) o rechazá con motivo.
+      <button class="refresh" onclick="loadReem()">↻ Actualizar</button></p>
+    <div id="reem"></div>
+  </section>
 </main>
 <div class="toast" id="toast"></div>
 <script>
@@ -82,7 +88,7 @@ const ADM_ST={solicitada:['A REVISAR','#e6b23a'],en_inspeccion:['EN INSPECCIÓN'
 let SUBS=[];
 function toast(m,ok=true){const t=document.getElementById('toast');t.textContent=m;t.style.background=ok?'#123a22':'#3a1220';t.style.color=ok?'#37d66f':'#ff8393';t.style.display='block';setTimeout(()=>t.style.display='none',2600)}
 async function api(path,method='GET',body){const o={method,headers:{'Content-Type':'application/json'}};if(body!==undefined)o.body=JSON.stringify(body);const r=await fetch(API+path,o);const tx=await r.text();let d=null;try{d=tx?JSON.parse(tx):null}catch(e){}if(!r.ok)throw new Error((d&&(d.message||d.error))||('HTTP '+r.status));return d}
-function show(k){for(const x of ['adm','pos','sub']){document.getElementById('s-'+x).style.display=x===k?'':'none';document.getElementById('t-'+x).classList.toggle('active',x===k)}if(k==='adm')loadAdm();if(k==='pos')loadPos();if(k==='sub')loadSub()}
+function show(k){for(const x of ['adm','pos','sub','reem']){document.getElementById('s-'+x).style.display=x===k?'':'none';document.getElementById('t-'+x).classList.toggle('active',x===k)}if(k==='adm')loadAdm();if(k==='pos')loadPos();if(k==='sub')loadSub();if(k==='reem')loadReem()}
 function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
 
 // ── ADMISIONES ──
@@ -153,6 +159,20 @@ async function subCard(s){
 }
 async function setEstado(id,e){try{await api('/subastas/'+id+'/estado','PATCH',{estado:e});toast('Subasta '+(e==='abierta'?'abierta':'cerrada'));loadSub()}catch(x){toast(x.message,false)}}
 async function adjudicar(itemId){try{await api('/items/'+itemId+'/adjudicar','PATCH',{});toast('Ítem adjudicado');loadSub()}catch(e){toast(e.message,false)}}
+
+// ── REEMBOLSOS ──
+async function loadReem(){const el=document.getElementById('reem');el.innerHTML='Cargando…';
+  try{const rs=await api('/registro-subasta/reembolsos/solicitados');
+    if(!rs.length){el.innerHTML='<p class="muted">No hay solicitudes de reembolso pendientes.</p>';return}
+    el.innerHTML=rs.map(r=>'<div class="card"><div class="row"><div><div class="title">'+esc((r.subasta&&r.subasta.titulo)||('Compra #'+r.identificador))+'</div>'
+      +'<div class="muted">registro #'+r.identificador+' · comprador '+esc((r.cliente&&r.cliente.nombre)||r.clienteId)+' · $'+esc(r.importe)+'</div>'
+      +'<div class="muted">Motivo: '+esc(r.motivoReembolso||'—')+'</div></div><span class="st" style="background:var(--gold)">SOLICITADO</span></div>'
+      +'<input id="rmot'+r.identificador+'" placeholder="Motivo del rechazo (opcional)">'
+      +'<div style="margin-top:6px"><button class="act b-green" onclick="resolverReem('+r.identificador+',true)">Aceptar y acreditar</button> '
+      +'<button class="act b-red" onclick="resolverReem('+r.identificador+',false)">Rechazar</button></div></div>').join('')}
+  catch(e){el.innerHTML='<p class="muted">Error: '+esc(e.message)+'</p>'}}
+async function resolverReem(id,aceptar){const mot=document.getElementById('rmot'+id).value;
+  try{await api('/registro-subasta/'+id+'/reembolso-resolver','PATCH',{aceptar:aceptar,motivo:mot||null});toast(aceptar?'Reembolso aceptado':'Reembolso rechazado');loadReem()}catch(e){toast(e.message,false)}}
 
 loadAdm();
 </script>

@@ -6,7 +6,9 @@ y la multa por impago (multas). Moneda dual: una subasta en dólares no se cance
 con cheque.
 """
 from datetime import datetime
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -59,6 +61,8 @@ def _enrich_registro(r: RegistroDeSubasta, db: Session) -> dict:
         "direccionEnvio": pago.direccion_envio if pago else None,
         "retiroPersonal": pago.retiro_personal if pago else "no",
         "reembolsada":  ree.reembolsada if ree else "no",
+        "reembolsoEstado": ree.estado if ree else "ninguno",
+        "motivoReembolso": ree.motivo if ree else None,
         "multa":        multa_service.multa_to_dict(multa) if multa else None,
     }
 
@@ -188,6 +192,88 @@ def pagar(id: int, body: PagarRequest, db: Session = Depends(get_db)):
         )
         db.commit()
 
+    return _enrich_registro(r, db)
+
+
+class SolicitarReembolsoRequest(BaseModel):
+    motivo: str
+
+
+class ResolverReembolsoRequest(BaseModel):
+    aceptar: bool
+    motivo: Optional[str] = None
+
+
+@router.post("/{id}/solicitar-reembolso")
+def solicitar_reembolso(id: int, body: SolicitarReembolsoRequest, db: Session = Depends(get_db)):
+    """El comprador pide el reembolso de una compra PAGADA. Queda 'solicitado'
+    hasta que la empresa lo acepte o rechace desde el panel."""
+    r = db.query(RegistroDeSubasta).filter(RegistroDeSubasta.identificador == id).first()
+    if not r:
+        raise HTTPException(404, "Registro no encontrado")
+
+    pago = db.query(RegistroPago).filter(RegistroPago.registro == id).first()
+    if not pago or pago.estado != "pagado":
+        raise HTTPException(409, detail={"message": "Solo podés pedir el reembolso de una compra ya pagada.", "code": "NO_PAGADA"})
+
+    ree = db.query(Reembolso).filter(Reembolso.registro == id).first()
+    if ree and ree.estado == "solicitado":
+        raise HTTPException(409, detail={"message": "Ya hay una solicitud de reembolso pendiente.", "code": "YA_SOLICITADO"})
+    if ree and ree.reembolsada == "si":
+        raise HTTPException(409, detail={"message": "Esta compra ya fue reembolsada.", "code": "YA_REEMBOLSADA"})
+    if not ree:
+        ree = Reembolso(registro=id, reembolsada="no")
+        db.add(ree)
+    ree.estado = "solicitado"
+    ree.motivo = body.motivo
+    db.commit()
+
+    if r.cliente:
+        notificacion_service.crear(
+            r.cliente, "reembolso",
+            "Enviaste una solicitud de reembolso. La empresa la va a revisar y te va a responder.",
+            db,
+        )
+        db.commit()
+    return _enrich_registro(r, db)
+
+
+@router.get("/reembolsos/solicitados")
+def reembolsos_solicitados(db: Session = Depends(get_db)):
+    """Solicitudes de reembolso pendientes (para que la empresa resuelva)."""
+    rees = db.query(Reembolso).filter(Reembolso.estado == "solicitado").all()
+    out = []
+    for ree in rees:
+        r = db.query(RegistroDeSubasta).filter(RegistroDeSubasta.identificador == ree.registro).first()
+        if r:
+            out.append(_enrich_registro(r, db))
+    return out
+
+
+@router.patch("/{id}/reembolso-resolver")
+def resolver_reembolso(id: int, body: ResolverReembolsoRequest, db: Session = Depends(get_db)):
+    """La empresa acepta (acredita) o rechaza la solicitud de reembolso."""
+    r = db.query(RegistroDeSubasta).filter(RegistroDeSubasta.identificador == id).first()
+    if not r:
+        raise HTTPException(404, "Registro no encontrado")
+    ree = db.query(Reembolso).filter(Reembolso.registro == id).first()
+    if not ree or ree.estado != "solicitado":
+        raise HTTPException(409, detail={"message": "No hay una solicitud de reembolso pendiente.", "code": "SIN_SOLICITUD"})
+
+    if body.aceptar:
+        ree.estado = "aceptado"
+        ree.reembolsada = "si"
+        msg = "¡Tu reembolso fue aceptado! Se te acreditó el dinero de la compra."
+    else:
+        ree.estado = "rechazado"
+        if body.motivo:
+            ree.motivo = body.motivo
+        msg = f"Tu solicitud de reembolso fue rechazada.{(' Motivo: ' + body.motivo) if body.motivo else ''}"
+    db.commit()
+
+    if r.cliente:
+        notificacion_service.crear(r.cliente, "reembolso", msg, db)
+        db.commit()
     return _enrich_registro(r, db)
 
 
