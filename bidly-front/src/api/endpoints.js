@@ -66,6 +66,7 @@ export const Clientes = {
   saldo: (id) => api.get(`/clientes/${id}/saldo`),
   mediosPago: (id) => api.get(`/clientes/${id}/medios-pago`),
   agregarMedioPago: (id, medioPago) => api.post(`/clientes/${id}/medios-pago`, medioPago),
+  eliminarMedioPago: (mpId) => api.del(`/clientes/medios-pago/${mpId}`),
   verificarMedio: (mpId, verificado = 'si') => api.patch(`/clientes/medios-pago/${mpId}/verificar`, { verificado }),
 };
 

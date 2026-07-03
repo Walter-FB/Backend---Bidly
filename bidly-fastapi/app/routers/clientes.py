@@ -184,6 +184,20 @@ def add_medio_pago(id: int, body: MedioPagoCreate, db: Session = Depends(get_db)
     return mp
 
 
+@router.delete("/medios-pago/{mp_id}", status_code=204)
+def eliminar_medio_pago(mp_id: int, db: Session = Depends(get_db)):
+    """Borra un medio de pago del cliente (si no fue usado en un pago)."""
+    from app.models.pagos import RegistroPago
+    mp = db.query(MedioPago).filter(MedioPago.identificador == mp_id).first()
+    if not mp:
+        raise HTTPException(404, "Medio de pago no encontrado")
+    en_uso = db.query(RegistroPago).filter(RegistroPago.medio_pago == mp_id).first()
+    if en_uso:
+        raise HTTPException(409, detail={"message": "No se puede borrar: ya se usó para pagar una compra.", "code": "IN_USE"})
+    db.delete(mp)
+    db.commit()
+
+
 @router.patch("/medios-pago/{mp_id}/verificar", response_model=MedioPagoResponse)
 def verificar_medio_pago(mp_id: int, body: VerificarMedioRequest, db: Session = Depends(get_db)):
     """[INTERNO] La empresa verifica un medio de pago (necesario para poder pujar)."""

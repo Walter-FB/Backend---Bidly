@@ -8,13 +8,12 @@ import { SplashScreen, LoginScreen, FotoDNIScreen, RegistroScreen, VerificarEmai
 import { FiltrosScreen, NotificacionesScreen } from '../screens/HomeScreens';
 import { ProductoScreen, SubastaEnVivoScreen, GanasteScreen, SubastaFinalizadaScreen, SubastaAdminScreen } from '../screens/AuctionScreens';
 import { MedioPagoScreen, SeguroScreen, ConfirmarPagoScreen, PagoConfirmadoScreen, MultaScreen, ReembolsoScreen } from '../screens/PaymentScreens';
-import { MisComprasScreen, HistorialScreen, PublicarScreen, DatosGanadorScreen, CompraDetalleScreen, DatosPersonalesScreen, CrearSubastaScreen, MisProductosScreen, MisMetricasScreen, MisAdmisionesScreen, MisCobrosScreen } from '../screens/AccountScreens';
-import { DashboardAdminScreen } from '../screens/AdminScreens';
+import { MisComprasScreen, HistorialScreen, PublicarScreen, DatosGanadorScreen, CompraDetalleScreen, DatosPersonalesScreen, MisProductosScreen, MisMetricasScreen, MisAdmisionesScreen, MisCobrosScreen } from '../screens/AccountScreens';
 
 const Stack = createNativeStackNavigator();
 
 export default function RootNavigator() {
-  const { user, booting, isSubastador } = useAuth();
+  const { user, booting } = useAuth();
 
   return (
     <Stack.Navigator screenOptions={{ headerShown: false, animation: 'slide_from_right' }}>
@@ -56,11 +55,9 @@ export default function RootNavigator() {
           <Stack.Screen name="MisMetricas" component={MisMetricasScreen} />
           <Stack.Screen name="DatosGanador" component={DatosGanadorScreen} />
           <Stack.Screen name="DatosPersonales" component={DatosPersonalesScreen} />
-          <Stack.Screen name="CrearSubasta" component={CrearSubastaScreen} />
           <Stack.Screen name="MisProductos" component={MisProductosScreen} />
           <Stack.Screen name="SubastaAdmin" component={SubastaAdminScreen} />
-          {/* panel interno del subastador (role-gated) */}
-          {isSubastador && <Stack.Screen name="DashboardAdmin" component={DashboardAdminScreen} />}
+          {/* La administración (subastador) vive en la web /admin, no en la app. */}
         </Stack.Group>
       )}
     </Stack.Navigator>

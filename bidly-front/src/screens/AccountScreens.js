@@ -73,7 +73,7 @@ function mapRegistro(r) {
 
 // ─── PERFIL SCREEN ────────────────────────────────────────────────────────────
 export function PerfilScreen({ navigation }) {
-  const { user, logout, isSubastador } = useAuth();
+  const { user, logout } = useAuth();
   const [persona, setPersona] = useState(null);
   const [cliente, setCliente] = useState(null);
 
@@ -121,12 +121,6 @@ export function PerfilScreen({ navigation }) {
             <Ionicons name="chevron-forward" size={18} color={colors.muted} />
           </TouchableOpacity>
         ))}
-        {isSubastador && (
-          <TouchableOpacity style={s.listItem} onPress={() => navigation.navigate('DashboardAdmin')}>
-            <Text style={{ color: '#fff', fontSize: 14.5, fontWeight: '600' }}>Panel del subastador</Text>
-            <Tag label="SUBASTADOR" color={colors.blue} />
-          </TouchableOpacity>
-        )}
         <TouchableOpacity onPress={logout} style={{ marginTop: 6, padding: 12, alignItems: 'center' }}>
           <Text style={{ color: colors.red, fontSize: 14, fontWeight: '800' }}>Cerrar sesión</Text>
         </TouchableOpacity>
@@ -231,7 +225,7 @@ function irAGanaste(navigation, g) {
 
 export function MisSubastasScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
-  const { user, isSubastador } = useAuth();
+  const { user } = useAuth();
   const [tab, setTab] = useState(route.params?.initialTab || 'curso');
   const [subastas, setSubastas] = useState([]);
   const [ganadas, setGanadas] = useState([]);
@@ -311,9 +305,7 @@ export function MisSubastasScreen({ navigation, route }) {
               ? 'No tenés subastas en vivo.'
               : tab === 'fin'
                 ? 'No tenés subastas finalizadas.'
-                : isSubastador
-                  ? 'Aún no armaste subastas.\nPresioná "Nueva subasta" para comenzar.'
-                  : 'Todavía no participaste de subastas.\nOfrecé un bien desde "Publicar".'}
+                : 'Todavía no participaste de subastas.\nOfrecé un bien desde "Publicar".'}
           </Text>
         )}
         {tab === 'ganadas' && (
@@ -383,8 +375,7 @@ export function MisSubastasScreen({ navigation, route }) {
           </View>
         )}
       </ScrollView>
-      {/* La creación de subastas es exclusiva del subastador y vive en su panel
-          (DashboardAdmin → Subastas → "+ Crear subasta"), no en las pestañas. */}
+      {/* La creación/gestión de subastas vive en la web /admin del backend, no en la app. */}
     </View>
   );
 }
@@ -1098,7 +1089,6 @@ export function DatosPersonalesScreen() {
     { label: 'Domicilio', valor: persona?.direccion || '—', icon: 'location-outline' },
     { label: 'Documento (DNI)', valor: persona?.documento || '—', icon: 'card-outline' },
     { label: 'Categoría', valor: CATEGORIAS_LABEL[cliente?.categoria || user?.categoria] || '—', icon: 'star-outline' },
-    { label: 'Estado de cuenta', valor: cliente?.admitido === 'si' ? 'Admitido ✓' : 'Pendiente de admisión', icon: 'shield-checkmark-outline' },
   ];
 
   return (

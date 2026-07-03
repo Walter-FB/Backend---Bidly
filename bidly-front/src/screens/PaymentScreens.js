@@ -167,6 +167,22 @@ export function MedioPagoScreen({ navigation, route }) {
     }
   };
 
+  const onEliminar = (m) => {
+    Alert.alert('Borrar medio de pago', '¿Seguro que querés borrar este medio?', [
+      { text: 'Cancelar', style: 'cancel' },
+      { text: 'Borrar', style: 'destructive', onPress: async () => {
+          try {
+            await Clientes.eliminarMedioPago(m.identificador);
+            setMedios((prev) => prev.filter((x) => x.identificador !== m.identificador));
+            setSelIdx(0);
+            Clientes.saldo(user.clienteId).then(setSaldoInfo).catch(() => {});
+          } catch (e) {
+            Alert.alert('No se pudo borrar', e.message || 'El medio puede estar usado en un pago.');
+          }
+        } },
+    ]);
+  };
+
   const medioSeleccionado = medios[selIdx];
   // Total disponible = suma de lo que hay en cada medio (coincide con lo que se ve
   // abajo de cada uno). El cheque aporta su monto; la tarjeta/cuenta su cupo.
@@ -227,6 +243,9 @@ export function MedioPagoScreen({ navigation, route }) {
               </View>
               <Tag label="VERIFICADA" color={colors.green} />
               <Radio on={selIdx === i} />
+              <TouchableOpacity onPress={() => onEliminar(m)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <Ionicons name="trash-outline" size={20} color={colors.red} />
+              </TouchableOpacity>
             </Card>
           </TouchableOpacity>
         ))}
