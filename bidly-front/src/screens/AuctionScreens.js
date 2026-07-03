@@ -264,6 +264,7 @@ export function SubastaEnVivoScreen({ navigation, route }) {
 
   const [pujas, setPujas] = useState([]);
   const [asistenteId, setAsistenteId] = useState(null);
+  const [accesoError, setAccesoError] = useState(null);
   const [loadingPujas, setLoadingPujas] = useState(true);
   const [pujando, setPujando] = useState(false);
   const [pollingError, setPollingError] = useState(false);
@@ -290,8 +291,17 @@ export function SubastaEnVivoScreen({ navigation, route }) {
     if (!user?.clienteId || !subastaId) return;
 
     Asistentes.inscribir(user.clienteId, subastaId)
-      .then((a) => { if (mounted.current) setAsistenteId(a.identificador); })
-      .catch(() => {});
+      .then((a) => { if (mounted.current) { setAsistenteId(a.identificador); setAccesoError(null); } })
+      .catch((e) => {
+        if (!mounted.current) return;
+        // No tragamos el error: mostramos el motivo (categoría, ya conectado a otra,
+        // multa, etc.) y sacamos al usuario en vez de quedar colgados en "Registrando…".
+        const msg = e?.message || 'No pudimos registrar tu acceso a la subasta.';
+        setAccesoError(msg);
+        Alert.alert('No podés entrar a esta subasta', msg, [
+          { text: 'Volver', onPress: () => navigation.goBack() },
+        ]);
+      });
   }, [user, subastaId]);
 
   // Cargar pujas y refrescar cada 5 segundos.
@@ -520,7 +530,12 @@ export function SubastaEnVivoScreen({ navigation, route }) {
             </Text>
           </Card>
         )}
-        {!user?.isGuest && !asistenteId && (
+        {!user?.isGuest && !asistenteId && accesoError && (
+          <Card el style={{ marginTop: 10, backgroundColor: 'rgba(226,57,80,0.10)', borderColor: colors.red, borderWidth: 1 }}>
+            <Text style={{ color: colors.red, fontWeight: '800', textAlign: 'center', fontSize: 13 }}>{accesoError}</Text>
+          </Card>
+        )}
+        {!user?.isGuest && !asistenteId && !accesoError && (
           <Card el style={{ marginTop: 10, backgroundColor: 'rgba(255,193,7,0.08)', borderColor: colors.gold, borderWidth: 1 }}>
             <Text style={{ color: colors.gold, fontWeight: '700', textAlign: 'center', fontSize: 13 }}>
               Registrando tu acceso a la subasta…
