@@ -83,7 +83,7 @@ def colocar_puja(body: PujaCreate, db: Session = Depends(get_db)):
     cliente_id = asistente.cliente
     acceso_service.validar_puede_pujar(cliente_id, db)
     multa_service.verificar_puede_participar(cliente_id, db)
-    saldo_service.validar_puja(cliente_id, importe, db, item_id=item_id)
+    saldo_service.validar_puja(cliente_id, importe, db, item_id=item_id, medio_id=body.medioPagoId)
 
     # Mínimo / máximo respecto de la mejor oferta y el valor base.
     ultima = (

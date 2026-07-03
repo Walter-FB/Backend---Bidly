@@ -15,6 +15,7 @@ class PujaCreate(BaseModel):
     asistente: AsistenteRef
     item: ItemRef
     importe: Decimal
+    medioPagoId: Optional[int] = None  # medio con el que pagaría si gana (limita la puja)
 
 
 class PujaResponse(BaseModel):

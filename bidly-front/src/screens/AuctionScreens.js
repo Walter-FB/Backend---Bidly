@@ -431,9 +431,12 @@ export function SubastaEnVivoScreen({ navigation, route }) {
     if (!asistenteId) {
       return Alert.alert('Espera', 'Estamos registrando tu acceso a la subasta. Intentá en un momento.');
     }
+    if (medios.length > 0 && !medioSelId) {
+      return Alert.alert('Medio de pago', 'Elegí con qué medio vas a pagar si ganás.');
+    }
     setPujando(true);
     try {
-      await Pujas.pujar(asistenteId, itemId, montoNum);
+      await Pujas.pujar(asistenteId, itemId, montoNum, medioSelId);
       cargarPujas();
     } catch (e) {
       Alert.alert('No se pudo pujar', mensajeError(e, proximaPuja, maxPuja, moneda));

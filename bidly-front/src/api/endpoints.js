@@ -37,8 +37,8 @@ export const Subastas = {
 export const Pujas = {
   porItem: (itemId) => api.get(`/pujos?item=${itemId}`),
   porAsistente: (asistenteId) => api.get(`/pujos?asistente=${asistenteId}`),
-  pujar: (asistenteId, itemId, importe) =>
-    api.post('/pujos', { asistente: { identificador: asistenteId }, item: { identificador: itemId }, importe }),
+  pujar: (asistenteId, itemId, importe, medioPagoId) =>
+    api.post('/pujos', { asistente: { identificador: asistenteId }, item: { identificador: itemId }, importe, medioPagoId }),
   ganador: (itemId) => api.get(`/pujos/${itemId}/ganador`),
 };
 

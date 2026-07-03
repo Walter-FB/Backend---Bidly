@@ -73,9 +73,25 @@ def disponible(cliente_id: int, db: Session) -> Decimal:
     return disp if disp > 0 else Decimal("0")
 
 
-def validar_puja(cliente_id: int, importe, db: Session, item_id: int = None) -> None:
-    # La nueva puja reemplaza tu puja líder anterior en ESTE ítem (no se cuenta dos veces).
-    disp = saldo_total(cliente_id, db) - comprometido(cliente_id, db, excluir_item=item_id)
+def _monto_de_medio(cliente_id: int, medio_id: int, db: Session):
+    """Monto del medio elegido (cheque → montocheque; tarjeta/cuenta → saldo).
+    None si el medio no existe o no es del cliente."""
+    mp = (
+        db.query(MedioPago)
+        .filter(MedioPago.identificador == medio_id, MedioPago.cliente == cliente_id)
+        .first()
+    )
+    return _monto_medio(mp) if mp else None
+
+
+def validar_puja(cliente_id: int, importe, db: Session, item_id: int = None, medio_id: int = None) -> None:
+    # La garantía la fija el MEDIO elegido: con un cheque de $10.000 no podés pujar
+    # más de $10.000, aunque tengas otras tarjetas. Si no eligió medio, se usa la
+    # suma de todos. Se descuenta lo ya comprometido en otras pujas líder.
+    base = _monto_de_medio(cliente_id, medio_id, db) if medio_id else None
+    if base is None:
+        base = saldo_total(cliente_id, db)
+    disp = base - comprometido(cliente_id, db, excluir_item=item_id)
     if disp < 0:
         disp = Decimal("0")
     if _d(importe) > disp:
@@ -83,8 +99,8 @@ def validar_puja(cliente_id: int, importe, db: Session, item_id: int = None) -> 
             422,
             detail={
                 "message": (
-                    f"No te alcanza el saldo. Te quedan ${disp} disponibles (ya descontando "
-                    "tus pujas en curso). La puja no puede superar tus medios de pago."
+                    f"No te alcanza el saldo del medio elegido. Podés pujar hasta ${disp} con ese "
+                    "medio (por ejemplo, un cheque limita a su monto certificado)."
                 ),
                 "code": "SALDO_INSUFICIENTE",
                 "saldoDisponible": float(disp),
