@@ -98,10 +98,7 @@ def validar_puja(cliente_id: int, importe, db: Session, item_id: int = None, med
         raise HTTPException(
             422,
             detail={
-                "message": (
-                    f"No te alcanza el saldo del medio elegido. Podés pujar hasta ${disp} con ese "
-                    "medio (por ejemplo, un cheque limita a su monto certificado)."
-                ),
+                "message": f"Saldo insuficiente para pujar. Superaste el monto de tu medio de pago (máximo ${disp}).",
                 "code": "SALDO_INSUFICIENTE",
                 "saldoDisponible": float(disp),
             },
