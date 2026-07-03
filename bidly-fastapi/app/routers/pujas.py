@@ -82,6 +82,11 @@ def colocar_puja(body: PujaCreate, db: Session = Depends(get_db)):
     # no superar el límite de saldo de sus medios (incluye el monto del cheque).
     cliente_id = asistente.cliente
     acceso_service.validar_puede_pujar(cliente_id, db)
+    # Una subasta a la vez: no se puede pujar en dos subastas abiertas en simultáneo.
+    if acceso_service.conectado_en_otra_viva(cliente_id, subasta.identificador, db):
+        raise HTTPException(409, detail={
+            "message": "Ya estás participando en otra subasta en vivo. No podés pujar en más de una a la vez.",
+            "code": "YA_CONECTADO"})
     multa_service.verificar_puede_participar(cliente_id, db)
     saldo_service.validar_puja(cliente_id, importe, db, item_id=item_id, medio_id=body.medioPagoId)
 

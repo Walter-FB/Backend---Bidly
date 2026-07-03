@@ -16,6 +16,7 @@ from app.models.cliente import Cliente
 from app.models.subasta import Subasta
 from app.models.pagos import MedioPago
 from app.models.asistente import Asistente
+from app.models.puja import Puja
 from app.models.item_catalogo import ItemCatalogo
 from app.models.catalogo import Catalogo
 
@@ -60,13 +61,23 @@ def _subasta_viva(subasta_id: int, db: Session) -> bool:
 
 
 def conectado_en_otra_viva(cliente_id: int, subasta_id: int, db: Session) -> bool:
-    """True si el cliente ya es asistente de OTRA subasta actualmente abierta."""
+    """True si el cliente ya está PARTICIPANDO (pujó) en otra subasta abierta.
+
+    Mirar una subasta (inscribirse sin pujar) NO cuenta: el enunciado permite ver
+    la subasta libremente. El límite de "una a la vez" aplica a la participación,
+    así que solo bloquea si el cliente tiene al menos una puja en otra subasta que
+    sigue viva."""
     otras = (
         db.query(Asistente)
         .filter(Asistente.cliente == cliente_id, Asistente.subasta != subasta_id)
         .all()
     )
-    return any(_subasta_viva(a.subasta, db) for a in otras)
+    for a in otras:
+        if not _subasta_viva(a.subasta, db):
+            continue
+        if db.query(Puja).filter(Puja.asistente == a.identificador).first() is not None:
+            return True
+    return False
 
 
 def validar_inscripcion(cliente_id: int, subasta_id: int, db: Session) -> None:
@@ -84,7 +95,7 @@ def validar_inscripcion(cliente_id: int, subasta_id: int, db: Session) -> None:
 
     if conectado_en_otra_viva(cliente_id, subasta_id, db):
         raise HTTPException(409, detail={
-            "message": "Ya estás conectado a una subasta en vivo. No podés estar en más de una a la vez.",
+            "message": "Ya estás participando en otra subasta en vivo. Terminá ahí antes de pujar en otra (podés ver todas, pero pujar en una a la vez).",
             "code": "YA_CONECTADO",
         })
 
