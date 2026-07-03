@@ -1,15 +1,24 @@
 """Saldo/límite disponible de los medios de pago del cliente.
 
-Cada medio de pago tiene un monto disponible (cheque certificado → montocheque;
-tarjeta/cuenta → saldo). Las compras del cliente no pueden superar la suma de esos
-montos. Al alcanzar el límite ya no puede seguir pujando.
+Cada medio tiene un monto (cheque certificado → montocheque; tarjeta/cuenta →
+saldo). El "disponible para pujar" = suma de los medios MENOS lo que el cliente
+ya tiene comprometido en pujas líder de subastas abiertas (lo que pagaría si
+gana). Así, al pujar el disponible baja y, cuando se agota (p. ej. el monto del
+cheque), no puede seguir pujando — que es lo que pide el enunciado.
+
+Sólo se cuentan las pujas líder de subastas ABIERTAS (no compras de subastas ya
+cerradas), para reflejar en tiempo real cuánto le queda sin arrastrar historial.
 """
 from decimal import Decimal
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from app.models.pagos import MedioPago, Reembolso, RegistroPago
-from app.models.registro_subasta import RegistroDeSubasta
+from app.models.pagos import MedioPago
+from app.models.asistente import Asistente
+from app.models.subasta import Subasta
+from app.models.catalogo import Catalogo
+from app.models.item_catalogo import ItemCatalogo
+from app.models.puja import Puja
 
 
 def _d(v) -> Decimal:
@@ -23,42 +32,59 @@ def _monto_medio(mp: MedioPago) -> Decimal:
 
 
 def saldo_total(cliente_id: int, db: Session) -> Decimal:
-    """Suma de lo que hay en TODOS los medios del cliente (coincide con el cartel
-    del front). El requisito de 'medio verificado' para pujar se controla aparte."""
+    """Suma de lo que hay en TODOS los medios del cliente (coincide con lo que se
+    ve abajo de cada medio en el front)."""
     medios = db.query(MedioPago).filter(MedioPago.cliente == cliente_id).all()
     return sum((_monto_medio(m) for m in medios), Decimal("0"))
 
 
-def comprometido(cliente_id: int, db: Session) -> Decimal:
-    """Compras que el cliente todavía DEBE (adjudicadas y no pagadas). Lo ya pagado
-    o reembolsado no reduce el disponible: no es plata comprometida pendiente."""
-    registros = db.query(RegistroDeSubasta).filter(RegistroDeSubasta.cliente == cliente_id).all()
+def comprometido(cliente_id: int, db: Session, excluir_item: int = None) -> Decimal:
+    """Suma de las pujas LÍDER del cliente en subastas abiertas (lo que se
+    compromete a pagar si gana). `excluir_item` se saltea (una nueva puja sobre
+    ese ítem reemplaza a la anterior del mismo cliente)."""
     total = Decimal("0")
-    for r in registros:
-        ree = db.query(Reembolso).filter(Reembolso.registro == r.identificador).first()
-        if ree and ree.reembolsada == "si":
+    asistentes = db.query(Asistente).filter(Asistente.cliente == cliente_id).all()
+    for a in asistentes:
+        sub = db.query(Subasta).filter(Subasta.identificador == a.subasta).first()
+        if not sub or sub.estado != "abierta":
             continue
-        pago = db.query(RegistroPago).filter(RegistroPago.registro == r.identificador).first()
-        if pago and pago.estado == "pagado":
-            continue  # ya pagada → saldada, no cuenta como comprometido
-        total += _d(r.importe)
+        items = (
+            db.query(ItemCatalogo)
+            .join(Catalogo, ItemCatalogo.catalogo == Catalogo.identificador)
+            .filter(Catalogo.subasta == a.subasta, ItemCatalogo.subastado == "no")
+            .all()
+        )
+        for it in items:
+            if excluir_item is not None and it.identificador == excluir_item:
+                continue
+            top = (
+                db.query(Puja)
+                .filter(Puja.item == it.identificador)
+                .order_by(Puja.importe.desc())
+                .first()
+            )
+            if top and top.asistente == a.identificador:
+                total += _d(top.importe)
     return total
 
 
 def disponible(cliente_id: int, db: Session) -> Decimal:
-    """Todo lo que tenés en tus medios está disponible para pujar."""
-    return saldo_total(cliente_id, db)
+    disp = saldo_total(cliente_id, db) - comprometido(cliente_id, db)
+    return disp if disp > 0 else Decimal("0")
 
 
-def validar_puja(cliente_id: int, importe, db: Session) -> None:
-    disp = disponible(cliente_id, db)
+def validar_puja(cliente_id: int, importe, db: Session, item_id: int = None) -> None:
+    # La nueva puja reemplaza tu puja líder anterior en ESTE ítem (no se cuenta dos veces).
+    disp = saldo_total(cliente_id, db) - comprometido(cliente_id, db, excluir_item=item_id)
+    if disp < 0:
+        disp = Decimal("0")
     if _d(importe) > disp:
         raise HTTPException(
             422,
             detail={
                 "message": (
-                    f"No te alcanza el saldo. Disponible: ${disp}. La puja no puede superar "
-                    "la suma de tus medios de pago."
+                    f"No te alcanza el saldo. Te quedan ${disp} disponibles (ya descontando "
+                    "tus pujas en curso). La puja no puede superar tus medios de pago."
                 ),
                 "code": "SALDO_INSUFICIENTE",
                 "saldoDisponible": float(disp),
@@ -68,4 +94,8 @@ def validar_puja(cliente_id: int, importe, db: Session) -> None:
 
 def resumen(cliente_id: int, db: Session) -> dict:
     total = saldo_total(cliente_id, db)
-    return {"saldoTotal": float(total), "comprometido": 0.0, "disponible": float(total)}
+    comp = comprometido(cliente_id, db)
+    disp = total - comp
+    if disp < 0:
+        disp = Decimal("0")
+    return {"saldoTotal": float(total), "comprometido": float(comp), "disponible": float(disp)}

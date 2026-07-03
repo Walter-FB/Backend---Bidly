@@ -208,13 +208,15 @@ export function MedioPagoScreen({ navigation, route }) {
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
               <Text style={{ color: colors.muted, fontSize: 13, fontWeight: '700' }}>Disponible para pujar</Text>
               <Text style={{ color: colors.green, fontSize: 20, fontWeight: '800' }}>
-                ${totalDisponible.toLocaleString('es-AR')}
+                ${Number(saldoInfo?.disponible ?? totalDisponible).toLocaleString('es-AR')}
               </Text>
             </View>
             <Text style={{ color: colors.faint, fontSize: 11.5, marginTop: 4 }}>
-              {medios.length > 1
-                ? `Total de tus ${medios.length} medios de pago`
-                : 'Saldo de tu medio de pago'}
+              {saldoInfo && saldoInfo.comprometido > 0
+                ? `De $${Number(saldoInfo.saldoTotal).toLocaleString('es-AR')} en tus medios, ya comprometiste $${Number(saldoInfo.comprometido).toLocaleString('es-AR')} en pujas.`
+                : medios.length > 1
+                  ? `Total de tus ${medios.length} medios de pago`
+                  : 'Saldo de tu medio de pago'}
             </Text>
           </Card>
         )}
