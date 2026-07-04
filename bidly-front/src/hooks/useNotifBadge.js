@@ -1,25 +1,20 @@
-import { useState, useEffect, useRef } from 'react';
-import { Vibration } from 'react-native';
+import { useState, useEffect } from 'react';
 import { Notificaciones } from '../api/endpoints';
 import { useAuth } from '../context/AuthContext';
 
+// Solo el contador del badge. El aviso "llegó algo nuevo" (banner + vibración) lo
+// maneja el toaster global (NotifToaster), así no se duplica la vibración.
 const isUnread = (n) => n.leida === false || n.leida === 'no';
 
 export function useNotifBadge() {
   const { user } = useAuth();
   const [notifs, setNotifs] = useState([]);
-  const prevCountRef = useRef(null);
 
   const refresh = async () => {
     if (!user?.clienteId) return;
     try {
       const data = await Notificaciones.porCliente(user.clienteId);
       const list = Array.isArray(data) ? data : data ? [data] : [];
-      const unreadCount = list.filter(isUnread).length;
-      if (prevCountRef.current !== null && unreadCount > prevCountRef.current) {
-        Vibration.vibrate(200);
-      }
-      prevCountRef.current = unreadCount;
       setNotifs(list);
     } catch { /* silencioso */ }
   };

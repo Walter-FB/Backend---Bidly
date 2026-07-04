@@ -8,6 +8,8 @@ import { useFonts, ArchivoBlack_400Regular } from '@expo-google-fonts/archivo-bl
 
 import { AuthProvider } from './src/context/AuthContext';
 import RootNavigator from './src/navigation/RootNavigator';
+import { navigationRef } from './src/navigation/navRef';
+import NotifToaster from './src/components/NotifToaster';
 import { colors } from './src/theme/theme';
 
 const navTheme = {
@@ -36,9 +38,10 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <AuthProvider>
-        <NavigationContainer theme={navTheme}>
+        <NavigationContainer theme={navTheme} ref={navigationRef}>
           <StatusBar style="light" />
           <RootNavigator />
+          <NotifToaster />
         </NavigationContainer>
       </AuthProvider>
     </SafeAreaProvider>
