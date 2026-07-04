@@ -1,4 +1,4 @@
-// BIDLY — mapa de endpoints hacia el backend Spring Boot (puerto 8083).
+// BIDLY — mapa de endpoints hacia el backend FastAPI (puerto 8083).
 // Todos los paths son relativos al BASE_URL definido en client.js.
 import api, { setToken, upload } from './client';
 
@@ -29,6 +29,7 @@ export const Auth = {
 // GET  /api/subastas/{id}/catalogos  → todos los catálogos
 // GET  /api/subastas/{id}/estado
 // PATCH /api/subastas/{id}/estado
+// GET  /api/subastas/{id}/sesion   → { itemActivoId, ordenActual, timerDesde, segundosRestantes }
 // GET  /api/subastadores/{subastadorId}/subastas
 export const Subastas = {
   listar: (params = {}) => {
@@ -45,6 +46,7 @@ export const Subastas = {
   catalogo: (id) => api.get(`/subastas/${id}/catalogo`),
   catalogos: (id) => api.get(`/subastas/${id}/catalogos`),
   estado: (id) => api.get(`/subastas/${id}/estado`),
+  sesion: (id) => api.get(`/subastas/${id}/sesion`),
   actualizarEstado: (id, estado) =>
     api.patch(`/subastas/${id}/estado`, { estado }),
   crear: (payload) => api.post('/subastas', payload),
@@ -103,6 +105,10 @@ export const Clientes = {
   mediosPago: (id) => api.get(`/clientes/${id}/medios-pago`),
   agregarMedioPago: (id, medioPago) =>
     api.post(`/clientes/${id}/medios-pago`, medioPago),
+  verificarMedioPago: (clienteId, medioId) =>
+    api.patch(`/clientes/${clienteId}/medios-pago/${medioId}/verificar`, {}),
+  marcarCuentaCobro: (clienteId, medioId) =>
+    api.patch(`/clientes/${clienteId}/medios-pago/${medioId}/cuenta-cobro`, {}),
 };
 
 // ─── PERSONAS ────────────────────────────────────────────────────────────────
@@ -121,9 +127,13 @@ export const Personas = {
 export const Productos = {
   obtener: (id) => api.get(`/productos/${id}`),
   porDuenio: (duenioId) => api.get(`/productos/duenio/${duenioId}`),
+  pendientes: () => api.get('/productos/pendientes'),
   crear: (payload) => api.post('/productos', payload),
   disponible: (id, disponible) =>
     api.patch(`/productos/${id}/disponible`, { disponible }),
+  aprobar: (id) => api.patch(`/productos/${id}/aprobar`, {}),
+  rechazar: (id, motivo, tipoDevolucion) =>
+    api.patch(`/productos/${id}/rechazar`, { motivo, tipoDevolucion }),
   fotos: (id) => api.get(`/productos/${id}/fotos`),
   agregarFotos: (id, formData) => upload(`/productos/${id}/fotos`, formData),
   eliminar: (id) => api.del(`/productos/${id}`),
@@ -152,8 +162,13 @@ export const RegistroSubasta = {
   obtener: (id) => api.get(`/registro-subasta/${id}`),
   porCliente: (clienteId) => api.get(`/registro-subasta/cliente/${clienteId}`),
   porSubasta: (subastaId) => api.get(`/registro-subasta/subasta/${subastaId}`),
+  porDuenio: (duenioId) => api.get(`/registro-subasta/duenio/${duenioId}`),
+  pagar: (id, medioPagoId) =>
+    api.post(`/registro-subasta/${id}/pagar`, { medioPagoId }),
   reembolso: (id, reembolsada) =>
     api.patch(`/registro-subasta/${id}/reembolso`, { reembolsada }),
+  elegirEntrega: (id, tipoEntrega) =>
+    api.patch(`/registro-subasta/${id}/entrega`, { tipoEntrega }),
 };
 
 // ─── MULTAS ──────────────────────────────────────────────────────────────────
@@ -196,6 +211,7 @@ export const Items = {
 export const Notificaciones = {
   obtener: (id) => api.get(`/notificaciones/${id}`),
   porCliente: (clienteId) => api.get(`/notificaciones/cliente/${clienteId}`),
+  marcarLeida: (id) => api.patch(`/notificaciones/${id}/leer`, {}),
 };
 
 export default {

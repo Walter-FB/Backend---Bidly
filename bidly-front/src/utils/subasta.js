@@ -88,15 +88,30 @@ export function formatFechaSubasta(fecha) {
   }
 }
 
+/** Aún no aprobada por administración. */
+export function esSubastaPendiente(subasta) {
+  if (!subasta) return false;
+  if (subasta.estadoSubasta === 'pendiente') return true;
+  return subasta.fase === 'pendiente' || subasta.revisionEstado === 'pendiente';
+}
+
 /** Finalizada: catálogo agotado o cerrada tras haberse iniciado. */
 export function esSubastaFinalizada(subasta) {
   if (!subasta) return false;
+  if (subasta.estadoSubasta === 'finalizada') return true;
   return subasta.fase === 'finalizada';
 }
 
 /** Subasta en vivo (puja iniciada por administración). */
+export function esSubastaEnVivo(subasta) {
+  if (!subasta) return false;
+  if (subasta.estadoSubasta === 'iniciada') return true;
+  return subasta.fase === 'en_curso';
+}
+
+/** Subasta en curso para el vendedor (misma lógica que en vivo). */
 export function esSubastaEnCursoVendedor(subasta) {
-  return subasta?.fase === 'en_curso';
+  return esSubastaEnVivo(subasta);
 }
 
 export function esMiSubasta(subasta, clienteId) {
@@ -110,9 +125,16 @@ export function tagEstadoSubasta(subasta) {
   if (rev === 'pendiente') return { label: 'PENDIENTE', color: colors.gold };
   if (rev === 'pausada') return { label: 'PAUSADA', color: colors.muted };
   if (rev === 'rechazada') return { label: 'RECHAZADA', color: colors.red };
-  if (sub.fase === 'en_curso' || sub.estado === 'abierta') return { label: 'EN VIVO', color: colors.green };
+
+  const est = sub.estadoSubasta;
+  if (est === 'iniciada') return { label: 'EN VIVO', color: colors.green };
+  if (est === 'finalizada') return { label: 'FINALIZADA', color: colors.muted };
+  if (est === 'esperando') return { label: 'ESPERANDO', color: colors.blue };
+  if (est === 'pendiente') return { label: 'PENDIENTE', color: colors.gold };
+
+  // Fallback por fase (compatibilidad con respuestas sin estadoSubasta)
+  if (sub.fase === 'en_curso') return { label: 'EN VIVO', color: colors.green };
   if (esSubastaFinalizada(sub)) return { label: 'FINALIZADA', color: colors.muted };
-  if (sub.fase === 'programada' || sub.estado === 'cerrada') return { label: 'POR ABRIR', color: colors.blue };
-  if (sub.estado === 'abierta') return { label: 'ABIERTA', color: colors.green };
+  if (sub.fase === 'programada') return { label: 'ESPERANDO', color: colors.blue };
   return { label: 'CERRADA', color: colors.muted };
 }

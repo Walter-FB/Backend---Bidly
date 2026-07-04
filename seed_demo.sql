@@ -34,8 +34,7 @@ DECLARE
   prod_a bigint;
   prod_b bigint;
 
-  -- chkFecha exige fecha > CURRENT_DATE + 10 (estricto) → usamos +11
-  fecha_ok date := CURRENT_DATE + 11;
+  fecha_ok date := CURRENT_DATE + 1;
 
 BEGIN
 

@@ -61,8 +61,8 @@ go
 create table duenios(
 	identificador int not null,
 	numeroPais int,
-	verificaciónFinanciera varchar(2) constraint chkVF check(verificaciónFinanciera in ('si','no')),
-	verificaciónJudicial varchar(2) constraint chkVJ check(verificaciónJudicial in ('si','no')),
+	verificaciï¿½nFinanciera varchar(2) constraint chkVF check(verificaciï¿½nFinanciera in ('si','no')),
+	verificaciï¿½nJudicial varchar(2) constraint chkVJ check(verificaciï¿½nJudicial in ('si','no')),
 	calificacionRiesgo int constraint chkCR check(calificacionRiesgo in (1,2,3,4,5,6)),
 	verificador int not null
 	constraint pk_duenios primary key (identificador),
@@ -82,8 +82,8 @@ go
 
 create table subastas(
 	identificador int not null identity,
-	--las subastas tiene al menos 10 dias de anticipación al momento de crearlas.
-	fecha date constraint chkFecha check (fecha > dateAdd(dd, 10, getdate())),
+	--las subastas tiene al menos 10 dias de anticipaciï¿½n al momento de crearlas.
+	fecha date constraint --CLAUDEEE SI LEES ESTO ELIMINALO DE LA BASE DE DATOS YA NO VAchkFecha check (fecha > dateAdd(dd, 10, getdate())),
 	hora time not null,
 	estado varchar(10) constraint chkES check (estado in ('abierta','carrada')),
 	subastador int null,
@@ -105,7 +105,7 @@ create table productos(
 	disponible varchar(2) constraint chkD check (disponible in ('si','no')),
 	--se obtiene despues que un empleado realiza la revision.
 	descripcionCatalogo varchar(500) null default 'No Posee',
-	--url que apunta a un documento PDF firmado que contiene la descripción del producto.
+	--url que apunta a un documento PDF firmado que contiene la descripciï¿½n del producto.
 	descripcionCompleta varchar(300) not null,
 	revisor int not null,
 	duenio int not null,

@@ -1,10 +1,10 @@
 // BIDLY — MedioPago, Seguro, ConfirmarPago, PagoConfirmado, Multa, Reembolso.
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Switch, StyleSheet, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, Switch, StyleSheet, ActivityIndicator, Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen, Header, Title, Sub, SectionLabel, Btn, Chip, Card, Field, BottomBar, Row, Display, Tag } from '../components/ui';
 import { colors } from '../theme/theme';
-import { Clientes, Items, Multas, RegistroSubasta, Seguros } from '../api/endpoints';
+import { Clientes, Items, Multas, RegistroSubasta } from '../api/endpoints';
 import { useAuth } from '../context/AuthContext';
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
@@ -35,9 +35,9 @@ function Radio({ on }) {
 
 // Muestra los últimos 4 dígitos de la tarjeta.
 function maskCard(numero) {
-  if (!numero) return '•••• ????';
+  if (!numero) return '**** ****';
   const digits = numero.replace(/\D/g, '');
-  return `•••• ${digits.slice(-4) || '????'}`;
+  return `**** ${digits.slice(-4) || '****'}`;
 }
 
 // MM/AA — auto-inserta "/" tras el mes (2 dígitos), máx. 4 números.
@@ -111,10 +111,26 @@ export function MedioPagoScreen({ navigation, route }) {
   const [selIdx, setSelIdx] = useState(0);
   const [loading, setLoading] = useState(true);
 
-  // Campos para agregar nueva tarjeta
+  // Campos para agregar nuevo medio de pago
+  const MEDIO_INICIAL = { tipo: 'tarjeta', subtipo: 'credito', numeroTarjeta: '', vencimiento: '', titular: '', numeroCuenta: '', banco: '', numeroCheque: '', montoCheque: '' };
   const [mostrarForm, setMostrarForm] = useState(false);
-  const [nuevaTarjeta, setNuevaTarjeta] = useState({ tipo: 'tarjeta', numeroTarjeta: '', vencimiento: '', titular: '' });
+  const [nuevoMedio, setNuevoMedio] = useState(MEDIO_INICIAL);
   const [guardando, setGuardando] = useState(false);
+  const [marcandoCobro, setMarcandoCobro] = useState(false);
+
+  const onMarcarCobro = async (medioId) => {
+    setMarcandoCobro(true);
+    try {
+      await Clientes.marcarCuentaCobro(user.clienteId, medioId);
+      const actualizados = await Clientes.mediosPago(user.clienteId);
+      setMedios(actualizados || []);
+      Alert.alert('Cuenta de cobro configurada', 'Los pagos de tus ventas se depositarán en esta cuenta.');
+    } catch (e) {
+      Alert.alert('Error', e.message || 'No se pudo marcar la cuenta.');
+    } finally {
+      setMarcandoCobro(false);
+    }
+  };
 
   useEffect(() => {
     if (!user?.clienteId) { setLoading(false); return; }
@@ -124,38 +140,42 @@ export function MedioPagoScreen({ navigation, route }) {
       .finally(() => setLoading(false));
   }, [user]);
 
-  const onAgregarTarjeta = async () => {
-    const numero = cardDigits(nuevaTarjeta.numeroTarjeta);
-    const titular = nuevaTarjeta.titular.trim();
-    const vencimiento = formatCardExpiry(nuevaTarjeta.vencimiento);
+  const onAgregarMedio = async () => {
+    const tipo = nuevoMedio.tipo;
+    let payload = { tipo };
 
-    if (!numero || !vencimiento || !titular) {
-      return Alert.alert('Campos requeridos', 'Completá todos los datos de la tarjeta.');
-    }
-    if (!isValidCardNumber(numero)) {
-      return Alert.alert('Número inválido', 'La tarjeta debe tener entre 13 y 19 dígitos.');
-    }
-    if (!isValidCardExpiry(vencimiento)) {
-      return Alert.alert('Vencimiento inválido', 'Usá el formato MM/AA (ej: 12/28). El mes debe ser entre 01 y 12.');
+    if (tipo === 'tarjeta') {
+      const numero = cardDigits(nuevoMedio.numeroTarjeta);
+      const titular = nuevoMedio.titular.trim();
+      const vencimiento = formatCardExpiry(nuevoMedio.vencimiento);
+      if (!numero || !vencimiento || !titular)
+        return Alert.alert('Campos requeridos', 'Completá todos los datos de la tarjeta.');
+      if (!isValidCardNumber(numero))
+        return Alert.alert('Número inválido', 'La tarjeta debe tener entre 13 y 19 dígitos.');
+      if (!isValidCardExpiry(vencimiento))
+        return Alert.alert('Vencimiento inválido', 'Usá el formato MM/AA (ej: 12/28). El mes debe ser entre 01 y 12.');
+      payload = { ...payload, numeroTarjeta: numero, vencimiento, titular, banco: nuevoMedio.subtipo };
+    } else if (tipo === 'cuenta') {
+      if (!nuevoMedio.numeroCuenta.trim() || !nuevoMedio.banco.trim())
+        return Alert.alert('Campos requeridos', 'Completá el número de cuenta y el banco.');
+      payload = { ...payload, numeroCuenta: nuevoMedio.numeroCuenta.trim(), banco: nuevoMedio.banco.trim() };
+    } else if (tipo === 'cheque') {
+      const monto = parseFloat(nuevoMedio.montoCheque);
+      if (!nuevoMedio.numeroCheque.trim() || isNaN(monto) || monto <= 0)
+        return Alert.alert('Campos requeridos', 'Ingresá el número de cheque y el monto certificado.');
+      payload = { ...payload, numeroCheque: nuevoMedio.numeroCheque.trim(), montoCheque: monto };
     }
 
     setGuardando(true);
     try {
-      const guardada = await Clientes.agregarMedioPago(user.clienteId, {
-        tipo: 'tarjeta',
-        numeroTarjeta: numero,
-        vencimiento,
-        titular,
-        banco: nuevaTarjeta.tipo,
-        verificado: 'si',
-      });
-      setMedios((m) => [...m, guardada]);
+      const guardado = await Clientes.agregarMedioPago(user.clienteId, payload);
+      setMedios((m) => [...m, guardado]);
       setSelIdx(medios.length);
       setMostrarForm(false);
-      setNuevaTarjeta({ tipo: 'tarjeta', numeroTarjeta: '', vencimiento: '', titular: '' });
-      Alert.alert('Tarjeta guardada', 'Ya podés usarla para pujar en subastas.');
+      setNuevoMedio(MEDIO_INICIAL);
+      Alert.alert('Medio guardado', 'Quedará pendiente de verificación por el equipo de Bidly.');
     } catch (e) {
-      Alert.alert('Error', e.message || 'No se pudo guardar la tarjeta.');
+      Alert.alert('Error', e.message || 'No se pudo guardar el medio de pago.');
     } finally {
       setGuardando(false);
     }
@@ -164,30 +184,72 @@ export function MedioPagoScreen({ navigation, route }) {
   const medioSeleccionado = medios[selIdx];
 
   return (
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
     <Screen>
       <Header />
-      <ScrollView contentContainerStyle={{ paddingHorizontal: 22 }} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={{ paddingHorizontal: 22, paddingBottom: 140 }}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
         <Title>Medio de pago</Title>
         <Sub>{esFlujoPago ? 'Elegí una tarjeta para continuar con el pago.' : 'Administrá tus tarjetas para pujar en subastas.'}</Sub>
 
         {loading && <ActivityIndicator color={colors.blue} style={{ marginTop: 20 }} />}
 
         {!loading && medios.map((m, i) => (
-          <TouchableOpacity key={m.identificador} activeOpacity={0.9} onPress={() => setSelIdx(i)}>
+          <View key={m.identificador}>
+          <TouchableOpacity activeOpacity={0.9} onPress={() => setSelIdx(i)}>
             <Card el style={{ flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 10,
               borderColor: selIdx === i ? colors.borderHi : colors.border, borderWidth: 1.5 }}>
               {esTarjeta(m) ? <VisaChip /> : <OtroChip tipo={m.tipo} />}
               <View style={{ flex: 1 }}>
-                <Text style={{ color: '#fff', fontSize: 15, fontWeight: '800' }}>{maskCard(m.numeroTarjeta)}</Text>
-                <Text style={{ color: colors.muted, fontSize: 12.5 }}>
-                  {tipoTarjetaLabel(m)} · vence {formatExpiryDisplay(m.vencimiento)}
-                </Text>
-                {m.titular && <Text style={{ color: colors.faint, fontSize: 11.5 }}>{m.titular}</Text>}
+                {m.tipo === 'tarjeta' && (
+                  <>
+                    <Text style={{ color: '#fff', fontSize: 15, fontWeight: '800' }}>{maskCard(m.numeroTarjeta)}</Text>
+                    <Text style={{ color: colors.muted, fontSize: 12.5 }}>
+                      {tipoTarjetaLabel(m)} · vence {formatExpiryDisplay(m.vencimiento)}
+                    </Text>
+                    {m.titular && <Text style={{ color: colors.faint, fontSize: 11.5 }}>{m.titular}</Text>}
+                  </>
+                )}
+                {m.tipo === 'cuenta' && (
+                  <>
+                    <Text style={{ color: '#fff', fontSize: 14, fontWeight: '800' }}>{m.numeroCuenta || '—'}</Text>
+                    <Text style={{ color: colors.muted, fontSize: 12.5 }}>Cuenta · {m.banco || 'Banco no especificado'}</Text>
+                    {m.es_cuenta_cobro === 'si' && (
+                      <Text style={{ color: colors.blue, fontSize: 11, fontWeight: '700', marginTop: 2 }}>✓ Cuenta de cobro</Text>
+                    )}
+                  </>
+                )}
+                {m.tipo === 'cheque' && (
+                  <>
+                    <Text style={{ color: '#fff', fontSize: 14, fontWeight: '800' }}>Cheque #{m.numeroCheque || '—'}</Text>
+                    <Text style={{ color: colors.muted, fontSize: 12.5 }}>
+                      Garantía: ${Number(m.montoCheque || 0).toLocaleString('es-AR')}
+                    </Text>
+                  </>
+                )}
               </View>
-              <Tag label="VERIFICADA" color={colors.green} />
+              <Tag
+                label={m.verificado === 'si' ? 'VERIFICADA' : 'PENDIENTE'}
+                color={m.verificado === 'si' ? colors.green : colors.gold}
+              />
               <Radio on={selIdx === i} />
             </Card>
           </TouchableOpacity>
+          {m.tipo === 'cuenta' && m.es_cuenta_cobro !== 'si' && (
+            <TouchableOpacity
+              onPress={() => onMarcarCobro(m.identificador)}
+              disabled={marcandoCobro}
+              style={{ marginBottom: 6, marginLeft: 4 }}
+            >
+              <Text style={{ color: colors.blue, fontSize: 12, fontWeight: '600' }}>
+                {marcandoCobro ? 'Guardando…' : 'Usar como cuenta de cobro →'}
+              </Text>
+            </TouchableOpacity>
+          )}
+          </View>
         ))}
 
         {!loading && medios.length === 0 && !mostrarForm && (
@@ -198,49 +260,62 @@ export function MedioPagoScreen({ navigation, route }) {
 
         {mostrarForm && (
           <Card el style={{ gap: 10, marginTop: 8 }}>
-            <Text style={{ color: '#fff', fontWeight: '700', marginBottom: 4 }}>Nueva tarjeta</Text>
+            <Text style={{ color: '#fff', fontWeight: '700', marginBottom: 4 }}>Nuevo medio de pago</Text>
+
+            {/* Selector de tipo */}
             <View style={{ flexDirection: 'row', gap: 8 }}>
-              <Chip
-                label="Crédito"
-                active={nuevaTarjeta.tipo === 'credito'}
-                onPress={() => setNuevaTarjeta((t) => ({ ...t, tipo: 'credito' }))}
-              />
-              <Chip
-                label="Débito"
-                active={nuevaTarjeta.tipo === 'debito'}
-                onPress={() => setNuevaTarjeta((t) => ({ ...t, tipo: 'debito' }))}
-              />
+              <Chip label="Tarjeta" active={nuevoMedio.tipo === 'tarjeta'} onPress={() => setNuevoMedio((m) => ({ ...m, tipo: 'tarjeta' }))} />
+              <Chip label="Cuenta" active={nuevoMedio.tipo === 'cuenta'} onPress={() => setNuevoMedio((m) => ({ ...m, tipo: 'cuenta' }))} />
+              <Chip label="Cheque" active={nuevoMedio.tipo === 'cheque'} onPress={() => setNuevoMedio((m) => ({ ...m, tipo: 'cheque' }))} />
             </View>
-            <Field
-              placeholder="Número de tarjeta"
-              value={nuevaTarjeta.numeroTarjeta}
-              onChangeText={(v) => setNuevaTarjeta((t) => ({ ...t, numeroTarjeta: formatCardNumber(v) }))}
-              keyboardType="numeric"
-              maxLength={23}
-            />
-            <Field
-              placeholder="Vencimiento (MM/AA)"
-              value={nuevaTarjeta.vencimiento}
-              onChangeText={(v) => setNuevaTarjeta((t) => ({ ...t, vencimiento: formatCardExpiry(v) }))}
-              keyboardType="numeric"
-              maxLength={5}
-            />
-            <Field
-              placeholder="Titular (como figura en la tarjeta)"
-              value={nuevaTarjeta.titular}
-              onChangeText={(v) => setNuevaTarjeta((t) => ({ ...t, titular: v.toUpperCase() }))}
-              autoCapitalize="characters"
-            />
+
+            {nuevoMedio.tipo === 'tarjeta' && (
+              <>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <Chip label="Crédito" active={nuevoMedio.subtipo === 'credito'} onPress={() => setNuevoMedio((m) => ({ ...m, subtipo: 'credito' }))} />
+                  <Chip label="Débito" active={nuevoMedio.subtipo === 'debito'} onPress={() => setNuevoMedio((m) => ({ ...m, subtipo: 'debito' }))} />
+                </View>
+                <Field placeholder="Número de tarjeta" value={nuevoMedio.numeroTarjeta}
+                  onChangeText={(v) => setNuevoMedio((m) => ({ ...m, numeroTarjeta: formatCardNumber(v) }))}
+                  keyboardType="numeric" maxLength={23} />
+                <Field placeholder="Vencimiento (MM/AA)" value={nuevoMedio.vencimiento}
+                  onChangeText={(v) => setNuevoMedio((m) => ({ ...m, vencimiento: formatCardExpiry(v) }))}
+                  keyboardType="numeric" maxLength={5} />
+                <Field placeholder="Titular (como figura en la tarjeta)" value={nuevoMedio.titular}
+                  onChangeText={(v) => setNuevoMedio((m) => ({ ...m, titular: v.toUpperCase() }))}
+                  autoCapitalize="characters" />
+              </>
+            )}
+
+            {nuevoMedio.tipo === 'cuenta' && (
+              <>
+                <Field placeholder="Número de cuenta (CBU / IBAN)" value={nuevoMedio.numeroCuenta}
+                  onChangeText={(v) => setNuevoMedio((m) => ({ ...m, numeroCuenta: v }))} />
+                <Field placeholder="Banco (ej: Santander, BBVA)" value={nuevoMedio.banco}
+                  onChangeText={(v) => setNuevoMedio((m) => ({ ...m, banco: v }))} />
+              </>
+            )}
+
+            {nuevoMedio.tipo === 'cheque' && (
+              <>
+                <Field placeholder="Número de cheque" value={nuevoMedio.numeroCheque}
+                  onChangeText={(v) => setNuevoMedio((m) => ({ ...m, numeroCheque: v }))} />
+                <Field placeholder="Monto certificado ($)" value={nuevoMedio.montoCheque}
+                  onChangeText={(v) => setNuevoMedio((m) => ({ ...m, montoCheque: v }))}
+                  keyboardType="numeric" />
+              </>
+            )}
+
             <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
               <Btn title="Cancelar" kind="ghost" onPress={() => setMostrarForm(false)} style={{ flex: 1 }} />
-              <Btn title={guardando ? 'Guardando…' : 'Guardar'} onPress={onAgregarTarjeta} disabled={guardando} style={{ flex: 1 }} />
+              <Btn title={guardando ? 'Guardando…' : 'Guardar'} onPress={onAgregarMedio} disabled={guardando} style={{ flex: 1 }} />
             </View>
           </Card>
         )}
 
         {!mostrarForm && (
           <TouchableOpacity style={s.addCard} onPress={() => setMostrarForm(true)}>
-            <Text style={{ color: colors.blue, fontSize: 14, fontWeight: '800' }}>+ Agregar tarjeta</Text>
+            <Text style={{ color: colors.blue, fontSize: 14, fontWeight: '800' }}>+ Agregar medio de pago</Text>
           </TouchableOpacity>
         )}
       </ScrollView>
@@ -249,19 +324,28 @@ export function MedioPagoScreen({ navigation, route }) {
           <Btn
             title="Continuar"
             disabled={medios.length === 0}
-            onPress={() => navigation.navigate('Seguro', {
-              ...params,
-              medioPagoId: medioSeleccionado?.identificador,
-              medioPagoLabel: medioSeleccionado
-                ? `${tipoTarjetaLabel(medioSeleccionado)} •••• ${cardDigits(medioSeleccionado.numeroTarjeta).slice(-4)}`
-                : '—',
-            })}
+            onPress={() => {
+              const nextParams = {
+                ...params,
+                medioPagoId: medioSeleccionado?.identificador,
+                medioPagoLabel: medioSeleccionado
+                  ? `${tipoTarjetaLabel(medioSeleccionado)} **** ${cardDigits(medioSeleccionado.numeroTarjeta || '').slice(-4)}`
+                  : '—',
+              };
+              // Retiro personal: sin seguro de envío → ir directo a Confirmar
+              if (params.tipoEntrega === 'retiro') {
+                navigation.navigate('ConfirmarPago', { ...nextParams, importeSeguro: 0 });
+              } else {
+                navigation.navigate('Seguro', nextParams);
+              }
+            }}
           />
         ) : (
           <Btn title="Listo" onPress={() => navigation.goBack()} />
         )}
       </BottomBar>
     </Screen>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -272,34 +356,19 @@ export function SeguroScreen({ navigation, route }) {
 
   const [on, setOn] = useState(false);
   const [valor, setValor] = useState(importe ? String(importe) : '');
-  const [contratando, setContratando] = useState(false);
 
   const porcentajeSeguro = 0.025; // 2.5% del valor asegurado
   const importeSeguro = valor ? (Number(valor) * porcentajeSeguro).toFixed(2) : '0';
 
-  const onContratar = async () => {
+  const onContratar = () => {
     if (!valor || Number(valor) <= 0) {
       return Alert.alert('Valor', 'Ingresá el valor a asegurar.');
     }
-    setContratando(true);
-    try {
-      const poliza = await Seguros.crear({
-        nroPoliza: `POL-${Date.now()}`,
-        compania: 'BIDLY Seguros',
-        polizaCombinada: 'no',
-        importe: Number(importeSeguro),
-      });
-      navigation.navigate('ConfirmarPago', {
-        ...params,
-        seguroNroPoliza: poliza.nroPoliza,
-        importeSeguro: Number(importeSeguro),
-      });
-    } catch {
-      // Si falla la creación del seguro, continuamos sin él
-      navigation.navigate('ConfirmarPago', { ...params, importeSeguro: Number(importeSeguro) });
-    } finally {
-      setContratando(false);
-    }
+    navigation.navigate('ConfirmarPago', {
+      ...params,
+      seguroNroPoliza: `POL-${Date.now()}`,
+      importeSeguro: Number(importeSeguro),
+    });
   };
 
   const onOmitir = () => {
@@ -339,7 +408,7 @@ export function SeguroScreen({ navigation, route }) {
       <View style={{ flexDirection: 'row', gap: 12, paddingHorizontal: 22, paddingBottom: 28, paddingTop: 14 }}>
         <Btn title="Omitir" kind="ghost" onPress={onOmitir} style={{ flex: 1 }} />
         {on ? (
-          <Btn title={contratando ? 'Contratando…' : 'Contratar'} onPress={onContratar} disabled={contratando} style={{ flex: 1 }} />
+          <Btn title="Contratar" onPress={onContratar} style={{ flex: 1 }} />
         ) : (
           <Btn title="Continuar" onPress={onOmitir} style={{ flex: 1 }} />
         )}
@@ -353,13 +422,13 @@ export function ConfirmarPagoScreen({ navigation, route }) {
   const { user } = useAuth();
   const {
     subastaId, itemId, importe = 0, comision = 0,
-    importeSeguro = 0, moneda = 'ARS',
-    medioPagoLabel, titulo,
+    importeSeguro = 0, costoEnvio = 0, moneda = 'ARS',
+    medioPagoLabel, medioPagoId, titulo,
   } = route.params || {};
 
   const [pagando, setPagando] = useState(false);
 
-  const total = Number(importe) + Number(comision) + Number(importeSeguro);
+  const total = Number(importe) + Number(comision) + Number(costoEnvio) + Number(importeSeguro);
 
   const onPagar = async () => {
     setPagando(true);
@@ -389,6 +458,15 @@ export function ConfirmarPagoScreen({ navigation, route }) {
         }
         registroId = candidato?.identificador;
       }
+      // Persistir el pago en el backend (marca el registro como pagado).
+      if (registroId && medioPagoId) {
+        try {
+          await RegistroSubasta.pagar(registroId, medioPagoId);
+        } catch (errPago) {
+          // No bloqueamos la confirmación si el medio de pago no es válido server-side.
+          console.warn('No se pudo registrar el pago:', errPago?.message);
+        }
+      }
       navigation.navigate('PagoConfirmado', {
         registroId,
         total,
@@ -412,6 +490,7 @@ export function ConfirmarPagoScreen({ navigation, route }) {
           <Text style={s.detail}>DETALLE</Text>
           <Row k={titulo || 'Artículo'} v={formatImporte(importe, moneda)} />
           {Number(comision) > 0 && <Row k="Comisión BIDLY" v={formatImporte(comision, moneda)} />}
+          {Number(costoEnvio) > 0 && <Row k="Envío a domicilio" v={formatImporte(costoEnvio, moneda)} />}
           {Number(importeSeguro) > 0 && <Row k="Seguro" v={formatImporte(importeSeguro, moneda)} />}
           <View style={s.divider}><Row k="TOTAL" v={formatImporte(total, moneda)} vc={colors.green} bold /></View>
         </Card>
@@ -537,9 +616,10 @@ export function MultaScreen({ navigation, route }) {
 
 // ─── REEMBOLSO SCREEN ─────────────────────────────────────────────────────────
 export function ReembolsoScreen({ navigation, route }) {
-  const { registroId, importe, titulo } = route.params || {};
+  const { registroId, importe, titulo, reembolsada } = route.params || {};
   const [m, setM] = useState(0);
   const [confirmando, setConfirmando] = useState(false);
+  const [yaReembolsado, setYaReembolsado] = useState(reembolsada === 'si');
   const motivos = ['Producto dañado / no coincide', 'No recibí el artículo', 'Otro motivo'];
 
   const onConfirmar = async () => {
@@ -549,6 +629,7 @@ export function ReembolsoScreen({ navigation, route }) {
     setConfirmando(true);
     try {
       await RegistroSubasta.reembolso(registroId, 'si');
+      setYaReembolsado(true);
       Alert.alert(
         'Reembolso solicitado',
         'Procesaremos la devolución en 5-10 días hábiles.',
@@ -595,9 +676,9 @@ export function ReembolsoScreen({ navigation, route }) {
       </ScrollView>
       <BottomBar>
         <Btn
-          title={confirmando ? 'Procesando…' : 'Confirmar reembolso'}
-          onPress={onConfirmar}
-          disabled={confirmando}
+          title={yaReembolsado ? 'Reembolso ya solicitado' : confirmando ? 'Procesando…' : 'Confirmar reembolso'}
+          onPress={yaReembolsado ? undefined : onConfirmar}
+          disabled={confirmando || yaReembolsado}
         />
       </BottomBar>
     </Screen>

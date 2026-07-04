@@ -1,3 +1,7 @@
-*.zip
-*.docx
-audit_db_railway.py
+venv/
+node_modules/
+.env
+.env.*
+__pycache__/
+*.pyc
+.expo/

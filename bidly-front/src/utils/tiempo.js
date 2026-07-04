@@ -1,6 +1,8 @@
-// Etiquetas de tiempo para subastas (fase + segundosRestantes vienen del backend).
+// Etiquetas de tiempo para subastas (estadoSubasta + segundosRestantes vienen del backend).
 
-import { esSubastaFinalizada } from './subasta';
+import { esSubastaFinalizada, esSubastaEnVivo } from './subasta';
+
+export { esSubastaEnVivo };
 
 export function formatDuracion(segundos) {
   if (segundos == null || segundos < 0) return '—';
@@ -17,26 +19,34 @@ export function formatDuracion(segundos) {
   return `${s}s`;
 }
 
-export function esSubastaEnVivo(subasta) {
-  return subasta?.estado === 'abierta' && subasta?.fase === 'en_curso';
-}
-
 export function etiquetaTiempoSubasta(subasta) {
   if (!subasta) return '—';
 
-  if (esSubastaFinalizada(subasta)) {
+  const est = subasta.estadoSubasta;
+  const secs = subasta.segundosRestantes;
+
+  if (est === 'finalizada' || (esSubastaFinalizada(subasta) && est !== 'iniciada')) {
     return 'Finalizada';
   }
 
-  const secs = subasta.segundosRestantes;
+  if (est === 'pendiente' || subasta.fase === 'pendiente') {
+    return 'Pendiente de aprobación';
+  }
 
-  if (subasta.fase === 'programada') {
+  if (est === 'iniciada' || subasta.fase === 'en_curso') {
+    if (secs == null) return 'En curso';
+    if (secs <= 0) return 'Por cerrar';
+    return `Cierra en ${formatDuracion(Number(secs))}`;
+  }
+
+  if (est === 'esperando' || subasta.fase === 'programada') {
     if (secs == null) return 'Próximamente';
-    if (secs <= 0 && subasta.estado === 'cerrada') return 'Esperando apertura';
+    if (secs <= 0) return 'Esperando inicio';
     return `Abre en ${formatDuracion(Number(secs))}`;
   }
 
-  if (subasta.fase === 'en_curso') {
+  // Legacy sin estadoSubasta: no usar lógica de fecha programada si ya está en vivo
+  if (esSubastaEnVivo(subasta)) {
     if (secs == null) return 'En curso';
     if (secs <= 0) return 'Por cerrar';
     return `Cierra en ${formatDuracion(Number(secs))}`;
@@ -44,4 +54,3 @@ export function etiquetaTiempoSubasta(subasta) {
 
   return '—';
 }
-

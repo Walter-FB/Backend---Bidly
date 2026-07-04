@@ -1,15 +1,13 @@
-// BIDLY — HTTP client with JWT (AsyncStorage) for Spring Boot backend.
+// BIDLY — HTTP client with JWT (AsyncStorage) for FastAPI backend.
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 
-// Siempre HTTPS en Railway. En local: app.json → expo.extra.apiBaseUrl o EXPO_PUBLIC_API_URL
+// Siempre HTTPS en Railway. En local: app.json → expo.extra.apiBaseUrl (ej. http://192.168.x.x:8083/api)
 export const BASE_URL =
-  Constants?.expoConfig?.extra?.apiBaseUrl ||
-  process.env.EXPO_PUBLIC_API_URL ||
-  'https://backend-bidly.up.railway.app/api';
+  (Constants?.expoConfig?.extra?.apiBaseUrl) || 'https://backend-bidly.up.railway.app/api';
 
 const TOKEN_KEY = '@bidly_token';
-const DEFAULT_TIMEOUT_MS = 25000;
+const DEFAULT_TIMEOUT_MS = 60000;
 
 export async function getToken() {
   return AsyncStorage.getItem(TOKEN_KEY);
@@ -66,8 +64,9 @@ export async function request(path, { method = 'GET', body, auth = true, headers
   } catch (e) {
     if (e?.status) throw e;
     if (e?.name === 'AbortError') {
-      const err = new Error(`Tiempo de espera (${timeoutMs / 1000}s). ¿Backend en ${BASE_URL}?`);
+      const err = new Error(`El servidor tardó en responder (Railway puede estar iniciando). Reintentá en unos segundos.`);
       err.status = 0;
+      err.isTimeout = true;
       throw err;
     }
     if (String(e?.message || '').includes('Network request failed')) {

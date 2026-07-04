@@ -212,6 +212,9 @@ export function RegistroScreen({ navigation, route }) {
     if (!f.nom.trim() || !f.ape.trim()) {
       return Alert.alert('Campos requeridos', 'Ingresá al menos nombre y apellido.');
     }
+    if (!f.doc.trim()) {
+      return Alert.alert('Documento requerido', 'Ingresá tu número de documento (DNI).');
+    }
     if (!f.email.trim() || !f.email.includes('@')) {
       return Alert.alert('Email inválido', 'Ingresá un email válido.');
     }

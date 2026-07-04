@@ -11,6 +11,7 @@ import { useAuth } from '../context/AuthContext';
 import { BASE_URL, getToken } from '../api/client';
 import { Clientes, Personas, RegistroSubasta, Subastas, Productos, Subastadores, Catalogos } from '../api/endpoints';
 import { tituloSubasta, subtituloSubasta, formatFechaSubasta, esSubastaFinalizada, esSubastaEnCursoVendedor, esMiSubasta, tagEstadoSubasta } from '../utils/subasta';
+import { useNotifBadge } from '../hooks/useNotifBadge';
 
 const COMISION_BIDLY = 0.10;
 
@@ -270,7 +271,8 @@ function irAGanaste(navigation, g) {
 export function MisSubastasScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
-  const [tab, setTab] = useState('curso');
+  const { unreadCount } = useNotifBadge();
+  const [tab, setTab] = useState(route.params?.initialTab || 'curso');
   const [subastas, setSubastas] = useState([]);
   const [ganadas, setGanadas] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -305,10 +307,14 @@ export function MisSubastasScreen({ navigation, route }) {
     setToast(`"${titulo}" creada correctamente`);
     setTab('todas');
     cargar();
-    navigation.setParams({ creada: undefined, tituloCreada: undefined });
-    const t = setTimeout(() => setToast(null), 4500);
-    return () => clearTimeout(t);
+    const clearParams = () => navigation.setParams({ creada: undefined, tituloCreada: undefined });
+    const t = setTimeout(() => { setToast(null); clearParams(); }, 3000);
+    return () => { clearTimeout(t); clearParams(); };
   }, [route.params?.creada]);
+
+  useEffect(() => {
+    if (route.params?.initialTab) setTab(route.params.initialTab);
+  }, [route.params?.initialTab]);
 
   const mias = subastas.filter((a) => esMiSubasta(a, user?.clienteId));
   const ganadasActivas = ganadas.filter((g) => g.reembolsada !== 'si');
@@ -324,7 +330,14 @@ export function MisSubastasScreen({ navigation, route }) {
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 22, height: 52 }}>
         <Display style={{ color: colors.blueLogo, fontSize: 20 }}>BIDLY</Display>
         <TouchableOpacity onPress={() => navigation.navigate('Notificaciones')}>
-          <Ionicons name="notifications-outline" size={21} color="#fff" />
+          <View>
+            <Ionicons name="notifications-outline" size={21} color="#fff" />
+            {unreadCount > 0 && (
+              <View style={s.badge}>
+                <Text style={s.badgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
+              </View>
+            )}
+          </View>
         </TouchableOpacity>
       </View>
       <ScrollView contentContainerStyle={{ paddingHorizontal: 22, paddingBottom: 170 }} showsVerticalScrollIndicator={false}>
@@ -458,7 +471,7 @@ const DIAS_CORTOS = ['Lu','Ma','Mi','Ju','Vi','Sa','Do'];
 
 function minFechaSubasta() {
   const d = new Date();
-  d.setDate(d.getDate() + 11); // DB exige fecha > CURRENT_DATE + 10 (estricto)
+  d.setDate(d.getDate() + 1);
   d.setHours(0, 0, 0, 0);
   return d;
 }
@@ -527,7 +540,7 @@ function CalendarPicker({ value, onChange }) {
         <Ionicons name="chevron-down" size={16} color={colors.muted} />
       </TouchableOpacity>
       <Text style={{ color: colors.muted, fontSize: 11, marginTop: 4 }}>
-        Las subastas requieren al menos 10 días de anticipación (reglamento de la casa). Fecha mínima: {formatFechaDisplay(toYMD(minDate))}
+        Seleccioná una fecha futura para la subasta.
       </Text>
 
       <Modal visible={visible} transparent animationType="slide" onRequestClose={() => setVisible(false)}>
@@ -683,7 +696,7 @@ const CATS_SUBASTA = ['comun', 'especial', 'plata', 'oro', 'platino'];
 const MONEDAS = ['pesos', 'dolares'];
 
 export function CrearSubastaScreen({ navigation, route }) {
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
   const [paso, setPaso] = useState(1);
   const [f, setF] = useState({
     fecha: '',
@@ -699,6 +712,21 @@ export function CrearSubastaScreen({ navigation, route }) {
   const [itemsSeleccionados, setItemsSeleccionados] = useState(productoInicial);
   const [loading, setLoading] = useState(false);
   const [exito, setExito] = useState(null);
+
+  // Recibir producto seleccionado desde MisProductosScreen (evita pasar función como param).
+  useEffect(() => {
+    const prod = route.params?.productoSeleccionado;
+    if (!prod) return;
+    setItemsSeleccionados((prev) => {
+      if (prev.find((i) => i.productoId === prod.identificador)) return prev;
+      return [...prev, {
+        productoId: prod.identificador,
+        titulo: prod.descripcionCatalogo || `Producto #${prod.identificador}`,
+        precioBase: '',
+      }];
+    });
+    navigation.setParams({ productoSeleccionado: undefined });
+  }, [route.params?.productoSeleccionado]);
   const exitoScale = useRef(new Animated.Value(0.6)).current;
   const exitoOpacity = useRef(new Animated.Value(0)).current;
   const set = (k) => (v) => setF((s) => ({ ...s, [k]: v }));
@@ -736,7 +764,11 @@ export function CrearSubastaScreen({ navigation, route }) {
       Animated.timing(exitoOpacity, { toValue: 1, duration: 280, useNativeDriver: true }),
     ]).start();
     setTimeout(() => {
-      irAMisSubastas(navigation, { creada: subasta.identificador, tituloCreada: titulo });
+      try {
+        irAMisSubastas(navigation, { creada: subasta.identificador, tituloCreada: titulo });
+      } catch {
+        navigation.goBack();
+      }
     }, 1600);
   };
 
@@ -744,9 +776,9 @@ export function CrearSubastaScreen({ navigation, route }) {
     if (itemsSeleccionados.length === 0) {
       return Alert.alert('Sin productos', 'Agregá al menos un producto a la subasta.');
     }
-    const sinPrecio = itemsSeleccionados.find((i) => !String(i.precioBase).trim());
+    const sinPrecio = itemsSeleccionados.find((i) => !String(i.precioBase).trim() || parseFloat(i.precioBase) <= 0 || isNaN(parseFloat(i.precioBase)));
     if (sinPrecio) {
-      return Alert.alert('Precio faltante', 'Completá el precio base de cada producto.');
+      return Alert.alert('Precio faltante', 'Completá el precio base de cada producto con un valor mayor a 0.');
     }
     setLoading(true);
     try {
@@ -755,7 +787,7 @@ export function CrearSubastaScreen({ navigation, route }) {
       const subasta = await Subastas.crear({
         fecha: f.fecha,
         hora: f.hora + ':00',
-        estado: 'cerrada', // aún no abierta; el dueño la abre desde Mis subastas
+        estado: 'cerrada', // pendiente de aprobación; la puja la inicia el admin
         subastador: user.clienteId,
         ubicacion: f.ubicacion,
         categoria: f.categoria,
@@ -785,6 +817,19 @@ export function CrearSubastaScreen({ navigation, route }) {
       setLoading(false);
     }
   };
+
+  if (!isAdmin) {
+    return (
+      <Screen contentStyle={{ paddingHorizontal: 22, paddingBottom: 40, justifyContent: 'center', alignItems: 'center', flex: 1 }}>
+        <Ionicons name="lock-closed-outline" size={52} color={colors.muted} style={{ marginBottom: 16 }} />
+        <Display style={{ textAlign: 'center', fontSize: 18, marginBottom: 8 }}>Acceso restringido</Display>
+        <Sub style={{ textAlign: 'center' }}>Solo los administradores pueden crear subastas.</Sub>
+        <View style={{ marginTop: 24 }}>
+          <Btn title="Volver" kind="ghost" onPress={() => navigation.goBack()} />
+        </View>
+      </Screen>
+    );
+  }
 
   if (paso === 1) {
     return (
@@ -853,7 +898,7 @@ export function CrearSubastaScreen({ navigation, route }) {
           </Text>
           <TouchableOpacity
             style={{ marginTop: 12 }}
-            onPress={() => navigation.navigate('MisProductos', { onSeleccionar: agregarProducto })}
+            onPress={() => navigation.navigate('MisProductos', { modoSeleccion: true })}
           >
             <Text style={{ color: colors.blue, fontWeight: '700', fontSize: 13 }}>Elegir de mis productos →</Text>
           </TouchableOpacity>
@@ -916,7 +961,7 @@ export function CrearSubastaScreen({ navigation, route }) {
 
       <TouchableOpacity
         style={cs.addProductoBtn}
-        onPress={() => navigation.navigate('MisProductos', { onSeleccionar: agregarProducto })}
+        onPress={() => navigation.navigate('MisProductos', { modoSeleccion: true })}
         activeOpacity={0.8}
       >
         <Ionicons name="add-circle-outline" size={20} color={colors.blue} />
@@ -936,6 +981,9 @@ export function CrearSubastaScreen({ navigation, route }) {
             <Display style={{ fontSize: 22, textAlign: 'center', marginTop: 16 }}>¡Subasta creada!</Display>
             <Text style={{ color: colors.muted, fontSize: 14, textAlign: 'center', marginTop: 8, lineHeight: 20 }}>
               {exito?.titulo}
+            </Text>
+            <Text style={{ color: colors.muted, fontSize: 13, textAlign: 'center', marginTop: 10, lineHeight: 18 }}>
+              Un administrador iniciará la puja cuando apruebe tu solicitud.
             </Text>
             <Text style={{ color: colors.blue, fontSize: 13, fontWeight: '700', marginTop: 18 }}>
               Yendo a Mis subastas…
@@ -978,9 +1026,30 @@ export function PublicarScreen({ navigation }) {
   const quitarFoto = (idx) => setFotos((prev) => prev.filter((_, i) => i !== idx));
 
   const onPublicar = async () => {
-    if (!f.titulo.trim() || !f.precio.trim()) {
-      return Alert.alert('Campos requeridos', 'Completá al menos el título y el precio base.');
+    if (!f.titulo.trim()) {
+      return Alert.alert('Campo requerido', 'Completá el título del producto.');
     }
+
+    // Verificar que el usuario tiene una cuenta de cobro registrada
+    try {
+      const mismedios = await Clientes.mediosPago(user.clienteId);
+      const tieneCobro = (mismedios || []).some(
+        (m) => m.tipo === 'cuenta' && m.es_cuenta_cobro === 'si'
+      );
+      if (!tieneCobro) {
+        return Alert.alert(
+          'Cuenta de cobro requerida',
+          'Para publicar un producto necesitás registrar una cuenta bancaria de cobro. Tus ventas se depositarán ahí.',
+          [
+            { text: 'Ahora no', style: 'cancel' },
+            { text: 'Configurar cuenta', onPress: () => navigation.navigate('MedioPago') },
+          ]
+        );
+      }
+    } catch {
+      // Si falla la consulta, continuamos igual (no bloqueamos)
+    }
+
     setLoading(true);
     try {
       const producto = await Productos.crear({
@@ -1014,18 +1083,9 @@ export function PublicarScreen({ navigation }) {
       }
 
       Alert.alert(
-        '¡Producto publicado!',
-        `¡${producto.descripcionCatalogo || 'Producto'} listo! ¿Querés crear una subasta con este producto ahora?`,
-        [
-          {
-            text: 'Crear subasta',
-            onPress: () => navigation.navigate('CrearSubasta', {
-              productoId: producto.identificador,
-              titulo: f.titulo,
-            }),
-          },
-          { text: 'Ir al inicio', style: 'cancel', onPress: () => navigation.navigate('Main') },
-        ],
+        '¡Producto enviado a revisión!',
+        `"${producto.descripcionCatalogo || 'Tu producto'}" fue enviado. Un administrador lo revisará y te notificará cuando esté aprobado.`,
+        [{ text: 'Ver mis productos', onPress: () => navigation.navigate('MisProductos') }],
       );
     } catch (e) {
       Alert.alert('Error', e.message || 'No se pudo publicar el producto.');
@@ -1148,15 +1208,18 @@ export function CompraDetalleScreen({ navigation, route }) {
         {puedePagar && (
           <Btn title="Continuar al pago" onPress={irAPago} />
         )}
-        <Btn
-          title="Solicitar reembolso"
-          kind={puedePagar ? 'ghost' : 'primary'}
-          onPress={() => navigation.navigate('Reembolso', {
-            registroId,
-            importe: total ?? importe,
-            titulo: title,
-          })}
-        />
+        {!puedePagar ? null : (
+          <Btn
+            title="Solicitar reembolso"
+            kind="ghost"
+            onPress={() => navigation.navigate('Reembolso', {
+              registroId,
+              importe: total ?? importe,
+              titulo: title,
+              reembolsada,
+            })}
+          />
+        )}
       </View>
     </Screen>
   );
@@ -1285,18 +1348,26 @@ export function DatosPersonalesScreen({ navigation }) {
 // ─── MIS PRODUCTOS SCREEN ────────────────────────────────────────────────────
 export function MisProductosScreen({ navigation, route }) {
   const { user } = useAuth();
-  const onSeleccionar = route.params?.onSeleccionar;
-  const modoSeleccion = !!onSeleccionar;
+  const modoSeleccion = !!route.params?.modoSeleccion;
   const [productos, setProductos] = useState([]);
+  const [ventasPorProducto, setVentasPorProducto] = useState({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const cargar = () => {
       if (!user?.clienteId) { setLoading(false); return; }
       setLoading(true);
-      Productos.porDuenio(user.clienteId)
-        .then((data) => setProductos(data || []))
-        .catch(() => setProductos([]))
+      Promise.all([
+        Productos.porDuenio(user.clienteId),
+        RegistroSubasta.porDuenio(user.clienteId),
+      ])
+        .then(([prods, registros]) => {
+          setProductos(prods || []);
+          const map = {};
+          (registros || []).forEach((r) => { if (r.producto) map[r.producto] = r; });
+          setVentasPorProducto(map);
+        })
+        .catch(() => { setProductos([]); setVentasPorProducto({}); })
         .finally(() => setLoading(false));
     };
     const unsub = navigation.addListener('focus', cargar);
@@ -1304,8 +1375,7 @@ export function MisProductosScreen({ navigation, route }) {
   }, [navigation, user]);
 
   const seleccionar = (p) => {
-    onSeleccionar(p);
-    navigation.goBack();
+    navigation.navigate('CrearSubasta', { productoSeleccionado: p });
   };
 
   const confirmarEliminar = (p) => {
@@ -1349,50 +1419,94 @@ export function MisProductosScreen({ navigation, route }) {
         </Card>
       )}
       <View style={{ gap: 12 }}>
-        {productos.map((p) => (
-          <TouchableOpacity
-            key={p.identificador}
-            onPress={modoSeleccion ? () => seleccionar(p) : undefined}
-            activeOpacity={modoSeleccion ? 0.75 : 1}
-          >
-            <Card el style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
-              <View style={{ width: 64, height: 64, borderRadius: 10, backgroundColor: colors.cardEl, overflow: 'hidden' }}>
-                <Image
-                  source={{ uri: `${BASE_URL}/productos/${p.identificador}/portada` }}
-                  style={{ width: '100%', height: '100%' }}
-                  resizeMode="cover"
-                />
-              </View>
-              <View style={{ flex: 1 }}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
-                  <Display style={{ fontSize: 14, flex: 1, marginRight: 8 }} numberOfLines={1}>
-                    {p.descripcionCatalogo || `Producto #${p.identificador}`}
-                  </Display>
-                  <Tag
-                    label={p.disponible === 'si' ? 'ACTIVO' : 'INACTIVO'}
-                    color={p.disponible === 'si' ? colors.green : colors.muted}
-                  />
+        {productos.map((p) => {
+          const venta = ventasPorProducto[p.identificador];
+          const vendido = !!venta;
+          const Wrapper = modoSeleccion ? TouchableOpacity : View;
+          return (
+            <Wrapper
+              key={p.identificador}
+              {...(modoSeleccion ? { onPress: () => seleccionar(p), activeOpacity: 0.75 } : {})}
+            >
+              <Card el style={{ gap: 10 }}>
+                <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
+                  <View style={{ width: 64, height: 64, borderRadius: 10, backgroundColor: colors.cardEl, overflow: 'hidden' }}>
+                    <Image
+                      source={{ uri: `${BASE_URL}/productos/${p.identificador}/portada` }}
+                      style={{ width: '100%', height: '100%' }}
+                      resizeMode="cover"
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
+                      <Display style={{ fontSize: 14, flex: 1, marginRight: 8 }} numberOfLines={1}>
+                        {p.descripcionCatalogo || `Producto #${p.identificador}`}
+                      </Display>
+                      {vendido
+                        ? <Tag label="VENDIDO" color={colors.green} />
+                        : p.estadoRevision === 'rechazado'
+                          ? <Tag label="RECHAZADO" color={colors.red} />
+                          : p.estadoRevision === 'pendiente'
+                            ? <Tag label="PENDIENTE" color={colors.gold} />
+                            : <Tag label={p.disponible === 'si' ? 'ACTIVO' : 'INACTIVO'} color={p.disponible === 'si' ? colors.blue : colors.muted} />
+                      }
+                    </View>
+                    {!!p.descripcionCompleta && (
+                      <Text style={{ color: colors.muted, fontSize: 12 }} numberOfLines={2}>
+                        {p.descripcionCompleta}
+                      </Text>
+                    )}
+                    <Text style={{ color: colors.blue, fontSize: 11, fontWeight: '700', marginTop: 4 }}>
+                      ID #{p.identificador}
+                    </Text>
+                    {p.estadoRevision === 'rechazado' && !!p.motivoRechazo && (
+                      <Text style={{ color: colors.red, fontSize: 11, marginTop: 3 }}>
+                        Motivo: {p.motivoRechazo}
+                      </Text>
+                    )}
+                    {p.estadoRevision === 'pendiente' && (
+                      <Text style={{ color: colors.gold, fontSize: 11, marginTop: 3 }}>
+                        Esperando aprobación del administrador
+                      </Text>
+                    )}
+                  </View>
+                  {!modoSeleccion && !vendido && (
+                    <TouchableOpacity onPress={() => confirmarEliminar(p)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                      <Ionicons name="trash-outline" size={22} color="#ef4444" />
+                    </TouchableOpacity>
+                  )}
+                  {modoSeleccion && <Ionicons name="add-circle" size={28} color={colors.blue} />}
                 </View>
-                {!!p.descripcionCompleta && (
-                  <Text style={{ color: colors.muted, fontSize: 12 }} numberOfLines={2}>
-                    {p.descripcionCompleta}
-                  </Text>
+                {vendido && (
+                  <View style={{ backgroundColor: 'rgba(34,197,94,0.08)', borderRadius: 10, padding: 12, gap: 4 }}>
+                    <Text style={{ color: colors.green, fontSize: 11, fontWeight: '800', letterSpacing: 0.5, marginBottom: 4 }}>
+                      TU PRODUCTO SE VENDIO
+                    </Text>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                      <Text style={{ color: colors.muted, fontSize: 12 }}>Precio de venta</Text>
+                      <Text style={{ color: '#fff', fontSize: 12, fontWeight: '600' }}>
+                        ${Number(venta.importe || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                      </Text>
+                    </View>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                      <Text style={{ color: colors.muted, fontSize: 12 }}>Comisión Bidly</Text>
+                      <Text style={{ color: '#ef4444', fontSize: 12, fontWeight: '600' }}>
+                        -${Number(venta.comision || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                      </Text>
+                    </View>
+                    <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 4 }} />
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                      <Text style={{ color: '#fff', fontSize: 13, fontWeight: '700' }}>Neto a recibir</Text>
+                      <Text style={{ color: colors.green, fontSize: 13, fontWeight: '800' }}>
+                        ${(Number(venta.importe || 0) - Number(venta.comision || 0)).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                      </Text>
+                    </View>
+                  </View>
                 )}
-                <Text style={{ color: colors.blue, fontSize: 11, fontWeight: '700', marginTop: 4 }}>
-                  ID #{p.identificador}
-                </Text>
-              </View>
-              {modoSeleccion
-                ? <Ionicons name="add-circle" size={28} color={colors.blue} />
-                : (
-                  <TouchableOpacity onPress={() => confirmarEliminar(p)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                    <Ionicons name="trash-outline" size={22} color="#ef4444" />
-                  </TouchableOpacity>
-                )
-              }
-            </Card>
-          </TouchableOpacity>
-        ))}
+              </Card>
+            </Wrapper>
+          );
+        })}
       </View>
       {!modoSeleccion && (
         <View style={{ marginTop: 24 }}>
@@ -1415,6 +1529,9 @@ const s = StyleSheet.create({
   photoEmpty: { borderWidth: 1.5, borderStyle: 'dashed', borderColor: colors.border, backgroundColor: colors.card, borderRadius: 12 },
   winnerAvatar: { width: 46, height: 46, borderRadius: 23, backgroundColor: colors.cardEl, alignItems: 'center', justifyContent: 'center' },
   dpIcon: { width: 40, height: 40, borderRadius: 10, backgroundColor: 'rgba(59,130,246,0.12)', alignItems: 'center', justifyContent: 'center' },
+  badge: { position: 'absolute', top: -5, right: -7, minWidth: 16, height: 16, borderRadius: 8,
+    backgroundColor: colors.red, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 },
+  badgeText: { color: '#fff', fontSize: 9, fontWeight: '800' },
   toastOk: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     backgroundColor: 'rgba(55,214,111,0.12)', borderWidth: 1, borderColor: colors.green,

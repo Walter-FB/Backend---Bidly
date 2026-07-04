@@ -1,5 +1,5 @@
 // BIDLY — auth state: user + token, persiste ambos en AsyncStorage.
-// user shape: { clienteId, email, nombre, categoria, admitido }
+// user shape: { clienteId, email, nombre, categoria, admitido, rol? }
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { Auth } from '../api/endpoints';
 import { setToken, getToken } from '../api/client';
@@ -61,8 +61,7 @@ export function AuthProvider({ children }) {
     setUser({ isGuest: true, nombre: 'Invitado', clienteId: null });
   }, []);
 
-  // Acceso al panel de administración (subastas + solicitudes a confirmar).
-  const isAdmin = true;
+  const isAdmin = user?.rol === 'admin';
 
   return (
     <AuthContext.Provider value={{ user, setUser, booting, login, register, logout, loginAsGuest, isAdmin }}>
@@ -79,6 +78,7 @@ function normalizeUser(data) {
     nombre: data.nombre || '',
     categoria: data.categoria || 'comun',
     admitido: data.admitido || 'no',
+    rol: data.rol || null,
   };
 }
 

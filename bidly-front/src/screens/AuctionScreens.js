@@ -28,8 +28,6 @@ function formatCountdown(seconds) {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
-const ORDEN_CATEGORIA = { comun: 0, especial: 1, plata: 2, oro: 3, platino: 4 };
-
 async function buscarRegistroId(clienteId, subastaId, productoId) {
   if (!clienteId || !subastaId) return null;
   try {
@@ -46,9 +44,10 @@ async function buscarRegistroId(clienteId, subastaId, productoId) {
 }
 
 function mensajeError(e, proximaPuja, maxPuja, moneda) {
-  const code = e?.data?.code;
-  const min = e?.data?.minimoAceptable ?? proximaPuja;
-  const max = e?.data?.maximoAceptable ?? maxPuja;
+  const detail = e?.data?.detail ?? e?.data;
+  const code = detail?.code;
+  const min = detail?.minimoAceptable ?? proximaPuja;
+  const max = detail?.maximoAceptable ?? maxPuja;
   switch (code) {
     case 'MIN_BID':      return `La oferta mínima es ${formatImporte(min, moneda)}.`;
     case 'MAX_BID':      return `El tope para esta subasta es ${formatImporte(max, moneda)}.`;
@@ -57,19 +56,21 @@ function mensajeError(e, proximaPuja, maxPuja, moneda) {
     case 'FORBIDDEN':    return 'No estás inscripto en esta subasta.';
     case 'AUCTION_CLOSED':
     case 'ITEM_SOLD':    return 'La subasta ya cerró.';
+    case 'ITEM_NOT_ACTIVE':
+      return 'Este ítem ya no está en subasta. Volvé atrás y entrá al ítem activo.';
     case 'RACE':         return 'Alguien pujó más rápido. Mirá el nuevo monto.';
-    default:             return e?.data?.error || e?.message || 'Error al registrar la puja.';
+    default:             return detail?.error || detail?.message || e?.message || 'Error al registrar la puja.';
   }
 }
 
 // ─── PRODUCTO SCREEN ──────────────────────────────────────────────────────────
 export function ProductoScreen({ navigation, route }) {
-  const { user } = useAuth();
   const subastaId = route.params?.subastaId || route.params?.subasta?.id;
   const subastaPreview = route.params?.subasta;
 
   const [subasta, setSubasta] = useState(null);
   const [items, setItems] = useState([]);
+  const [itemEnVivo, setItemEnVivo] = useState(null);
   const [fotoIds, setFotoIds] = useState([]);
   const [lightboxIdx, setLightboxIdx] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -80,11 +81,23 @@ export function ProductoScreen({ navigation, route }) {
     Promise.all([
       Subastas.obtener(subastaId),
       Subastas.catalogos(subastaId),
+      Subastas.sesion(subastaId).catch(() => null),
     ])
-      .then(([s, catalogoItems]) => {
+      .then(([s, catalogoItems, sesion]) => {
+        const lista = catalogoItems || [];
         setSubasta(s);
-        setItems(catalogoItems || []);
-        const productoId = catalogoItems?.[0]?.producto?.identificador;
+        setItems(lista);
+
+        let activo = null;
+        if (sesion?.itemActivoId != null) {
+          activo = lista.find((i) => Number(i.identificador) === Number(sesion.itemActivoId));
+        }
+        if (!activo) {
+          activo = lista.find((i) => i.subastado !== 'si') || lista[0] || null;
+        }
+        setItemEnVivo(activo);
+
+        const productoId = activo?.producto?.identificador ?? lista[0]?.producto?.identificador;
         if (productoId) {
           Productos.fotos(productoId)
             .then((ids) => setFotoIds(ids || []))
@@ -116,10 +129,10 @@ export function ProductoScreen({ navigation, route }) {
     );
   }
 
-  const primerItem = items[0];
+  const itemDestacado = itemEnVivo || items[0];
   const titulo = tituloSubasta(subasta, items);
   const categoria = `${subasta.categoria || 'General'} · ${subasta.ubicacion || ''}`.replace(/·\s*$/, '').trim();
-  const precioBase = primerItem?.precioBase;
+  const precioBase = itemDestacado?.precioBase;
   const viva = esSubastaEnVivo(subasta);
   const fotoUrls = fotoIds.map((id) => `${BASE_URL}/fotos/${id}`);
 
@@ -164,18 +177,20 @@ export function ProductoScreen({ navigation, route }) {
             </Text>
           </View>
           <View>
-            <Text style={{ color: colors.muted, fontSize: 12 }}>{viva ? 'Cierra' : subasta.fase === 'programada' ? 'Abre' : 'Estado'}</Text>
+            <Text style={{ color: colors.muted, fontSize: 12 }}>
+              {viva ? 'Cierra' : (subasta.estadoSubasta === 'esperando' || subasta.fase === 'programada') ? 'Abre' : 'Estado'}
+            </Text>
             <Text style={{ color: colors.gold, fontSize: 20, fontWeight: '800' }}>
               {etiquetaTiempoSubasta(subasta)}
             </Text>
           </View>
         </View>
 
-        {primerItem?.producto?.descripcionCompleta && (
+        {itemDestacado?.producto?.descripcionCompleta && (
           <>
             <SectionLabel>Descripción</SectionLabel>
             <Text style={{ color: colors.muted, fontSize: 14, lineHeight: 22 }}>
-              {primerItem.producto.descripcionCompleta}
+              {itemDestacado.producto.descripcionCompleta}
             </Text>
           </>
         )}
@@ -217,41 +232,25 @@ export function ProductoScreen({ navigation, route }) {
         onClose={() => setLightboxIdx(null)}
       />
 
-      {viva && primerItem && (() => {
-        const ordenSubasta = ORDEN_CATEGORIA[subasta.categoria] ?? 0;
-        const ordenUsuario = ORDEN_CATEGORIA[user?.categoria] ?? 0;
-        const puedeEntrar = user?.isGuest || ordenSubasta <= ordenUsuario;
-        return (
-          <BottomBar>
-            {!puedeEntrar ? (
-              <View style={{ alignItems: 'center', gap: 6 }}>
-                <Text style={{ color: colors.gold, fontSize: 13, fontWeight: '700', textAlign: 'center' }}>
-                  Necesitás categoría {subasta.categoria.toUpperCase()} o superior para participar.
-                  {'\n'}Tu categoría: {(user?.categoria || 'comun').toUpperCase()}.
-                </Text>
-                <Btn title="Ir a la subasta en vivo" disabled />
-              </View>
-            ) : (
-              <Btn
-                title="Ir a la subasta en vivo"
-                onPress={() => navigation.navigate('SubastaEnVivo', {
-                  subastaId: subasta.identificador,
-                  itemId: primerItem.identificador,
-                  productoId: primerItem.producto?.identificador,
-                  precioBase: primerItem.precioBase,
-                  titulo,
-                  moneda: subasta.moneda,
-                  comision: primerItem.comision,
-                  fecha: subasta.fecha,
-                  hora: subasta.hora,
-                  categoriaSubasta: subasta.categoria,
-                  subastador: subasta.subastador,
-                })}
-              />
-            )}
-          </BottomBar>
-        );
-      })()}
+      {viva && itemDestacado && (
+        <BottomBar>
+          <Btn
+            title="Ir a la subasta en vivo"
+            onPress={() => navigation.navigate('SubastaEnVivo', {
+              subastaId: subasta.identificador,
+              itemId: itemDestacado.identificador,
+              productoId: itemDestacado.producto?.identificador,
+              precioBase: itemDestacado.precioBase,
+              titulo,
+              moneda: subasta.moneda,
+              comision: itemDestacado.comision,
+              fecha: subasta.fecha,
+              hora: subasta.hora,
+              categoriaSubasta: subasta.categoria,
+            })}
+          />
+        </BottomBar>
+      )}
     </Screen>
   );
 }
@@ -270,7 +269,6 @@ export function SubastaEnVivoScreen({ navigation, route }) {
     fecha,
     hora,
     categoriaSubasta,
-  subastador,
   } = route.params || {};
 
   const [pujas, setPujas] = useState([]);
@@ -281,6 +279,8 @@ export function SubastaEnVivoScreen({ navigation, route }) {
   const [timeLeft, setTimeLeft] = useState(null);
   const [fotoAmpliada, setFotoAmpliada] = useState(false);
   const [montoIngresado, setMontoIngresado] = useState('');
+  const [ordenActual, setOrdenActual] = useState(null);
+  const [totalItems, setTotalItems] = useState(null);
   const mounted = useRef(true);
   const asistenteIdRef = useRef(null);
   const navegado = useRef(false);
@@ -294,29 +294,33 @@ export function SubastaEnVivoScreen({ navigation, route }) {
   // Mantener ref actualizada para usarla en callbacks sin crear dependencias.
   useEffect(() => { asistenteIdRef.current = asistenteId; }, [asistenteId]);
 
-  // Obtener baseline de tiempo desde el backend al entrar a la pantalla.
+  // Obtener segundosRestantes del backend (sesión o detalle de subasta).
   useEffect(() => {
     if (!subastaId) return;
-    Subastas.obtener(subastaId)
-      .then((s) => {
-        if (mounted.current && s?.segundosRestantes != null) {
-          baselineRef.current = { fetchedAt: Date.now(), segundos: Number(s.segundosRestantes) };
-        }
-      })
-      .catch(() => {});
+    const syncTimer = () => {
+      Promise.all([
+        Subastas.sesion(subastaId).catch(() => null),
+        Subastas.obtener(subastaId),
+      ])
+        .then(([sesion, sub]) => {
+          const secs = sesion?.segundosRestantes ?? sub?.segundosRestantes;
+          if (mounted.current && secs != null) {
+            baselineRef.current = { fetchedAt: Date.now(), segundos: Number(secs) };
+          }
+          if (mounted.current && sesion?.ordenActual != null) {
+            setOrdenActual(sesion.ordenActual);
+          }
+        })
+        .catch(() => {});
+    };
+    syncTimer();
+    const interval = setInterval(syncTimer, 10000);
+    return () => clearInterval(interval);
   }, [subastaId]);
 
-  // Countdown: 30 min desde la última puja, o desde la apertura real (baseline del backend).
+  // Countdown local a partir del baseline del backend.
   useEffect(() => {
-    const INACTIVIDAD_MS = 30 * 60 * 1000;
     const tick = () => {
-      if (pujas.length > 0 && pujas[0]?.fechaHora) {
-        const ultima = new Date(pujas[0].fechaHora).getTime();
-        if (!Number.isNaN(ultima)) {
-          setTimeLeft(Math.max(0, Math.floor((ultima + INACTIVIDAD_MS - Date.now()) / 1000)));
-          return;
-        }
-      }
       const b = baselineRef.current;
       if (b) {
         setTimeLeft(Math.max(0, Math.floor(b.segundos - (Date.now() - b.fetchedAt) / 1000)));
@@ -327,7 +331,15 @@ export function SubastaEnVivoScreen({ navigation, route }) {
     tick();
     const interval = setInterval(tick, 1000);
     return () => clearInterval(interval);
-  }, [pujas]);
+  }, []);
+
+  // Cargar total de ítems del catálogo (una sola vez).
+  useEffect(() => {
+    if (!subastaId) return;
+    Subastas.catalogos(subastaId)
+      .then((items) => { if (mounted.current) setTotalItems((items || []).length); })
+      .catch(() => {});
+  }, [subastaId]);
 
   // Inscribir al usuario como asistente.
   useEffect(() => {
@@ -352,13 +364,16 @@ export function SubastaEnVivoScreen({ navigation, route }) {
         const ganadora = lista.find((p) => p.ganador === 'si');
         if (!ganadora) return;
 
+        // Esperar inscripción antes de evaluar si gané (evita falso negativo por race).
+        if (!user?.isGuest && asistenteIdRef.current == null) return;
+
         navegado.current = true;
         const yoGane = !user?.isGuest &&
           asistenteIdRef.current != null &&
           ganadora.asistente?.identificador === asistenteIdRef.current;
 
         if (yoGane) {
-          buscarRegistroId(user.clienteId, subastaId, productoId)
+          buscarRegistroId(user?.clienteId, subastaId, productoId)
             .then((registroId) => {
               if (!mounted.current) return;
               navigation.replace('Ganaste', {
@@ -370,7 +385,8 @@ export function SubastaEnVivoScreen({ navigation, route }) {
                 comision,
                 registroId,
               });
-            });
+            })
+            .catch(() => { navegado.current = false; });
         } else {
           navigation.replace('SubastaFinalizada', {
             titulo,
@@ -387,27 +403,24 @@ export function SubastaEnVivoScreen({ navigation, route }) {
 
   useEffect(() => {
     cargarPujas();
-    const interval = setInterval(cargarPujas, 5000);
+    const interval = setInterval(cargarPujas, 1000);
     return () => clearInterval(interval);
   }, [cargarPujas]);
 
   // Calcular puja actual, próximo importe y tope máximo.
   const pujaActual = pujas.length > 0 ? pujas[0].importe : null;
-  const precioBaseValido = Number(precioBase) > 0;
-  const esExento = categoriaSubasta === 'oro' || categoriaSubasta === 'platino';  // R3
-  const esDuenio = !user?.isGuest && user?.clienteId != null && user?.clienteId === subastador;
-
-  const minIncremento = precioBaseValido ? Math.ceil(Number(precioBase) * 0.01 * 100) / 100 : 0;
-  const maxIncremento = precioBaseValido ? Math.floor(Number(precioBase) * 0.20 * 100) / 100 : 0;
-
+  const minIncremento = precioBase > 0
+    ? Math.ceil(Number(precioBase) * 0.01 * 100) / 100
+    : 1;
   const proximaPuja = pujaActual != null
     ? Number(pujaActual) + minIncremento
     : Number(precioBase);
-  const maxPuja = esExento
+  const CATS_SIN_LIMITE = new Set(['oro', 'platino']);
+  const maxPuja = CATS_SIN_LIMITE.has(categoriaSubasta)
     ? null
     : pujaActual != null
-      ? Number(pujaActual) + maxIncremento
-      : null;
+      ? Number(pujaActual) + Number(precioBase) * 0.20
+      : Number(precioBase) * 1.20;
 
   // Sincronizar el input solo cuando cambia la puja líder (no en cada poll).
   useEffect(() => {
@@ -444,12 +457,6 @@ export function SubastaEnVivoScreen({ navigation, route }) {
       );
       return;
     }
-    if (esDuenio) {
-      return Alert.alert('No permitido', 'No podés pujar en tu propia subasta.');
-    }
-    if (!precioBaseValido) {
-      return Alert.alert('Error', 'El precio base del ítem no está disponible.');
-    }
     if (!asistenteId) {
       return Alert.alert('Espera', 'Estamos registrando tu acceso a la subasta. Intentá en un momento.');
     }
@@ -458,8 +465,20 @@ export function SubastaEnVivoScreen({ navigation, route }) {
       await Pujas.pujar(asistenteId, itemId, montoNum);
       cargarPujas();
     } catch (e) {
-      Alert.alert('No se pudo pujar', mensajeError(e, proximaPuja, maxPuja, moneda));
-      if (['MIN_BID', 'RACE'].includes(e?.data?.code)) cargarPujas();
+      const code = (e?.data?.detail ?? e?.data)?.code;
+      if (code === 'NO_PAYMENT') {
+        Alert.alert(
+          'Sin medio de pago verificado',
+          'Necesitás un medio de pago verificado para pujar. Registrá uno y esperá la aprobación del equipo Bidly.',
+          [
+            { text: 'Ahora no', style: 'cancel' },
+            { text: 'Agregar medio de pago', onPress: () => navigation.navigate('MedioPago') },
+          ],
+        );
+      } else {
+        Alert.alert('No se pudo pujar', mensajeError(e, proximaPuja, maxPuja, moneda));
+        if (['MIN_BID', 'RACE'].includes(code)) cargarPujas();
+      }
     } finally {
       setPujando(false);
     }
@@ -489,7 +508,12 @@ export function SubastaEnVivoScreen({ navigation, route }) {
             </View>
           )}
         </View>
-        <Display style={{ fontSize: 20, marginVertical: 14, lineHeight: 23 }}>{titulo}</Display>
+        <Display style={{ fontSize: 20, marginTop: 14, marginBottom: 4, lineHeight: 23 }}>{titulo}</Display>
+        {ordenActual != null && totalItems != null && (
+          <Text style={{ color: colors.muted, fontSize: 12.5, marginBottom: 10 }}>
+            Ítem {ordenActual} de {totalItems}
+          </Text>
+        )}
 
         <Card el style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' }}>
           <View>
@@ -531,23 +555,36 @@ export function SubastaEnVivoScreen({ navigation, route }) {
         {!user?.isGuest && asistenteId && !esLidero && (
           <Card el style={{ marginTop: 12 }}>
             <Text style={{ color: colors.muted, fontSize: 11, fontWeight: '800', letterSpacing: 1 }}>TU OFERTA</Text>
-            <Field
-              value={montoIngresado}
-              onChangeText={setMontoIngresado}
-              keyboardType="decimal-pad"
-              style={{ fontSize: 22, fontWeight: '800', color: montoInvalido ? colors.red : '#fff', marginTop: 6 }}
-            />
-            <Text style={{ color: montoMenorQueMin || montoMayorQueMax ? colors.red : colors.muted, fontSize: 12, marginTop: 4 }}>
+            <View style={st.stepRow}>
+              <TouchableOpacity
+                style={[st.stepBtn, montoNum <= proximaPuja + 0.001 && st.stepBtnDisabled]}
+                onPress={() => {
+                  const next = Math.round((montoNum - minIncremento) * 100) / 100;
+                  if (next >= proximaPuja - 0.001) setMontoIngresado(String(next));
+                }}
+                disabled={!montoValido || montoNum <= proximaPuja + 0.001}
+              >
+                <Text style={st.stepBtnText}>−</Text>
+              </TouchableOpacity>
+              <Text style={{ fontSize: 26, fontWeight: '800', color: montoInvalido ? colors.red : '#fff' }}>
+                {montoValido ? formatImporte(montoNum, moneda) : '—'}
+              </Text>
+              <TouchableOpacity
+                style={[st.stepBtn, (maxPuja != null && montoNum >= maxPuja - 0.001) && st.stepBtnDisabled]}
+                onPress={() => {
+                  const next = Math.round((montoNum + minIncremento) * 100) / 100;
+                  if (maxPuja == null || next <= maxPuja + 0.001) setMontoIngresado(String(next));
+                }}
+                disabled={!montoValido || (maxPuja != null && montoNum >= maxPuja - 0.001)}
+              >
+                <Text style={st.stepBtnText}>+</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={{ color: colors.muted, fontSize: 12, marginTop: 8, textAlign: 'center' }}>
               {maxPuja != null
                 ? `Mín: ${formatImporte(proximaPuja, moneda)}  ·  Máx: ${formatImporte(maxPuja, moneda)}`
                 : `Mín: ${formatImporte(proximaPuja, moneda)}  ·  Sin tope`}
             </Text>
-            {montoMenorQueMin && (
-              <Text style={{ color: colors.red, fontSize: 12, marginTop: 2 }}>El monto está por debajo del mínimo permitido.</Text>
-            )}
-            {montoMayorQueMax && (
-              <Text style={{ color: colors.red, fontSize: 12, marginTop: 2 }}>El monto supera el tope máximo.</Text>
-            )}
           </Card>
         )}
 
@@ -601,11 +638,7 @@ export function SubastaEnVivoScreen({ navigation, route }) {
       </ScrollView>
 
       <BottomBar>
-        {esDuenio ? (
-          <Btn title="No podés pujar en tu propia subasta" kind="ghost" disabled />
-        ) : !precioBaseValido ? (
-          <Btn title="Precio base no disponible" kind="ghost" disabled />
-        ) : !user?.isGuest && !asistenteId ? (
+        {!user?.isGuest && !asistenteId ? (
           <Btn title="Esperando acceso…" kind="ghost" disabled />
         ) : esLidero ? (
           <Btn title="Ya sos el mayor postor" kind="ghost" disabled />
@@ -635,10 +668,32 @@ export function SubastaEnVivoScreen({ navigation, route }) {
 // ─── GANASTE SCREEN ───────────────────────────────────────────────────────────
 export function GanasteScreen({ navigation, route }) {
   const { titulo, moneda, importe, subastaId, itemId, comision, registroId } = route.params || {};
+  const [tipoEntrega, setTipoEntrega] = useState(null);
+  const [costoEnvioConfig, setCostoEnvioConfig] = useState(0);
+  const [guardandoEntrega, setGuardandoEntrega] = useState(false);
 
-  const total = importe != null
-    ? Number(importe) + Number(comision || 0)
-    : null;
+  useEffect(() => {
+    if (!registroId) return;
+    RegistroSubasta.obtener(registroId)
+      .then((r) => { if (r?.costoEnvioConfig != null) setCostoEnvioConfig(r.costoEnvioConfig); })
+      .catch(() => {});
+  }, [registroId]);
+
+  const costoEnvio = tipoEntrega === 'envio' ? costoEnvioConfig : 0;
+  const total = importe != null ? Number(importe) + Number(comision || 0) + costoEnvio : null;
+
+  const onElegirEntrega = async (tipo) => {
+    setTipoEntrega(tipo);
+    if (!registroId) return;
+    setGuardandoEntrega(true);
+    try {
+      await RegistroSubasta.elegirEntrega(registroId, tipo);
+    } catch {
+      // no bloquear la UI si falla; se reintenta al pagar
+    } finally {
+      setGuardandoEntrega(false);
+    }
+  };
 
   return (
     <Screen>
@@ -649,8 +704,9 @@ export function GanasteScreen({ navigation, route }) {
         </View>
         <Display style={{ fontSize: 30, marginVertical: 14 }}>¡Ganaste!</Display>
         <Text style={{ color: colors.muted, fontSize: 14.5, lineHeight: 21, textAlign: 'center', maxWidth: 280 }}>
-          Tu puja fue la más alta. Falta un paso para retirar tu artículo.
+          Tu puja fue la más alta. Elegí cómo querés recibir tu artículo.
         </Text>
+
         <Card el style={{ marginTop: 22, width: '100%', flexDirection: 'row', gap: 14, alignItems: 'center' }}>
           <ImgBox style={{ width: 64, height: 64 }} size={26} />
           <View>
@@ -660,21 +716,77 @@ export function GanasteScreen({ navigation, route }) {
             </Text>
           </View>
         </Card>
-        {total != null && (
-          <Card style={{ marginTop: 12, width: '100%', flexDirection: 'row', justifyContent: 'space-between' }}>
-            <Text style={{ color: colors.muted, fontSize: 14 }}>Monto a pagar</Text>
-            <Text style={{ color: colors.green, fontSize: 18, fontWeight: '800' }}>
-              {formatImporte(total, moneda)}
+
+        {/* Selector retiro / envío */}
+        <Text style={{ color: colors.muted, fontSize: 11, fontWeight: '800', letterSpacing: 1, alignSelf: 'flex-start', marginTop: 20, marginBottom: 10 }}>
+          ¿CÓMO RECIBÍS TU ARTÍCULO?
+        </Text>
+        <TouchableOpacity
+          style={[st.entregaOption, tipoEntrega === 'retiro' && st.entregaOptionActive]}
+          onPress={() => onElegirEntrega('retiro')}
+        >
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: '#fff', fontWeight: '700', fontSize: 14 }}>Retiro personal</Text>
+            <Text style={{ color: colors.muted, fontSize: 12.5, marginTop: 3 }}>Gratis · Retirás en el depósito de Bidly</Text>
+            <Text style={{ color: colors.gold, fontSize: 11.5, marginTop: 4 }}>
+              ⚠ Perdés la cobertura del seguro de envío
             </Text>
+          </View>
+          <Ionicons
+            name={tipoEntrega === 'retiro' ? 'radio-button-on' : 'radio-button-off'}
+            size={22}
+            color={tipoEntrega === 'retiro' ? colors.blue : colors.faint}
+          />
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[st.entregaOption, tipoEntrega === 'envio' && st.entregaOptionActive, { marginTop: 10 }]}
+          onPress={() => onElegirEntrega('envio')}
+        >
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: '#fff', fontWeight: '700', fontSize: 14 }}>Envío a domicilio</Text>
+            <Text style={{ color: colors.muted, fontSize: 12.5, marginTop: 3 }}>
+              + {formatImporte(costoEnvioConfig, moneda)} · Entrega en 3–5 días hábiles
+            </Text>
+          </View>
+          <Ionicons
+            name={tipoEntrega === 'envio' ? 'radio-button-on' : 'radio-button-off'}
+            size={22}
+            color={tipoEntrega === 'envio' ? colors.blue : colors.faint}
+          />
+        </TouchableOpacity>
+
+        {total != null && tipoEntrega && (
+          <Card style={{ marginTop: 16, width: '100%' }}>
+            <Text style={{ color: colors.muted, fontSize: 11, fontWeight: '800', letterSpacing: 1, marginBottom: 6 }}>RESUMEN</Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 3 }}>
+              <Text style={{ color: colors.muted, fontSize: 13 }}>Puja</Text>
+              <Text style={{ color: '#fff', fontSize: 13 }}>{formatImporte(importe, moneda)}</Text>
+            </View>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 3 }}>
+              <Text style={{ color: colors.muted, fontSize: 13 }}>Comisión Bidly</Text>
+              <Text style={{ color: '#fff', fontSize: 13 }}>{formatImporte(comision, moneda)}</Text>
+            </View>
+            {tipoEntrega === 'envio' && (
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 3 }}>
+                <Text style={{ color: colors.muted, fontSize: 13 }}>Envío</Text>
+                <Text style={{ color: '#fff', fontSize: 13 }}>{formatImporte(costoEnvio, moneda)}</Text>
+              </View>
+            )}
+            <View style={{ borderTopWidth: 1, borderTopColor: colors.border, marginTop: 6, paddingTop: 6, flexDirection: 'row', justifyContent: 'space-between' }}>
+              <Text style={{ color: '#fff', fontSize: 14, fontWeight: '800' }}>Total</Text>
+              <Text style={{ color: colors.green, fontSize: 18, fontWeight: '800' }}>{formatImporte(total, moneda)}</Text>
+            </View>
           </Card>
         )}
       </ScrollView>
       <BottomBar>
         <Btn
-          title="Continuar al pago"
+          title={guardandoEntrega ? 'Guardando…' : 'Continuar al pago'}
+          disabled={!tipoEntrega || guardandoEntrega}
           onPress={() => navigation.navigate('MedioPago', {
-            registroId,
-            subastaId, itemId, moneda, importe, comision, titulo,
+            registroId, subastaId, itemId, moneda, importe, comision, titulo,
+            costoEnvio,
+            tipoEntrega,
           })}
         />
       </BottomBar>
@@ -761,11 +873,11 @@ export function SubastaAdminScreen({ navigation, route }) {
   // Carga inicial
   useEffect(() => { cargarSubasta(); }, [cargarSubasta]);
 
-  // Polling de pujas del ítem activo cada 5 segundos
+  // Polling de pujas del ítem activo cada 1 segundo
   useEffect(() => {
     if (!itemActivo) return;
     cargarPujas();
-    const interval = setInterval(cargarPujas, 5000);
+    const interval = setInterval(cargarPujas, 1000);
     return () => clearInterval(interval);
   }, [cargarPujas]);
 
@@ -781,7 +893,7 @@ export function SubastaAdminScreen({ navigation, route }) {
 
   const pujaTop = pujas[0];
   const moneda = subasta?.moneda || 'pesos';
-  const enVivo = subasta?.fase === 'en_curso';
+  const enVivo = subasta?.estadoSubasta === 'iniciada' || subasta?.fase === 'en_curso';
   const itemActivoAdjudicado = itemActivo?.subastado === 'si';
   const tituloAdmin = tituloSubasta(subasta, items);
   const tagEstado = tagEstadoSubasta(subasta);
@@ -935,4 +1047,20 @@ const st = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.45)', borderRadius: 6,
     padding: 5,
   },
+  stepRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12,
+  },
+  stepBtn: {
+    width: 48, height: 48, borderRadius: 24,
+    backgroundColor: colors.cardEl, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: colors.border,
+  },
+  stepBtnDisabled: { opacity: 0.3 },
+  stepBtnText: { color: '#fff', fontSize: 26, fontWeight: '700', lineHeight: 30 },
+  entregaOption: {
+    width: '100%', flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: colors.cardEl, borderWidth: 1.5, borderColor: colors.border,
+    borderRadius: 12, paddingVertical: 14, paddingHorizontal: 16,
+  },
+  entregaOptionActive: { borderColor: colors.blue },
 });
