@@ -9,7 +9,7 @@ import { Screen, Header, Title, Sub, SectionLabel, Btn, Chip, Card, Field, Tag, 
 import { colors } from '../theme/theme';
 import { useAuth } from '../context/AuthContext';
 import { BASE_URL, getToken } from '../api/client';
-import { Clientes, Personas, RegistroSubasta, Subastas, Productos, Admisiones, Payouts } from '../api/endpoints';
+import { Clientes, Personas, RegistroSubasta, Subastas, Productos, Admisiones, Payouts, Multas } from '../api/endpoints';
 import { useNotifBadge } from '../hooks/useNotifBadge';
 import { tituloSubasta, subtituloSubasta, formatFechaSubasta, esSubastaFinalizada, esSubastaEnCursoVendedor, esMiSubasta, tagEstadoSubasta } from '../utils/subasta';
 
@@ -79,7 +79,6 @@ export function PerfilScreen({ navigation }) {
     ['Mis métricas', 'MisMetricas'],
     ['Mis compras', 'MisCompras'],
     ['Datos personales', 'DatosPersonales'],
-    ['Historial', 'Historial'],
     ['Notificaciones', 'Notificaciones'],
   ];
 
@@ -128,26 +127,91 @@ function ListRow({ item }) {
   );
 }
 
-// ─── MIS COMPRAS ─────────────────────────────────────────────────────────────
+// ─── MIS COMPRAS (+ multas pendientes) ───────────────────────────────────────
 export function MisComprasScreen({ navigation }) {
   const { user } = useAuth();
   const [registros, setRegistros] = useState([]);
+  const [multas, setMultas] = useState([]);        // solo las impagas
   const [loading, setLoading] = useState(true);
+  const [pagando, setPagando] = useState(null);    // id de la multa que se está pagando
 
-  useEffect(() => {
+  const cargar = () => {
     if (!user?.clienteId) { setLoading(false); return; }
-    RegistroSubasta.porCliente(user.clienteId)
-      .then((data) => setRegistros((data || []).map(mapRegistro)))
-      .catch(() => setRegistros([]))
+    Promise.all([
+      RegistroSubasta.porCliente(user.clienteId).catch(() => []),
+      Multas.porCliente(user.clienteId).catch(() => []),
+    ])
+      .then(([regs, mul]) => {
+        setRegistros((regs || []).map(mapRegistro));
+        setMultas((Array.isArray(mul) ? mul : []).filter((m) => m.pagada !== 'si'));
+      })
       .finally(() => setLoading(false));
-  }, [user]);
+  };
+  useEffect(() => navigation.addListener('focus', cargar), [navigation, user]);
+
+  const pagarMulta = (m) => {
+    Alert.alert(
+      'Pagar multa',
+      `Vas a pagar la multa de $${Number(m.importe).toLocaleString('es-AR')}. ¿Confirmás?`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Pagar', onPress: async () => {
+            setPagando(m.identificador);
+            try {
+              await Multas.pagar(m.identificador);
+              Alert.alert('Multa pagada', 'Listo, ya podés volver a participar en subastas.');
+              cargar();
+            } catch (e) {
+              Alert.alert('Error', e.message || 'No se pudo pagar la multa.');
+            } finally { setPagando(null); }
+          } },
+      ],
+    );
+  };
 
   return (
     <Screen scroll contentStyle={{ paddingHorizontal: 22 }}>
       <Header />
       <Title>Mis compras</Title>
       {loading && <ActivityIndicator color={colors.blue} style={{ marginTop: 20 }} />}
-      {!loading && registros.length === 0 && (
+
+      {!loading && multas.length > 0 && (
+        <Card el style={{ marginTop: 12, borderColor: colors.red, borderWidth: 1.5, gap: 10 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Ionicons name="warning" size={18} color={colors.red} />
+            <Text style={{ color: colors.red, fontWeight: '800', fontSize: 14 }}>
+              {multas.length === 1 ? 'Tenés una multa pendiente' : `Tenés ${multas.length} multas pendientes`}
+            </Text>
+          </View>
+          <Text style={{ color: colors.muted, fontSize: 12.5 }}>
+            Pagala para volver a participar. Tenés 72hs antes de que el caso se derive a la justicia.
+          </Text>
+          {multas.map((m) => (
+            <View key={m.identificador} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+              gap: 10, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 10 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: '#fff', fontWeight: '700' }}>
+                  Multa #{m.identificador} · ${Number(m.importe).toLocaleString('es-AR')}
+                </Text>
+                {m.vencida
+                  ? <Text style={{ color: colors.red, fontSize: 11.5 }}>Vencida — derivada a la justicia</Text>
+                  : m.fechaLimite
+                    ? <Text style={{ color: colors.faint, fontSize: 11.5 }}>Vence: {new Date(m.fechaLimite).toLocaleString('es-AR')}</Text>
+                    : null}
+              </View>
+              <Btn
+                title={pagando === m.identificador ? 'Pagando…' : 'Pagar'}
+                kind="danger"
+                onPress={() => pagarMulta(m)}
+                disabled={pagando != null}
+                style={{ paddingVertical: 9, paddingHorizontal: 16 }}
+              />
+            </View>
+          ))}
+        </Card>
+      )}
+
+      {!loading && registros.length === 0 && multas.length === 0 && (
         <Text style={{ color: colors.muted, textAlign: 'center', marginTop: 20 }}>Sin compras aún.</Text>
       )}
       <View style={{ gap: 12, marginTop: 12 }}>
