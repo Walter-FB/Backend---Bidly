@@ -8,7 +8,7 @@ import { colors } from '../theme/theme';
 import { useAuth } from '../context/AuthContext';
 
 import { HomeScreen } from '../screens/HomeScreens';
-import { HistorialScreen, MisSubastasScreen, PerfilScreen } from '../screens/AccountScreens';
+import { MisProductosScreen, MisComprasScreen, PerfilScreen } from '../screens/AccountScreens';
 
 const Tab = createBottomTabNavigator();
 
@@ -77,8 +77,8 @@ export default function TabNavigator() {
   const isGuest = user?.isGuest;
 
   // Componentes bloqueados para invitados — se recalculan solo cuando cambia isGuest.
-  const HistorialTab = isGuest ? GuestBlockScreen : HistorialScreen;
-  const SubastasTab  = isGuest ? GuestBlockScreen : MisSubastasScreen;
+  const ProductosTab = isGuest ? GuestBlockScreen : MisProductosScreen;
+  const ComprasTab   = isGuest ? GuestBlockScreen : MisComprasScreen;
   const PerfilTab    = isGuest ? GuestBlockScreen : PerfilScreen;
 
   return (
@@ -94,15 +94,16 @@ export default function TabNavigator() {
       <Tab.Screen
         name="Home"
         component={HomeScreen}
-        options={{ tabBarIcon: ({ color }) => <Ionicons name="home-outline" size={23} color={color} /> }}
+        options={{ tabBarLabel: 'Explorar', tabBarIcon: ({ color }) => <Ionicons name="search-outline" size={23} color={color} /> }}
       />
       <Tab.Screen
-        name="Historial"
-        component={HistorialTab}
+        name="TabProductos"
+        component={ProductosTab}
         options={{
-          tabBarIcon: ({ color, focused }) => (
+          tabBarLabel: 'Mis productos',
+          tabBarIcon: ({ color }) => (
             <View>
-              <Ionicons name="time-outline" size={23} color={color} />
+              <Ionicons name="cube-outline" size={23} color={color} />
               {isGuest && <Ionicons name="lock-closed" size={10} color={colors.muted} style={s.lockBadge} />}
             </View>
           ),
@@ -114,12 +115,13 @@ export default function TabNavigator() {
         options={{ tabBarButton: () => <PublishButton /> }}
       />
       <Tab.Screen
-        name="Subastas"
-        component={SubastasTab}
+        name="TabCompras"
+        component={ComprasTab}
         options={{
+          tabBarLabel: 'Mis compras',
           tabBarIcon: ({ color }) => (
             <View>
-              <Ionicons name="hammer-outline" size={23} color={color} />
+              <Ionicons name="bag-handle-outline" size={23} color={color} />
               {isGuest && <Ionicons name="lock-closed" size={10} color={colors.muted} style={s.lockBadge} />}
             </View>
           ),

@@ -73,11 +73,9 @@ export function PerfilScreen({ navigation }) {
   const catColor = CATEGORIAS_COLOR[categoria] || colors.muted;
 
   const rows = [
-    ['Mis productos', 'MisProductos'],
     ['Medios de pago', 'MedioPago'],
     ['Mis cobros', 'MisCobros'],
     ['Mis métricas', 'MisMetricas'],
-    ['Mis compras', 'MisCompras'],
     ['Datos personales', 'DatosPersonales'],
     ['Notificaciones', 'Notificaciones'],
   ];
@@ -171,7 +169,7 @@ export function MisComprasScreen({ navigation }) {
 
   return (
     <Screen scroll contentStyle={{ paddingHorizontal: 22 }}>
-      <Header />
+      <Header hideBack />
       <Title>Mis compras</Title>
       {loading && <ActivityIndicator color={colors.blue} style={{ marginTop: 20 }} />}
 
@@ -897,7 +895,7 @@ export function MisProductosScreen({ navigation }) {
 
   return (
     <Screen scroll contentStyle={{ paddingHorizontal: 22, paddingBottom: 40 }}>
-      <Header />
+      <Header hideBack />
       <Title>Mis{'\n'}productos</Title>
       <Sub>Los bienes que ofreciste a subasta y en qué estado están.</Sub>
       {loading && <ActivityIndicator color={colors.blue} style={{ marginTop: 20 }} />}
