@@ -47,6 +47,7 @@ PAGE = r"""<!doctype html>
   <button id="t-pos" onclick="show('pos')">Postores</button>
   <button id="t-sub" onclick="show('sub')">Subastas</button>
   <button id="t-reem" onclick="show('reem')">Reembolsos</button>
+  <button id="t-mul" onclick="show('mul')">Multas</button>
 </nav>
 <main>
   <section id="s-adm">
@@ -80,6 +81,12 @@ PAGE = r"""<!doctype html>
       <button class="refresh" onclick="loadReem()">↻ Actualizar</button></p>
     <div id="reem"></div>
   </section>
+  <section id="s-mul" style="display:none">
+    <p class="hint">Multas por impago (10% de lo ofertado). El postor queda <b>bloqueado</b> hasta pagarla; pasadas 72hs se deriva
+      a la <b>justicia</b>. Para la demo, "Vencer 72hs" adelanta el plazo y muestra la cuenta en justicia al instante.
+      <button class="refresh" onclick="loadMult()">↻ Actualizar</button></p>
+    <div id="mul"></div>
+  </section>
 </main>
 <div class="toast" id="toast"></div>
 <script>
@@ -88,7 +95,7 @@ const ADM_ST={solicitada:['A REVISAR','#e6b23a'],en_inspeccion:['EN INSPECCIÓN'
 let SUBS=[];
 function toast(m,ok=true){const t=document.getElementById('toast');t.textContent=m;t.style.background=ok?'#123a22':'#3a1220';t.style.color=ok?'#37d66f':'#ff8393';t.style.display='block';setTimeout(()=>t.style.display='none',2600)}
 async function api(path,method='GET',body){const o={method,headers:{'Content-Type':'application/json'}};if(body!==undefined)o.body=JSON.stringify(body);const r=await fetch(API+path,o);const tx=await r.text();let d=null;try{d=tx?JSON.parse(tx):null}catch(e){}if(!r.ok)throw new Error((d&&(d.message||d.error))||('HTTP '+r.status));return d}
-function show(k){for(const x of ['adm','pos','sub','reem']){document.getElementById('s-'+x).style.display=x===k?'':'none';document.getElementById('t-'+x).classList.toggle('active',x===k)}if(k==='adm')loadAdm();if(k==='pos')loadPos();if(k==='sub')loadSub();if(k==='reem')loadReem()}
+function show(k){for(const x of ['adm','pos','sub','reem','mul']){document.getElementById('s-'+x).style.display=x===k?'':'none';document.getElementById('t-'+x).classList.toggle('active',x===k)}if(k==='adm')loadAdm();if(k==='pos')loadPos();if(k==='sub')loadSub();if(k==='reem')loadReem();if(k==='mul')loadMult()}
 function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
 
 // ── ADMISIONES ──
@@ -180,6 +187,25 @@ async function loadReem(){const el=document.getElementById('reem');el.innerHTML=
   catch(e){el.innerHTML='<p class="muted">Error: '+esc(e.message)+'</p>'}}
 async function resolverReem(id,aceptar){const mot=document.getElementById('rmot'+id).value;
   try{await api('/registro-subasta/'+id+'/reembolso-resolver','PATCH',{aceptar:aceptar,motivo:mot||null});toast(aceptar?'Reembolso aceptado':'Reembolso rechazado');loadReem()}catch(e){toast(e.message,false)}}
+
+// ── MULTAS ──
+const MUL_ST={pagada:['PAGADA','#8a93ab'],justicia:['EN JUSTICIA','#e23950'],bloqueado:['BLOQUEADO','#e6b23a']};
+async function loadMult(){const el=document.getElementById('mul');el.innerHTML='Cargando…';
+  try{const ms=await api('/multas');
+    if(!ms.length){el.innerHTML='<p class="muted">No hay multas.</p>';return}
+    el.innerHTML=ms.map(m=>{
+      const st=m.pagada==='si'?MUL_ST.pagada:(m.vencida?MUL_ST.justicia:MUL_ST.bloqueado);
+      let acc='';
+      if(m.pagada!=='si'){acc='<div style="margin-top:8px">'
+        +(m.vencida?'':'<button class="act b-red" onclick="vencerMulta('+m.identificador+')">Vencer 72hs (demo)</button> ')
+        +'<button class="act b-green" onclick="pagarMulta('+m.identificador+')">Marcar pagada</button></div>';}
+      return '<div class="card"><div class="row"><div><div class="title">'+esc(m.clienteNombre||('Cliente '+m.cliente))+'</div>'
+        +'<div class="muted">multa #'+m.identificador+' · $'+esc(m.importe)+' · límite '+esc(m.fechaLimite||'—')+'</div></div>'
+        +'<span class="st" style="background:'+st[1]+'">'+st[0]+'</span></div>'+acc+'</div>';
+    }).join('')}
+  catch(e){el.innerHTML='<p class="muted">Error: '+esc(e.message)+'</p>'}}
+async function vencerMulta(id){try{await api('/multas/'+id+'/vencer','POST',{});toast('Multa vencida (demo) — cuenta en justicia');loadMult()}catch(e){toast(e.message,false)}}
+async function pagarMulta(id){try{await api('/multas/'+id,'PATCH',{pagada:'si'});toast('Multa marcada como pagada');loadMult()}catch(e){toast(e.message,false)}}
 
 loadAdm();
 </script>
