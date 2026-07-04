@@ -373,6 +373,7 @@ export function PublicarScreen({ navigation }) {
   const [declaraPropiedad, setDeclaraPropiedad] = useState(false);
   const [declaraOrigen, setDeclaraOrigen] = useState(false);
   const set = (k) => (v) => setF((s) => ({ ...s, [k]: v }));
+  const enviando = useRef(false);   // evita doble envío / re-publicación al volver atrás
 
   const elegirFoto = async () => {
     if (fotos.length >= MIN_FOTOS) return;
@@ -390,6 +391,7 @@ export function PublicarScreen({ navigation }) {
   const quitarFoto = (idx) => setFotos((prev) => prev.filter((_, i) => i !== idx));
 
   const onPublicar = async () => {
+    if (enviando.current) return;   // ya se está enviando este formulario
     if (!f.titulo.trim() || !f.descripcion.trim()) {
       return Alert.alert('Campos requeridos', 'Completá el título y la descripción del bien.');
     }
@@ -400,6 +402,7 @@ export function PublicarScreen({ navigation }) {
       return Alert.alert('Declaraciones obligatorias',
         'Tenés que declarar que el bien te pertenece y que su origen es lícito.');
     }
+    enviando.current = true;
     setLoading(true);
     try {
       // 1) Alta del producto (multipart: descripción + fotos + declaración de propiedad).
@@ -422,6 +425,13 @@ export function PublicarScreen({ navigation }) {
         declaraOrigen,
       });
 
+      // Limpiar el formulario: si el usuario vuelve atrás, la pantalla queda vacía
+      // y no puede re-publicar el mismo bien (evita duplicados).
+      setF({ titulo: '', descripcion: '' });
+      setFotos([]);
+      setDeclaraPropiedad(false);
+      setDeclaraOrigen(false);
+
       Alert.alert(
         'Solicitud enviada',
         'Tu bien fue enviado a admisión. Bidly lo va a inspeccionar y, si lo acepta, te propondrá un valor base y comisión para que aceptes o rechaces.',
@@ -432,6 +442,7 @@ export function PublicarScreen({ navigation }) {
       Alert.alert('Error', e.message || 'No se pudo enviar la solicitud.');
     } finally {
       setLoading(false);
+      enviando.current = false;
     }
   };
 
