@@ -46,6 +46,7 @@ PAGE = r"""<!doctype html>
   <button id="t-adm" class="active" onclick="show('adm')">Admisiones</button>
   <button id="t-pos" onclick="show('pos')">Postores</button>
   <button id="t-sub" onclick="show('sub')">Subastas</button>
+  <button id="t-chq" onclick="show('chq')">Cheques</button>
   <button id="t-reem" onclick="show('reem')">Reembolsos</button>
   <button id="t-mul" onclick="show('mul')">Multas</button>
 </nav>
@@ -76,6 +77,13 @@ PAGE = r"""<!doctype html>
     </div>
     <div id="sub"></div>
   </section>
+  <section id="s-chq" style="display:none">
+    <p class="hint">Cheques certificados cargados por los postores. Quedan <b>ESPERANDO VALIDACIÓN</b>:
+      verificá el cheque físico y validalo para que el postor pueda usarlo al pujar. (Las cuentas
+      y tarjetas se validan solas.)
+      <button class="refresh" onclick="loadChq()">↻ Actualizar</button></p>
+    <div id="chq"></div>
+  </section>
   <section id="s-reem" style="display:none">
     <p class="hint">Solicitudes de reembolso de los compradores. Aceptá (se acredita el dinero) o rechazá con motivo.
       <button class="refresh" onclick="loadReem()">↻ Actualizar</button></p>
@@ -95,7 +103,7 @@ const ADM_ST={solicitada:['A REVISAR','#e6b23a'],en_inspeccion:['EN INSPECCIÓN'
 let SUBS=[];
 function toast(m,ok=true){const t=document.getElementById('toast');t.textContent=m;t.style.background=ok?'#123a22':'#3a1220';t.style.color=ok?'#37d66f':'#ff8393';t.style.display='block';setTimeout(()=>t.style.display='none',2600)}
 async function api(path,method='GET',body){const o={method,headers:{'Content-Type':'application/json'}};if(body!==undefined)o.body=JSON.stringify(body);const r=await fetch(API+path,o);const tx=await r.text();let d=null;try{d=tx?JSON.parse(tx):null}catch(e){}if(!r.ok)throw new Error((d&&(d.message||d.error))||('HTTP '+r.status));return d}
-function show(k){for(const x of ['adm','pos','sub','reem','mul']){document.getElementById('s-'+x).style.display=x===k?'':'none';document.getElementById('t-'+x).classList.toggle('active',x===k)}if(k==='adm')loadAdm();if(k==='pos')loadPos();if(k==='sub')loadSub();if(k==='reem')loadReem();if(k==='mul')loadMult()}
+function show(k){for(const x of ['adm','pos','sub','chq','reem','mul']){document.getElementById('s-'+x).style.display=x===k?'':'none';document.getElementById('t-'+x).classList.toggle('active',x===k)}if(k==='adm')loadAdm();if(k==='pos')loadPos();if(k==='sub')loadSub();if(k==='chq')loadChq();if(k==='reem')loadReem();if(k==='mul')loadMult()}
 function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
 
 // ── ADMISIONES ──
@@ -187,6 +195,18 @@ async function loadReem(){const el=document.getElementById('reem');el.innerHTML=
   catch(e){el.innerHTML='<p class="muted">Error: '+esc(e.message)+'</p>'}}
 async function resolverReem(id,aceptar){const mot=document.getElementById('rmot'+id).value;
   try{await api('/registro-subasta/'+id+'/reembolso-resolver','PATCH',{aceptar:aceptar,motivo:mot||null});toast(aceptar?'Reembolso aceptado':'Reembolso rechazado');loadReem()}catch(e){toast(e.message,false)}}
+
+// ── CHEQUES (validación de medios de pago) ──
+async function loadChq(){const el=document.getElementById('chq');el.innerHTML='Cargando…';
+  try{const ms=await api('/clientes/medios-pago/pendientes');
+    const cheques=(ms||[]).filter(m=>m.tipo==='cheque');
+    if(!cheques.length){el.innerHTML='<p class="muted">No hay cheques esperando validación.</p>';return}
+    el.innerHTML=cheques.map(m=>'<div class="card"><div class="row"><div><div class="title">Cheque '+esc(m.numeroCheque||'')+'</div>'
+      +'<div class="muted">medio #'+m.identificador+' · cliente '+esc(m.cliente)+' · '+esc(m.titular||'')+' · monto $'+Number(m.montoCheque||m.saldo||0).toLocaleString('es-AR')+'</div></div>'
+      +'<span class="st" style="background:var(--gold)">ESPERANDO VALIDACIÓN</span></div>'
+      +'<div style="margin-top:8px"><button class="act b-green" onclick="validarChq('+m.identificador+')">Validar cheque</button></div></div>').join('')}
+  catch(e){el.innerHTML='<p class="muted">Error: '+esc(e.message)+'</p>'}}
+async function validarChq(id){try{await api('/clientes/medios-pago/'+id+'/verificar','PATCH',{verificado:'si'});toast('Cheque validado — el postor ya puede usarlo');loadChq()}catch(e){toast(e.message,false)}}
 
 // ── MULTAS ──
 const MUL_ST={pagada:['PAGADA','#8a93ab'],justicia:['EN JUSTICIA','#e23950'],bloqueado:['BLOQUEADO','#e6b23a']};

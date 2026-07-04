@@ -28,10 +28,11 @@ from app.models.catalogo import Catalogo
 from app.models.item_catalogo import ItemCatalogo
 from app.models.seguro import Seguro
 from app.models.ubicacion_bien import UbicacionBien
+from app.models.pagos import CuentaDuenio
 from app.models.empleado import EMPLEADO_SISTEMA
 from app.schemas.admision import (
     AdmisionCreate, InspeccionRequest, RechazarAdmisionRequest,
-    ProponerRequest, RechazarDuenioRequest,
+    ProponerRequest, RechazarDuenioRequest, AprobarDuenioRequest,
 )
 from app.services import notificacion_service
 
@@ -70,18 +71,23 @@ def _sync_producto_estado(producto_id: int, estado: str, causa: Optional[str], d
         prod.disponible = "si" if estado == "aceptado" else "no"
 
 
-def _asegurar_producto(producto_id: int, valor_base, db: Session) -> None:
+def _asegurar_producto(producto_id: int, valor_base, db: Session, premium: bool = False) -> None:
     """De cada bien recibido para la venta se contrata un seguro según el valor
-    base. Guarda la póliza en `seguros` y la referencia en productos.seguro."""
+    base. Guarda la póliza en `seguros` y la referencia en productos.seguro.
+
+    Con Cobertura Premium Bidly la póliza se contrata por un valor reforzado
+    (valor base + 5%), que es lo que cubre la cobertura extra."""
     prod = db.query(Producto).filter(Producto.identificador == producto_id).first()
     if not prod or prod.seguro:
         return
+    base = Decimal(str(valor_base or 0))
+    importe = base * Decimal("1.05") if premium else base
     nropoliza = f"POL-{producto_id}-{int(datetime.utcnow().timestamp())}"
     db.add(Seguro(
         nropoliza=nropoliza,
         compania=COMPANIA_SEGURO,
         polizacombinada="no",
-        importe=Decimal(str(valor_base or 0)) or Decimal("1"),
+        importe=importe or Decimal("1"),
     ))
     # La póliza debe existir en `seguros` ANTES de referenciarla en productos.seguro
     # (FK fk_productos_seguros); forzamos el INSERT con flush.
@@ -140,6 +146,7 @@ def _to_dict(a: Admision, db: Session) -> dict:
         "gastosDevolucion": float(a.gastos_devolucion) if a.gastos_devolucion is not None else None,
         "esColeccion": a.es_coleccion,
         "nombreColeccion": a.nombre_coleccion,
+        "garantiaPremium": getattr(a, "garantia_premium", "no") or "no",
         "creadoEn": a.creado_en.isoformat() if a.creado_en else None,
         # Ubicación en depósito + póliza (el dueño las ve una vez aceptado el bien).
         "ubicacion": {"deposito": ub.deposito, "sector": ub.sector} if ub else None,
@@ -206,13 +213,28 @@ def por_duenio(duenio_id: int, db: Session = Depends(get_db)):
 
 
 @router.patch("/{id}/aprobar-duenio")
-def aprobar_duenio(id: int, db: Session = Depends(get_db)):
-    """El dueño acepta el valor base y la comisión: el bien pasa al catálogo de la subasta."""
+def aprobar_duenio(id: int, body: AprobarDuenioRequest = AprobarDuenioRequest(), db: Session = Depends(get_db)):
+    """El dueño acepta el valor base y la comisión: el bien pasa al catálogo de la
+    subasta. Opcionalmente contrata la Cobertura Premium Bidly (+5% del valor base,
+    que se le descuenta del cobro al vender)."""
     a = _get(id, db)
     if a.estado != "propuesta":
         raise HTTPException(409, detail={"message": "No hay una propuesta pendiente para aceptar", "code": "SIN_PROPUESTA"})
     if not a.subasta:
         raise HTTPException(409, detail={"message": "La admisión no tiene subasta asignada", "code": "SIN_SUBASTA"})
+
+    # Gate B: el dinero de lo vendido va a una cuenta a la vista que el dueño debe
+    # declarar antes del inicio de la subasta (enunciado). Exigimos al menos una
+    # cuenta de cobro ANTES de que el bien entre al catálogo. El front usa el code
+    # SIN_CUENTA_COBRO para redirigir a "Mis cobros".
+    tiene_cuenta = (
+        db.query(CuentaDuenio).filter(CuentaDuenio.duenio == a.duenio).first() is not None
+    )
+    if not tiene_cuenta:
+        raise HTTPException(409, detail={
+            "message": "Antes de aceptar necesitás declarar una cuenta de cobro donde recibir el dinero de la venta.",
+            "code": "SIN_CUENTA_COBRO",
+        })
 
     # Buscar (o crear) el catálogo de la subasta y agregar el ítem.
     catalogo = db.query(Catalogo).filter(Catalogo.subasta == a.subasta).first()
@@ -231,8 +253,12 @@ def aprobar_duenio(id: int, db: Session = Depends(get_db)):
         subastado="no",
     ))
 
-    # De cada bien recibido para la venta se contrata un seguro según el valor base.
-    _asegurar_producto(a.producto, valor, db)
+    premium = bool(body.garantiaPremium)
+    a.garantia_premium = "si" if premium else "no"
+
+    # De cada bien recibido para la venta se contrata un seguro según el valor base
+    # (reforzado si eligió la Cobertura Premium Bidly).
+    _asegurar_producto(a.producto, valor, db, premium=premium)
     # Y queda guardado en un depósito (el dueño puede ver la ubicación desde la app).
     _asignar_ubicacion(a.producto, a.direccion_envio, db)
 
@@ -242,11 +268,20 @@ def aprobar_duenio(id: int, db: Session = Depends(get_db)):
     _sync_producto_estado(a.producto, "aceptado", None, db)
     db.commit()
 
-    notificacion_service.crear(
-        a.duenio, "seguro",
-        "Tu bien fue aceptado y asegurado. Ya forma parte del catálogo de la subasta.",
-        db,
-    )
+    if premium:
+        costo = valor * Decimal("0.05")
+        notificacion_service.crear(
+            a.duenio, "seguro",
+            f"Tu bien fue aceptado con Cobertura Premium Bidly. El costo (${costo}, 5% del "
+            "valor base) se descuenta de tu cobro al venderse. Ya forma parte del catálogo.",
+            db,
+        )
+    else:
+        notificacion_service.crear(
+            a.duenio, "seguro",
+            "Tu bien fue aceptado y asegurado. Ya forma parte del catálogo de la subasta.",
+            db,
+        )
     db.commit()
     return _to_dict(a, db)
 

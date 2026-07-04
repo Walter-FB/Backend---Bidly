@@ -43,5 +43,9 @@ class Admision(Base):
     es_coleccion      = Column(String, default="no")
     nombre_coleccion  = Column(String)
 
+    # Cobertura Premium Bidly: el dueño, al aceptar la propuesta, puede contratar una
+    # cobertura reforzada. Cuesta 5% del valor base y se descuenta de su cobro al vender.
+    garantia_premium  = Column(String, default="no")   # 'si' | 'no'
+
     creado_en         = Column(DateTime)
     actualizado_en    = Column(DateTime)

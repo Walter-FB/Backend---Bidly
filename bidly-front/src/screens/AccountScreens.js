@@ -1,7 +1,7 @@
 // BIDLY — Perfil, MisSubastas, MisCompras, Historial, Publicar, MisProductos.
 // Sin admisiones, cobros/payouts, medios de pago, multas ni notificaciones.
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, Image, Modal, Animated } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, Image, Modal, Animated, Switch } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -363,7 +363,8 @@ export function MisSubastasScreen({ navigation, route }) {
 }
 
 // ─── PUBLICAR SCREEN (dueño ofrece un bien → nace 'solicitado') ──────────────
-const MIN_FOTOS = 6;
+const MIN_FOTOS = 6;    // enunciado: al menos 6 fotos del bien
+const MAX_FOTOS = 14;   // tope: puede subir las que quiera pero menos de 15
 
 export function PublicarScreen({ navigation }) {
   const { user } = useAuth();
@@ -376,16 +377,16 @@ export function PublicarScreen({ navigation }) {
   const enviando = useRef(false);   // evita doble envío / re-publicación al volver atrás
 
   const elegirFoto = async () => {
-    if (fotos.length >= MIN_FOTOS) return;
+    if (fotos.length >= MAX_FOTOS) return;
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
       Alert.alert('Permiso requerido', 'Necesitamos acceso a tu galería para agregar fotos.');
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'], allowsMultipleSelection: true, selectionLimit: MIN_FOTOS - fotos.length, quality: 0.7,
+      mediaTypes: ['images'], allowsMultipleSelection: true, selectionLimit: MAX_FOTOS - fotos.length, quality: 0.7,
     });
-    if (!result.canceled) setFotos((prev) => [...prev, ...result.assets].slice(0, MIN_FOTOS));
+    if (!result.canceled) setFotos((prev) => [...prev, ...result.assets].slice(0, MAX_FOTOS));
   };
 
   const quitarFoto = (idx) => setFotos((prev) => prev.filter((_, i) => i !== idx));
@@ -435,8 +436,8 @@ export function PublicarScreen({ navigation }) {
       Alert.alert(
         'Solicitud enviada',
         'Tu bien fue enviado a admisión. Bidly lo va a inspeccionar y, si lo acepta, te propondrá un valor base y comisión para que aceptes o rechaces.',
-        [{ text: 'Ver mis publicaciones', onPress: () => navigation.navigate('MisAdmisiones') },
-         { text: 'Ir al inicio', style: 'cancel', onPress: () => navigation.navigate('Main') }],
+        [{ text: 'Ver mis publicaciones', onPress: () => navigation.replace('MisAdmisiones') },
+         { text: 'Ir al inicio', style: 'cancel', onPress: () => navigation.popToTop() }],
       );
     } catch (e) {
       Alert.alert('Error', e.message || 'No se pudo enviar la solicitud.');
@@ -452,7 +453,7 @@ export function PublicarScreen({ navigation }) {
       <ScrollView contentContainerStyle={{ paddingHorizontal: 22, paddingBottom: 30 }} showsVerticalScrollIndicator={false}>
         <Title>Publicar{'\n'}producto</Title>
         <Sub>Completá los datos y se enviará a revisión de Bidly.</Sub>
-        <SectionLabel>Fotos ({fotos.length}/{MIN_FOTOS}){fotos.length >= MIN_FOTOS ? ' ✓' : ''}</SectionLabel>
+        <SectionLabel>Fotos ({fotos.length}/{MAX_FOTOS} · mín {MIN_FOTOS}){fotos.length >= MIN_FOTOS ? ' ✓' : ''}</SectionLabel>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
           {fotos.map((foto, i) => (
             <TouchableOpacity key={i} style={s.photo} onPress={() => quitarFoto(i)} activeOpacity={0.8}>
@@ -460,7 +461,7 @@ export function PublicarScreen({ navigation }) {
               <View style={s.removeOverlay}><Ionicons name="close-circle" size={20} color="#fff" /></View>
             </TouchableOpacity>
           ))}
-          {fotos.length < MIN_FOTOS && (
+          {fotos.length < MAX_FOTOS && (
             <TouchableOpacity style={[s.photo, s.photoAdd]} onPress={elegirFoto}>
               <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}>
                 <Ionicons name="add" size={26} color={colors.blue} />
@@ -773,6 +774,7 @@ export function MisProductosScreen({ navigation }) {
   const [admisiones, setAdmisiones] = useState([]);
   const [loading, setLoading] = useState(true);
   const [ctrl, setCtrl] = useState(false);
+  const [premiumSel, setPremiumSel] = useState({});   // { admisionId: bool }
 
   const cargar = () => {
     if (!user?.clienteId) { setLoading(false); return; }
@@ -791,14 +793,25 @@ export function MisProductosScreen({ navigation }) {
 
   const admisionDe = (pid) => admisiones.find((a) => Number(a.producto?.identificador) === Number(pid));
 
-  const aceptar = (a) => Alert.alert('Aceptar propuesta', `Valor base $${a.valorBase} y comisión $${a.comision}. ¿Aceptás?`, [
-    { text: 'Cancelar', style: 'cancel' },
-    { text: 'Aceptar', onPress: async () => {
-        setCtrl(true);
-        try { await Admisiones.aprobarDuenio(a.identificador); Alert.alert('Listo', 'Tu bien entró al catálogo de la subasta.'); cargar(); }
-        catch (e) { Alert.alert('Error', e.message || 'No se pudo aceptar.'); } finally { setCtrl(false); }
-      } },
-  ]);
+  const aceptar = (a) => {
+    const premium = !!premiumSel[a.identificador];
+    Alert.alert('Aceptar propuesta',
+      `Valor base $${a.valorBase} y comisión $${a.comision}.${premium ? ` Con Cobertura Premium Bidly (+5%: $${(Number(a.valorBase) * 0.05).toLocaleString('es-AR')}).` : ''} ¿Aceptás?`, [
+      { text: 'Cancelar', style: 'cancel' },
+      { text: 'Aceptar', onPress: async () => {
+          setCtrl(true);
+          try { await Admisiones.aprobarDuenio(a.identificador, premium); Alert.alert('Listo', 'Tu bien entró al catálogo de la subasta.'); cargar(); }
+          catch (e) {
+            if (e?.data?.code === 'SIN_CUENTA_COBRO') {
+              Alert.alert('Falta tu cuenta de cobro',
+                'Antes de aceptar tenés que declarar una cuenta donde recibir el dinero de la venta.',
+                [{ text: 'Cargar cuenta', onPress: () => navigation.navigate('MisCobros') },
+                 { text: 'Cancelar', style: 'cancel' }]);
+            } else { Alert.alert('Error', e.message || 'No se pudo aceptar.'); }
+          } finally { setCtrl(false); }
+        } },
+    ]);
+  };
   const rechazar = (a) => Alert.alert('Rechazar propuesta', 'Se devuelve el bien con gastos a tu cargo. ¿Confirmás?', [
     { text: 'Cancelar', style: 'cancel' },
     { text: 'Rechazar', style: 'destructive', onPress: async () => {
@@ -882,6 +895,21 @@ export function MisProductosScreen({ navigation }) {
                   <Row k="Valor base" v={`$${Number(a.valorBase).toLocaleString('es-AR')}`} />
                   <Row k="Comisión" v={`$${Number(a.comision).toLocaleString('es-AR')}`} />
                   {a.subasta?.fecha && <Row k="Subasta" v={`${a.subasta.fecha} · ${a.subasta.ubicacion || ''}`} />}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 6,
+                    backgroundColor: colors.card, borderRadius: 10, padding: 10 }}>
+                    <View style={{ flex: 1, paddingRight: 8 }}>
+                      <Text style={{ color: '#fff', fontSize: 13, fontWeight: '700' }}>Cobertura Premium Bidly</Text>
+                      <Text style={{ color: colors.muted, fontSize: 11.5 }}>
+                        +5% del valor base (${(Number(a.valorBase) * 0.05).toLocaleString('es-AR')}). Se descuenta de tu cobro al vender.
+                      </Text>
+                    </View>
+                    <Switch
+                      value={!!premiumSel[a.identificador]}
+                      onValueChange={(v) => setPremiumSel((s) => ({ ...s, [a.identificador]: v }))}
+                      trackColor={{ true: colors.blue, false: colors.faint }}
+                      thumbColor="#fff"
+                    />
+                  </View>
                   <View style={{ flexDirection: 'row', gap: 10, marginTop: 6 }}>
                     <Btn title="Aceptar" onPress={() => aceptar(a)} disabled={ctrl} style={{ flex: 1 }} />
                     <Btn title="Rechazar" kind="danger" onPress={() => rechazar(a)} disabled={ctrl} style={{ flex: 1 }} />
@@ -914,6 +942,7 @@ export function MisAdmisionesScreen({ navigation }) {
   const [admisiones, setAdmisiones] = useState([]);
   const [loading, setLoading] = useState(true);
   const [ctrl, setCtrl] = useState(false);
+  const [premiumSel, setPremiumSel] = useState({});   // { admisionId: bool }
 
   const cargar = () => {
     if (!user?.clienteId) { setLoading(false); return; }
@@ -925,14 +954,25 @@ export function MisAdmisionesScreen({ navigation }) {
   };
   useEffect(() => navigation.addListener('focus', cargar), [navigation, user]);
 
-  const aceptar = (a) => Alert.alert('Aceptar propuesta', `Valor base $${a.valorBase} y comisión $${a.comision}. ¿Aceptás?`, [
-    { text: 'Cancelar', style: 'cancel' },
-    { text: 'Aceptar', onPress: async () => {
-        setCtrl(true);
-        try { await Admisiones.aprobarDuenio(a.identificador); Alert.alert('Listo', 'Tu bien se incluyó en el catálogo.'); cargar(); }
-        catch (e) { Alert.alert('Error', e.message || 'No se pudo aceptar.'); } finally { setCtrl(false); }
-      } },
-  ]);
+  const aceptar = (a) => {
+    const premium = !!premiumSel[a.identificador];
+    Alert.alert('Aceptar propuesta',
+      `Valor base $${a.valorBase} y comisión $${a.comision}.${premium ? ` Con Cobertura Premium Bidly (+5%: $${(Number(a.valorBase) * 0.05).toLocaleString('es-AR')}).` : ''} ¿Aceptás?`, [
+      { text: 'Cancelar', style: 'cancel' },
+      { text: 'Aceptar', onPress: async () => {
+          setCtrl(true);
+          try { await Admisiones.aprobarDuenio(a.identificador, premium); Alert.alert('Listo', 'Tu bien se incluyó en el catálogo.'); cargar(); }
+          catch (e) {
+            if (e?.data?.code === 'SIN_CUENTA_COBRO') {
+              Alert.alert('Falta tu cuenta de cobro',
+                'Antes de aceptar tenés que declarar una cuenta donde recibir el dinero de la venta.',
+                [{ text: 'Cargar cuenta', onPress: () => navigation.navigate('MisCobros') },
+                 { text: 'Cancelar', style: 'cancel' }]);
+            } else { Alert.alert('Error', e.message || 'No se pudo aceptar.'); }
+          } finally { setCtrl(false); }
+        } },
+    ]);
+  };
 
   const rechazar = (a) => Alert.alert('Rechazar propuesta', 'Se procederá a la devolución con gastos a tu cargo. ¿Confirmás?', [
     { text: 'Cancelar', style: 'cancel' },
@@ -981,6 +1021,21 @@ export function MisAdmisionesScreen({ navigation }) {
                     <Row k="Valor base" v={`$${Number(a.valorBase).toLocaleString('es-AR')}`} />
                     <Row k="Comisión" v={`$${Number(a.comision).toLocaleString('es-AR')}`} />
                     {a.subasta?.fecha && <Row k="Subasta" v={`${a.subasta.fecha} · ${a.subasta.ubicacion || ''}`} />}
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 6,
+                      backgroundColor: colors.cardEl, borderRadius: 10, padding: 10 }}>
+                      <View style={{ flex: 1, paddingRight: 8 }}>
+                        <Text style={{ color: '#fff', fontSize: 13, fontWeight: '700' }}>Cobertura Premium Bidly</Text>
+                        <Text style={{ color: colors.muted, fontSize: 11.5 }}>
+                          +5% del valor base (${(Number(a.valorBase) * 0.05).toLocaleString('es-AR')}). Se descuenta de tu cobro al vender.
+                        </Text>
+                      </View>
+                      <Switch
+                        value={!!premiumSel[a.identificador]}
+                        onValueChange={(v) => setPremiumSel((s) => ({ ...s, [a.identificador]: v }))}
+                        trackColor={{ true: colors.blue, false: colors.faint }}
+                        thumbColor="#fff"
+                      />
+                    </View>
                     <View style={{ flexDirection: 'row', gap: 10, marginTop: 6 }}>
                       <Btn title="Aceptar" onPress={() => aceptar(a)} disabled={ctrl} style={{ flex: 1 }} />
                       <Btn title="Rechazar" kind="danger" onPress={() => rechazar(a)} disabled={ctrl} style={{ flex: 1 }} />
@@ -1112,6 +1167,9 @@ export function MisCobrosScreen() {
               </Text>
               <Row k="Bruto" v={`$${Number(p.importeBruto).toLocaleString('es-AR')}`} />
               <Row k="Comisión" v={`$${Number(p.comision).toLocaleString('es-AR')}`} />
+              {Number(p.premium) > 0 && (
+                <Row k="Cobertura Premium (5%)" v={`-$${Number(p.premium).toLocaleString('es-AR')}`} />
+              )}
               <Row k="Neto a cobrar" v={`$${Number(p.importeNeto).toLocaleString('es-AR')}`} vc={colors.green} bold />
               {p.estado !== 'pagado' && <Btn title="Cobrar" onPress={() => cobrar(p)} disabled={ctrl} style={{ marginTop: 4 }} />}
             </Card>

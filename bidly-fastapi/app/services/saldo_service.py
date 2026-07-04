@@ -1,114 +1,114 @@
-"""Saldo/límite disponible de los medios de pago del cliente.
+"""Presupuesto de los medios de pago del cliente.
 
-Cada medio tiene un monto (cheque certificado → montocheque; tarjeta/cuenta →
-saldo). El "disponible para pujar" = suma de los medios MENOS lo que el cliente
-ya tiene comprometido en pujas líder de subastas abiertas (lo que pagaría si
-gana). Así, al pujar el disponible baja y, cuando se agota (p. ej. el monto del
-cheque), no puede seguir pujando — que es lo que pide el enunciado.
+Cada medio tiene un presupuesto en PESOS que imita la cuenta/tarjeta del usuario
+(no tenemos acceso real a esa plata). El presupuesto se guarda en `saldo` (lo que
+queda) y se gasta al pagar una compra.
 
-Sólo se cuentan las pujas líder de subastas ABIERTAS (no compras de subastas ya
-cerradas), para reflejar en tiempo real cuánto le queda sin arrastrar historial.
+Cuándo se valida el tope (aclaración del enunciado / negocio):
+  - CHEQUE y CUENTA = garantía → se valida EN LA PUJA: no podés pujar por más que
+    el monto declarado. Además el cheque no vale para subastas en dólares.
+  - CRÉDITO y DÉBITO = presupuesto → NO se validan al pujar; se chequean recién en
+    el momento del pago (ver routers/registro.py).
+
+Las subastas en dólares se convierten a pesos (moneda_service.DOLAR) para poder
+compararlas contra el presupuesto, que siempre está en pesos.
 """
 from decimal import Decimal
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.models.pagos import MedioPago
-from app.models.asistente import Asistente
-from app.models.subasta import Subasta
-from app.models.catalogo import Catalogo
 from app.models.item_catalogo import ItemCatalogo
-from app.models.puja import Puja
+from app.models.catalogo import Catalogo
+from app.models.subasta_moneda import SubastaMoneda
+from app.services import moneda_service
 
 
 def _d(v) -> Decimal:
     return Decimal(str(v or 0))
 
 
-def _monto_medio(mp: MedioPago) -> Decimal:
-    if mp.tipo == "cheque":
-        return _d(mp.montocheque)
-    return _d(mp.saldo)
+VALIDA_EN_PUJA = ("cheque", "cuenta")
+
+
+def _moneda_de_item(item_id, db: Session) -> str:
+    """Moneda de la subasta a la que pertenece un ítem ('pesos' | 'dolares')."""
+    if not item_id:
+        return "pesos"
+    row = (
+        db.query(SubastaMoneda.moneda)
+        .join(Catalogo, Catalogo.subasta == SubastaMoneda.subasta)
+        .join(ItemCatalogo, ItemCatalogo.catalogo == Catalogo.identificador)
+        .filter(ItemCatalogo.identificador == item_id)
+        .first()
+    )
+    return (row[0] if row else "pesos") or "pesos"
 
 
 def saldo_total(cliente_id: int, db: Session) -> Decimal:
-    """Suma de lo que hay en TODOS los medios del cliente (coincide con lo que se
-    ve abajo de cada medio en el front)."""
+    """Suma del presupuesto restante de TODOS los medios del cliente (en pesos)."""
     medios = db.query(MedioPago).filter(MedioPago.cliente == cliente_id).all()
-    return sum((_monto_medio(m) for m in medios), Decimal("0"))
+    return sum((_d(m.saldo) for m in medios), Decimal("0"))
 
 
-def comprometido(cliente_id: int, db: Session, excluir_item: int = None) -> Decimal:
-    """Suma de las pujas LÍDER del cliente en subastas abiertas (lo que se
-    compromete a pagar si gana). `excluir_item` se saltea (una nueva puja sobre
-    ese ítem reemplaza a la anterior del mismo cliente)."""
-    total = Decimal("0")
-    asistentes = db.query(Asistente).filter(Asistente.cliente == cliente_id).all()
-    for a in asistentes:
-        sub = db.query(Subasta).filter(Subasta.identificador == a.subasta).first()
-        if not sub or sub.estado != "abierta":
-            continue
-        items = (
-            db.query(ItemCatalogo)
-            .join(Catalogo, ItemCatalogo.catalogo == Catalogo.identificador)
-            .filter(Catalogo.subasta == a.subasta, ItemCatalogo.subastado == "no")
-            .all()
-        )
-        for it in items:
-            if excluir_item is not None and it.identificador == excluir_item:
-                continue
-            top = (
-                db.query(Puja)
-                .filter(Puja.item == it.identificador)
-                .order_by(Puja.importe.desc())
-                .first()
-            )
-            if top and top.asistente == a.identificador:
-                total += _d(top.importe)
-    return total
+def validar_puja(cliente_id: int, importe, db: Session, item_id: int = None, medio_id: int = None) -> None:
+    """Valida el tope de puja según el medio elegido.
 
+    Solo aplica a CHEQUE y CUENTA (garantía): la puja no puede superar el monto
+    declarado del medio. Crédito/débito no se validan acá (se chequean al pagar).
+    """
+    if not medio_id:
+        return  # sin medio elegido: el gate de "medio verificado" ya corre aparte
 
-def disponible(cliente_id: int, db: Session) -> Decimal:
-    disp = saldo_total(cliente_id, db) - comprometido(cliente_id, db)
-    return disp if disp > 0 else Decimal("0")
-
-
-def _monto_de_medio(cliente_id: int, medio_id: int, db: Session):
-    """Monto del medio elegido (cheque → montocheque; tarjeta/cuenta → saldo).
-    None si el medio no existe o no es del cliente."""
-    mp = (
+    medio = (
         db.query(MedioPago)
         .filter(MedioPago.identificador == medio_id, MedioPago.cliente == cliente_id)
         .first()
     )
-    return _monto_medio(mp) if mp else None
+    if not medio:
+        return
+
+    # El medio elegido debe estar validado por la empresa (el cheque arranca sin
+    # validar y no se puede usar hasta que lo aprueben desde el panel).
+    if medio.verificado != "si":
+        raise HTTPException(422, detail={
+            "message": "Ese medio de pago todavía no está validado por la empresa. No podés pujar con él.",
+            "code": "MEDIO_NO_VERIFICADO",
+        })
+
+    if medio.tipo not in VALIDA_EN_PUJA:
+        return  # crédito/débito → se verifica al momento del pago
+
+    moneda = _moneda_de_item(item_id, db)
+
+    # El cheque certificado es en pesos: no vale para subastas en dólares.
+    if medio.tipo == "cheque" and moneda == "dolares":
+        raise HTTPException(422, detail={
+            "message": "El cheque certificado es en pesos: no vale para subastas en dólares. Usá una cuenta o tarjeta internacional.",
+            "code": "CHEQUE_EN_DOLARES",
+        })
+
+    importe_pesos = moneda_service.a_pesos(importe, moneda)
+    disponible = _d(medio.saldo)
+    if importe_pesos > disponible:
+        raise HTTPException(422, detail={
+            "message": f"No podés pujar por más que el monto de tu {medio.tipo} (${disponible}).",
+            "code": "SALDO_INSUFICIENTE",
+            "saldoDisponible": float(disponible),
+        })
 
 
-def validar_puja(cliente_id: int, importe, db: Session, item_id: int = None, medio_id: int = None) -> None:
-    # La garantía la fija el MEDIO elegido: con un cheque de $10.000 no podés pujar
-    # más de $10.000, aunque tengas otras tarjetas. Si no eligió medio, se usa la
-    # suma de todos. Se descuenta lo ya comprometido en otras pujas líder.
-    base = _monto_de_medio(cliente_id, medio_id, db) if medio_id else None
-    if base is None:
-        base = saldo_total(cliente_id, db)
-    disp = base - comprometido(cliente_id, db, excluir_item=item_id)
-    if disp < 0:
-        disp = Decimal("0")
-    if _d(importe) > disp:
-        raise HTTPException(
-            422,
-            detail={
-                "message": f"Saldo insuficiente para pujar. Superaste el monto de tu medio de pago (máximo ${disp}).",
-                "code": "SALDO_INSUFICIENTE",
-                "saldoDisponible": float(disp),
-            },
-        )
+def descontar(medio_id: int, importe_pesos, db: Session) -> None:
+    """Gasta `importe_pesos` del presupuesto del medio (al pagar una compra)."""
+    medio = db.query(MedioPago).filter(MedioPago.identificador == medio_id).first()
+    if not medio or medio.saldo is None:
+        return
+    restante = _d(medio.saldo) - _d(importe_pesos)
+    medio.saldo = restante if restante > 0 else Decimal("0")
+    db.flush()
 
 
 def resumen(cliente_id: int, db: Session) -> dict:
+    """Presupuesto total restante del cliente (suma de sus medios)."""
     total = saldo_total(cliente_id, db)
-    comp = comprometido(cliente_id, db)
-    disp = total - comp
-    if disp < 0:
-        disp = Decimal("0")
-    return {"saldoTotal": float(total), "comprometido": float(comp), "disponible": float(disp)}
+    return {"saldoTotal": float(total), "comprometido": 0.0, "disponible": float(total)}

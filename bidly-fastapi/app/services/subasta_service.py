@@ -5,6 +5,7 @@ Sin máquina de estados en vivo: una subasta usa directamente `subastas.estado`
 quemó). Sí conserva moneda dual (subasta_moneda) y, al cerrar, genera el payout al
 dueño, la notificación al ganador y la fila de registro_pago pendiente.
 """
+from decimal import Decimal
 from sqlalchemy.orm import Session
 
 from app.models.subasta import Subasta
@@ -75,6 +76,21 @@ def enrich_all(subastas: list[Subasta], db: Session) -> list[dict]:
     return [enrich(s, db) for s in subastas]
 
 
+def _premium_de(producto_id, valor_base, db: Session) -> Decimal:
+    """Costo de la Cobertura Premium Bidly (5% del valor base) si el dueño la
+    contrató al aceptar la propuesta; 0 si no."""
+    from app.models.admision import Admision
+    adm = (
+        db.query(Admision)
+        .filter(Admision.producto == producto_id)
+        .order_by(Admision.identificador.desc())
+        .first()
+    )
+    if adm and getattr(adm, "garantia_premium", "no") == "si":
+        return Decimal(str(valor_base or 0)) * Decimal("0.05")
+    return Decimal("0")
+
+
 def _comprar_por_empresa(item: ItemCatalogo, db: Session) -> None:
     """Nadie pujó: la empresa compra el bien al valor base y se paga al dueño
     (payout origen='empresa'). No hay comprador, así que no se crea registroDeSubasta."""
@@ -91,6 +107,7 @@ def _comprar_por_empresa(item: ItemCatalogo, db: Session) -> None:
         comision=item.comision,
         origen="empresa",
         db=db,
+        premium=_premium_de(item.producto, item.preciobase, db),
     )
     notificacion_service.crear(
         prod.duenio, "payout",
@@ -165,6 +182,8 @@ def adjudicar_item(item_id: int, db: Session) -> ItemCatalogo:
             comision=item.comision,
             origen="venta",
             db=db,
+            # El premium (5%) se calcula sobre el valor base, no sobre lo pujado.
+            premium=_premium_de(item.producto, item.preciobase, db),
         )
 
     if asistente:
@@ -175,9 +194,14 @@ def adjudicar_item(item_id: int, db: Session) -> ItemCatalogo:
             "(o retirás en persona y perdés el seguro).",
             db,
         )
-        # La actividad (ganar) puede mejorar la categoría del comprador.
+        # La actividad (ganar) puede mejorar la categoría del comprador. Cada 2
+        # subastas ganadas sube un escalón (y con 3+ medios + 1 ganada → platino).
         from app.services import categoria_service
-        categoria_service.recalcular(asistente.cliente, db)
+        nueva_cat = categoria_service.recalcular(asistente.cliente, db)
+        if nueva_cat:
+            notificacion_service.crear(
+                asistente.cliente, "categoria",
+                f"¡Subiste de categoría por tu actividad! Ahora sos {nueva_cat.upper()}.", db)
 
     # El comprador pasa a ser el nuevo dueño de la pieza (registración del nuevo
     # dueño). Se hace DESPUÉS del payout, que se acredita al dueño original (el

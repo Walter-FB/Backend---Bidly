@@ -30,6 +30,7 @@ from app.models.admision import Admision
 from app.models.subasta_moneda import SubastaMoneda
 from app.models.notificacion import Notificacion
 from app.models.ubicacion_bien import UbicacionBien
+from app.models.item_remate import ItemRemate
 
 __all__ = [
     "Persona", "Sector", "Empleado", "Duenio", "Cliente", "Subastador", "Seguro",
@@ -37,5 +38,5 @@ __all__ = [
     "Asistente", "Puja", "RegistroDeSubasta",
     "Credencial", "UsuarioRol", "ProductoEstado",
     "MedioPago", "Multa", "RegistroPago", "Reembolso", "Payout", "CuentaDuenio",
-    "Admision", "SubastaMoneda", "Notificacion", "UbicacionBien",
+    "Admision", "SubastaMoneda", "Notificacion", "UbicacionBien", "ItemRemate",
 ]

@@ -42,8 +42,10 @@ AUTH = ["credenciales", "usuario_rol"]
 FEATURES = [
     "mediosdepago", "multas", "subasta_moneda", "admisiones", "cuentas_duenio",
     "payouts", "notificaciones", "registro_pago", "reembolsos",
+    "ubicaciones_bien",  # depósito donde está guardada la pieza (visible al dueño)
+    "item_remate",       # timer del ítem que se está rematando
 ]
-ESQUEMA_FINAL = set(PROFE + AUTH + ["producto_estado"] + FEATURES)  # 28
+ESQUEMA_FINAL = set(PROFE + AUTH + ["producto_estado"] + FEATURES)
 
 
 # ── DDL de las tablas propias (idempotente). Orden = respeta las FKs. ──────────
@@ -73,6 +75,7 @@ DDL = [
             banco         varchar,
             numerocheque  varchar,
             montocheque   numeric(12,2),
+            limite        numeric(12,2),
             saldo         numeric(12,2),
             verificado    varchar DEFAULT 'no'
         );
@@ -110,6 +113,10 @@ DDL = [
             gastos_devolucion numeric(18,2),
             es_coleccion      varchar DEFAULT 'no',
             nombre_coleccion  varchar,
+            garantia_premium  varchar DEFAULT 'no',
+            alerta_origen     varchar DEFAULT 'no',
+            alerta_origen_motivo varchar,
+            alerta_origen_en  timestamp,
             creado_en         timestamp,
             actualizado_en    timestamp
         );
@@ -134,6 +141,7 @@ DDL = [
             subasta       integer REFERENCES subastas (identificador),
             importe_bruto numeric(18,2),
             comision      numeric(18,2),
+            premium       numeric(18,2),
             importe_neto  numeric(18,2),
             origen        varchar DEFAULT 'venta',
             cuenta        integer REFERENCES cuentas_duenio (identificador),
@@ -170,6 +178,38 @@ DDL = [
             reembolsada varchar DEFAULT 'no'
         );
     """),
+    ("ubicaciones_bien", """
+        CREATE TABLE IF NOT EXISTS ubicaciones_bien (
+            producto     integer PRIMARY KEY REFERENCES productos (identificador),
+            deposito     varchar,
+            sector       varchar,
+            ingresado_en timestamp
+        );
+    """),
+    ("item_remate", """
+        CREATE TABLE IF NOT EXISTS item_remate (
+            item       integer PRIMARY KEY REFERENCES itemscatalogo (identificador),
+            termina_en timestamp
+        );
+    """),
+]
+
+# ── ALTERs idempotentes para bases YA creadas (no recrean la tabla) ───────────
+ALTERS = [
+    "ALTER TABLE mediosdepago ADD COLUMN IF NOT EXISTS limite numeric(12,2);",
+    # Presupuesto por defecto para tarjetas ya cargadas sin límite: débito 100k,
+    # crédito 200k, y el resto (cuenta/cheque/legacy) hereda su saldo o montocheque.
+    "UPDATE mediosdepago SET limite = COALESCE(limite, saldo, montocheque);",
+    # Reembolsos: columnas del flujo de solicitud (por si la tabla es vieja).
+    "ALTER TABLE reembolsos ADD COLUMN IF NOT EXISTS estado varchar DEFAULT 'ninguno';",
+    "ALTER TABLE reembolsos ADD COLUMN IF NOT EXISTS motivo varchar;",
+    # Admisiones: garantía premium + aviso de origen (por si la tabla es vieja).
+    "ALTER TABLE admisiones ADD COLUMN IF NOT EXISTS garantia_premium varchar DEFAULT 'no';",
+    "ALTER TABLE admisiones ADD COLUMN IF NOT EXISTS alerta_origen varchar DEFAULT 'no';",
+    "ALTER TABLE admisiones ADD COLUMN IF NOT EXISTS alerta_origen_motivo varchar;",
+    "ALTER TABLE admisiones ADD COLUMN IF NOT EXISTS alerta_origen_en timestamp;",
+    # Payouts: costo de la cobertura premium descontado del cobro.
+    "ALTER TABLE payouts ADD COLUMN IF NOT EXISTS premium numeric(18,2);",
 ]
 
 BACKFILL_PRODUCTO_ESTADO = """
@@ -220,6 +260,11 @@ def main():
                 cur.execute(ddl)
                 print(f"  [OK] CREATE IF NOT EXISTS {nombre}")
 
+            # (a.2) ALTERs idempotentes sobre tablas de features ya creadas.
+            for alter in ALTERS:
+                cur.execute(alter)
+            print(f"  [OK] ALTERs idempotentes aplicados ({len(ALTERS)})")
+
             # (b) BACKFILL coherente con los datos vivos.
             cur.execute(BACKFILL_PRODUCTO_ESTADO)
             print(f"\n  [OK] BACKFILL producto_estado ({cur.rowcount} filas)")
@@ -241,8 +286,8 @@ def main():
         print(f"\nTablas DESPUES ({len(despues)}): {', '.join(despues)}")
         faltan = sorted(ESQUEMA_FINAL - set(despues))
         sobran = sorted(set(despues) - ESQUEMA_FINAL)
-        if len(despues) == 28 and not faltan and not sobran:
-            print("\n[OK] La base quedo con exactamente las 28 tablas del esquema final.")
+        if len(despues) == len(ESQUEMA_FINAL) and not faltan and not sobran:
+            print(f"\n[OK] La base quedo con exactamente las {len(ESQUEMA_FINAL)} tablas del esquema final.")
         else:
             print(f"\n[ERROR] Esquema inesperado. faltan={faltan} sobran={sobran}")
             sys.exit(1)

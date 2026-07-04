@@ -18,8 +18,9 @@ def _d(v) -> Decimal:
     return Decimal(str(v or 0))
 
 
-def crear_payout(duenio_id, producto_id, subasta_id, importe_bruto, comision, origen, db: Session) -> Payout:
-    neto = _d(importe_bruto) - _d(comision)
+def crear_payout(duenio_id, producto_id, subasta_id, importe_bruto, comision, origen, db: Session, premium=0) -> Payout:
+    # Neto = bruto − comisión − premium (Cobertura Premium Bidly, si la contrató).
+    neto = _d(importe_bruto) - _d(comision) - _d(premium)
     if neto < 0:
         neto = Decimal("0")
     p = Payout(
@@ -28,6 +29,7 @@ def crear_payout(duenio_id, producto_id, subasta_id, importe_bruto, comision, or
         subasta=subasta_id,
         importe_bruto=_d(importe_bruto),
         comision=_d(comision),
+        premium=_d(premium),
         importe_neto=neto,
         origen=origen,
         estado="pendiente",
@@ -53,6 +55,7 @@ def to_dict(p: Payout, db: Session) -> dict:
         "subastaFecha": sub.fecha.isoformat() if sub and sub.fecha else None,
         "importeBruto": float(p.importe_bruto) if p.importe_bruto is not None else None,
         "comision": float(p.comision) if p.comision is not None else None,
+        "premium": float(p.premium) if getattr(p, "premium", None) is not None else 0.0,
         "importeNeto": float(p.importe_neto) if p.importe_neto is not None else None,
         "origen": p.origen,
         "cuenta": p.cuenta,

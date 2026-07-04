@@ -36,13 +36,14 @@ function mapSubasta(s) {
 }
 
 // ─── HOME TOP BAR ─────────────────────────────────────────────────────────────
-function HomeTopBar({ navigation }) {
+function HomeTopBar({ navigation, onBlocked }) {
   const insets = useSafeAreaInsets();
   const { unreadCount } = useNotifBadge();
+  const { user } = useAuth();
   return (
     <View style={[s.topbar, { paddingTop: insets.top + 8 }]}>
       <Display style={{ color: colors.blueLogo, fontSize: 20 }}>BIDLY</Display>
-      <TouchableOpacity onPress={() => navigation.navigate('Notificaciones')}>
+      <TouchableOpacity onPress={() => (user?.isGuest ? onBlocked?.() : navigation.navigate('Notificaciones'))}>
         <View>
           <Ionicons name="notifications-outline" size={21} color="#fff" />
           {unreadCount > 0 && (
@@ -94,6 +95,7 @@ export function AuctionCard({ a, onPress }) {
 
 // ─── HOME SCREEN ─────────────────────────────────────────────────────────────
 export function HomeScreen({ navigation }) {
+  const { user, logout } = useAuth();
   const [tab, setTab] = useState('vivo');
   const [subastas, setSubastas] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -134,9 +136,23 @@ export function HomeScreen({ navigation }) {
 
   const tituloTab = { vivo: 'En vivo', term: 'Finalizadas', todas: 'Todas' };
 
+  // Modo visita: el invitado solo ve el listado. Abrir una subasta (o cualquier otra
+  // acción) lo empuja a crear cuenta.
+  const bloquearInvitado = () => {
+    Alert.alert(
+      'Necesitás una cuenta',
+      'Como invitado solo podés ver el listado de subastas. Creá una cuenta para abrir una subasta, pujar y participar.',
+      [{ text: 'Cancelar', style: 'cancel' }, { text: 'Crear cuenta', onPress: logout }],
+    );
+  };
+  const abrirSubasta = (a) => {
+    if (user?.isGuest) return bloquearInvitado();
+    navigation.navigate('Producto', { subastaId: a.id, subasta: a });
+  };
+
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
-      <HomeTopBar navigation={navigation} />
+      <HomeTopBar navigation={navigation} onBlocked={bloquearInvitado} />
       <View style={{ paddingHorizontal: 22, paddingTop: 12 }}>
         <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
           <TouchableOpacity
@@ -186,7 +202,7 @@ export function HomeScreen({ navigation }) {
               <Text style={{ color: colors.muted, textAlign: 'center', marginTop: 30 }}>No hay subastas disponibles.</Text>
             ) : (
               subastasFiltradas.map((a) => (
-                <AuctionCard key={a.id} a={a} onPress={() => navigation.navigate('Producto', { subastaId: a.id, subasta: a })} />
+                <AuctionCard key={a.id} a={a} onPress={() => abrirSubasta(a)} />
               ))
             )}
           </View>

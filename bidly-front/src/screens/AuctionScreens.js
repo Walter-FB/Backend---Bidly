@@ -301,7 +301,8 @@ export function SubastaEnVivoScreen({ navigation, route }) {
     : m.tipo === 'cuenta' ? `Cuenta ${m.banco || ''}`.trim()
     : `Tarjeta ****${(m.numerotarjeta || m.numeroTarjeta || '').slice(-4)}`;
 
-  // Sin timer de servidor: la subasta está 'abierta' hasta que el subastador la cierra.
+  // Timer del remate: el ítem tiene 3 min (+15s por puja). Al llegar a 0 se adjudica
+  // solo y arranca el siguiente ítem. El reloj se lee de /subastas/{id}/remate.
 
   // Inscribir al usuario como asistente.
   useEffect(() => {
@@ -320,6 +321,38 @@ export function SubastaEnVivoScreen({ navigation, route }) {
         ]);
       });
   }, [user, subastaId]);
+
+  // Cuando el ítem actual se adjudica y no lo gané: si el catálogo tiene más ítems,
+  // sigo automáticamente al próximo (el remate "tira" producto por producto); si no,
+  // muestro el fin de la subasta.
+  const irAlSiguienteItem = useCallback(async (listaFinal) => {
+    navegado.current = true;
+    try {
+      const items = await Subastas.catalogos(subastaId);
+      const siguiente = (items || []).find(
+        (it) => it.subastado !== 'si' && Number(it.identificador) !== Number(itemId),
+      );
+      if (siguiente) {
+        navigation.replace('SubastaEnVivo', {
+          subastaId,
+          itemId: siguiente.identificador,
+          productoId: siguiente.producto?.identificador,
+          precioBase: siguiente.precioBase ?? siguiente.preciobase ?? 0,
+          titulo: siguiente.producto?.descripcionCatalogo || 'Subasta en vivo',
+          comision: siguiente.comision ?? comision,
+          moneda, categoriaSubasta, fecha, hora,
+        });
+        return;
+      }
+    } catch {}
+    const ganadora = (listaFinal || []).find((p) => p.ganador === 'si');
+    navigation.replace('SubastaFinalizada', {
+      titulo, moneda,
+      importe: ganadora?.importe,
+      totalPostores: new Set((listaFinal || []).map((p) => p.asistente?.identificador)).size,
+      subastaId,
+    });
+  }, [subastaId, itemId, comision, moneda, categoriaSubasta, fecha, hora, titulo, navigation]);
 
   // Cargar pujas y refrescar cada 5 segundos.
   // Detecta automáticamente cuando el ítem fue adjudicado y navega al resultado.
@@ -359,24 +392,35 @@ export function SubastaEnVivoScreen({ navigation, route }) {
             })
             .catch(() => { navegado.current = false; });
         } else {
-          navigation.replace('SubastaFinalizada', {
-            titulo,
-            moneda,
-            importe: ganadora.importe,
-            totalPostores: new Set(lista.map((p) => p.asistente?.identificador)).size,
-            subastaId,
-          });
+          // No gané: sigo al próximo ítem del catálogo (o fin si no hay más).
+          irAlSiguienteItem(lista);
         }
       })
       .catch(() => { if (mounted.current) setPollingError(true); })
       .finally(() => { if (mounted.current) setLoadingPujas(false); });
-  }, [itemId, user, navigation, titulo, moneda, subastaId, comision, productoId]);
+  }, [itemId, user, navigation, titulo, moneda, subastaId, comision, productoId, irAlSiguienteItem]);
 
   useEffect(() => {
     cargarPujas();
     const interval = setInterval(cargarPujas, 1000);
     return () => clearInterval(interval);
   }, [cargarPujas]);
+
+  // Reloj del remate: poll al backend cada segundo. Además de alimentar el
+  // contador, esta llamada hace avanzar el timer server-side (adjudica solo al
+  // llegar a 0 y activa el ítem siguiente).
+  const cargarRemate = useCallback(() => {
+    if (!subastaId) return;
+    Subastas.remate(subastaId)
+      .then((r) => { if (mounted.current) setTimeLeft(r?.segundosRestantes ?? null); })
+      .catch(() => {});
+  }, [subastaId]);
+
+  useEffect(() => {
+    cargarRemate();
+    const interval = setInterval(cargarRemate, 1000);
+    return () => clearInterval(interval);
+  }, [cargarRemate]);
 
   // Calcular puja actual, próximo importe y tope máximo.
   const pujaActual = pujas.length > 0 ? pujas[0].importe : null;
@@ -721,6 +765,7 @@ export function SubastaAdminScreen({ navigation, route }) {
   const [loading, setLoading] = useState(true);
   const [successMsg, setSuccessMsg] = useState(null);
   const [fotoAmpliada, setFotoAmpliada] = useState(false);
+  const [timeLeft, setTimeLeft] = useState(null);
   const mounted = useRef(true);
 
   useEffect(() => { return () => { mounted.current = false; }; }, []);
@@ -766,6 +811,28 @@ export function SubastaAdminScreen({ navigation, route }) {
     const interval = setInterval(cargarPujas, 1000);
     return () => clearInterval(interval);
   }, [cargarPujas]);
+
+  // Reloj del remate: hace avanzar el timer server-side (adjudica solo y activa el
+  // siguiente ítem) y alimenta el countdown. Al avanzar, recarga el catálogo.
+  const cargarRemate = useCallback(() => {
+    if (!subastaId) return;
+    Subastas.remate(subastaId)
+      .then((r) => {
+        if (!mounted.current) return;
+        setTimeLeft(r?.segundosRestantes ?? null);
+        // Si el ítem activo del backend cambió, refresco el catálogo para avanzar.
+        if (r?.itemActivoId && itemActivo && Number(r.itemActivoId) !== Number(itemActivo.identificador)) {
+          cargarSubasta();
+        }
+      })
+      .catch(() => {});
+  }, [subastaId, itemActivo, cargarSubasta]);
+
+  useEffect(() => {
+    cargarRemate();
+    const interval = setInterval(cargarRemate, 1000);
+    return () => clearInterval(interval);
+  }, [cargarRemate]);
 
   if (loading) {
     return (
@@ -815,7 +882,13 @@ export function SubastaAdminScreen({ navigation, route }) {
             )}
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
               <Text style={{ color: colors.muted, fontSize: 11, fontWeight: '800', letterSpacing: 1 }}>ÍTEM EN SUBASTA</Text>
-              {itemActivoAdjudicado && <Tag label="ADJUDICADO" color={colors.green} />}
+              {itemActivoAdjudicado
+                ? <Tag label="ADJUDICADO" color={colors.green} />
+                : (enVivo && timeLeft != null && (
+                    <Text style={{ color: timeLeft < 30 ? (colors.red ?? '#ff4d4d') : colors.gold, fontSize: 18, fontWeight: '800', fontVariant: ['tabular-nums'] }}>
+                      ⏱ {formatCountdown(timeLeft)}
+                    </Text>
+                  ))}
             </View>
             <Display style={{ fontSize: 16 }} numberOfLines={2}>
               {itemActivo.producto?.descripcionCatalogo || `Ítem #${itemActivo.identificador}`}

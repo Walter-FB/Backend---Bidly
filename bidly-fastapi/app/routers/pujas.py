@@ -7,6 +7,7 @@ Reglas de la consigna:
  - Máximo  = mejor oferta + 20% del valor base  (NO aplica a oro/platino).
  - Una puja por vez: se confirma la transacción antes de permitir otra (commit).
 """
+from datetime import datetime
 from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -20,7 +21,7 @@ from app.models.asistente import Asistente
 from app.models.cliente import Cliente
 from app.models.subasta import Subasta
 from app.schemas.puja import PujaCreate
-from app.services import categoria_service, acceso_service, multa_service, saldo_service
+from app.services import categoria_service, acceso_service, multa_service, saldo_service, remate_service
 from app.serializers import puja_to_dict
 
 router = APIRouter()
@@ -66,6 +67,12 @@ def colocar_puja(body: PujaCreate, db: Session = Depends(get_db)):
     subasta = db.query(Subasta).filter(Subasta.identificador == catalogo.subasta).first()
     if not subasta or subasta.estado != "abierta":
         raise HTTPException(409, detail={"message": "La subasta no está abierta", "code": "AUCTION_CLOSED"})
+
+    # Reloj del remate: si el tiempo del ítem ya se agotó, no se acepta la puja
+    # (está por adjudicarse solo).
+    rem = remate_service._remate_de(item_id, db)
+    if rem and rem.termina_en and datetime.utcnow() >= rem.termina_en:
+        raise HTTPException(409, detail={"message": "Se acabó el tiempo de este ítem.", "code": "ITEM_TIME_UP"})
 
     asistente = db.query(Asistente).filter(Asistente.identificador == asistente_id).first()
     if not asistente or asistente.subasta != subasta.identificador:
@@ -114,6 +121,7 @@ def colocar_puja(body: PujaCreate, db: Session = Depends(get_db)):
 
     puja = Puja(asistente=asistente_id, item=item_id, importe=importe, ganador="no")
     db.add(puja)
+    remate_service.extender(item_id, db)  # cada puja suma 15s al reloj del ítem
     db.commit()  # confirma la transacción antes de habilitar otra puja
     db.refresh(puja)
     return puja_to_dict(puja, db)

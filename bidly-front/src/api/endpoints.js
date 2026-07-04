@@ -27,6 +27,8 @@ export const Subastas = {
   catalogo: (id) => api.get(`/subastas/${id}/catalogo`),
   catalogos: (id) => api.get(`/subastas/${id}/catalogos`),
   estado: (id) => api.get(`/subastas/${id}/estado`),
+  // Reloj del remate: ítem activo + segundos restantes (avanza el timer server-side).
+  remate: (id) => api.get(`/subastas/${id}/remate`),
   asistentes: (id) => api.get(`/subastas/${id}/asistentes`),
   actualizarEstado: (id, estado) => api.patch(`/subastas/${id}/estado`, { estado }),
   crear: (payload) => api.post('/subastas', payload),  // payload incluye moneda ('pesos'|'dolares')
@@ -142,7 +144,7 @@ export const Admisiones = {
   pedirInspeccion: (id, direccionEnvio) => api.patch(`/admisiones/${id}/inspeccion`, { direccionEnvio }),
   rechazar: (id, observacion, gastosDevolucion) => api.patch(`/admisiones/${id}/rechazar`, { observacion, gastosDevolucion }),
   proponer: (id, valorBase, comision, subastaId) => api.patch(`/admisiones/${id}/proponer`, { valorBase, comision, subastaId }),
-  aprobarDuenio: (id) => api.patch(`/admisiones/${id}/aprobar-duenio`, {}),
+  aprobarDuenio: (id, garantiaPremium = false) => api.patch(`/admisiones/${id}/aprobar-duenio`, { garantiaPremium }),
   rechazarDuenio: (id, gastosDevolucion) => api.patch(`/admisiones/${id}/rechazar-duenio`, { gastosDevolucion }),
   crearColeccion: (payload) => api.post('/admisiones/coleccion', payload),
 };

@@ -27,3 +27,9 @@ class ProponerRequest(BaseModel):
 
 class RechazarDuenioRequest(BaseModel):
     gastosDevolucion: Optional[Decimal] = None
+
+
+class AprobarDuenioRequest(BaseModel):
+    # Cobertura Premium Bidly: cobertura reforzada por 5% del valor base, que se
+    # descuenta del cobro del dueño al vender.
+    garantiaPremium: bool = False

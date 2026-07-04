@@ -7,16 +7,19 @@ from datetime import date
 
 # ── Medios de pago (postor) ───────────────────────────────────────────────────
 class MedioPagoCreate(BaseModel):
+    # tipo: 'debito' | 'credito' | 'cuenta' | 'cheque' (legacy 'tarjeta' -> debito)
     tipo: str
+    subtipo: Optional[str] = None          # 'debito' | 'credito' cuando tipo='tarjeta'
     numeroTarjeta: Optional[str] = None
     vencimiento: Optional[str] = None
     titular: Optional[str] = None
     numeroCuenta: Optional[str] = None
     banco: Optional[str] = None
     numeroCheque: Optional[str] = None
-    montoCheque: Optional[Decimal] = None
+    montoCheque: Optional[Decimal] = None   # monto certificado del cheque (lo elige el usuario)
+    monto: Optional[Decimal] = None         # monto reservado de la cuenta (lo elige el usuario)
     saldo: Optional[Decimal] = None
-    verificado: Optional[str] = "no"
+    verificado: Optional[str] = None
 
 
 class MedioPagoResponse(BaseModel):
@@ -32,6 +35,7 @@ class MedioPagoResponse(BaseModel):
     banco: Optional[str] = None
     numerocheque: Optional[str] = Field(default=None, serialization_alias="numeroCheque")
     montocheque: Optional[Decimal] = Field(default=None, serialization_alias="montoCheque")
+    limite: Optional[Decimal] = None
     saldo: Optional[Decimal] = None
     verificado: Optional[str] = None
 

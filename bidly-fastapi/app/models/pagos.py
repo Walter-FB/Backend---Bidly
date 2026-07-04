@@ -27,8 +27,13 @@ class MedioPago(Base):
     banco         = Column(String)
     numerocheque  = Column(String)
     montocheque   = Column(Numeric(precision=12, scale=2))
-    # Saldo/límite disponible para tarjetas y cuentas (el cheque usa montocheque).
-    # Las compras del cliente no pueden superar la suma de estos montos.
+    # Presupuesto del medio (imita la cuenta/tarjeta del usuario, en PESOS):
+    #   - debito  -> 100.000 por defecto
+    #   - credito -> 200.000 por defecto
+    #   - cuenta / cheque -> el monto que declara el usuario
+    # `limite` es el presupuesto original; `saldo` es lo que queda (se gasta al pagar).
+    # En cheque/cuenta el `saldo` también funciona como tope de puja (garantía).
+    limite        = Column(Numeric(precision=12, scale=2))
     saldo         = Column(Numeric(precision=12, scale=2))
     verificado    = Column(String, default="no")
 
@@ -83,7 +88,9 @@ class Payout(Base):
     subasta        = Column(Integer, ForeignKey("subastas.identificador"))
     importe_bruto  = Column(Numeric(precision=18, scale=2))
     comision       = Column(Numeric(precision=18, scale=2))
-    importe_neto   = Column(Numeric(precision=18, scale=2))
+    # Costo de la Cobertura Premium Bidly (5% del valor base) descontado del cobro.
+    premium        = Column(Numeric(precision=18, scale=2))
+    importe_neto   = Column(Numeric(precision=18, scale=2))   # bruto − comisión − premium
     origen         = Column(String, default="venta")      # 'venta' | 'empresa'
     cuenta         = Column(Integer, ForeignKey("cuentas_duenio.identificador"))
     estado         = Column(String, default="pendiente")  # 'pendiente' | 'pagado'

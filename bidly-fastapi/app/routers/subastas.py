@@ -17,7 +17,7 @@ from app.models.item_catalogo import ItemCatalogo
 from app.models.foto import Foto
 from app.models.subasta_moneda import SubastaMoneda
 from app.schemas.subasta import SubastaCreate, SubastaEstadoUpdate
-from app.services import subasta_service
+from app.services import subasta_service, remate_service
 from app.serializers import item_to_dict
 
 router = APIRouter()
@@ -91,11 +91,14 @@ def update_estado(id: int, body: SubastaEstadoUpdate, db: Session = Depends(get_
         # Al cerrar: adjudica los ítems pendientes (mejor postor gana / si nadie
         # pujó la empresa lo compra a base) y marca la subasta cerrada.
         subasta_service.cerrar_subasta(id, db)
+        remate_service.limpiar(id, db)  # apaga los relojes del remate
     else:
         s.estado = body.estado  # 'abierta'
         if body.estado == "abierta":
             # Al abrir la puja, liberar los ítems sin ganador real (así queda pujable).
             subasta_service.reabrir_items(id, db)
+            # Arranca el reloj del primer ítem: el catálogo se remata de a uno.
+            remate_service.iniciar(id, db)
     db.commit()
     db.refresh(s)
     return subasta_service.enrich(s, db)
@@ -107,6 +110,18 @@ def get_estado(id: int, db: Session = Depends(get_db)):
     if not s:
         raise HTTPException(404, "Subasta no encontrada")
     return {"estado": s.estado}
+
+
+@router.get("/{id}/remate")
+def get_remate(id: int, db: Session = Depends(get_db)):
+    """Estado del reloj del remate: ítem activo + segundos restantes. Cada llamada
+    hace avanzar el reloj (adjudica lo vencido y activa el siguiente ítem)."""
+    s = db.query(Subasta).filter(Subasta.identificador == id).first()
+    if not s:
+        raise HTTPException(404, "Subasta no encontrada")
+    estado = remate_service.estado(id, db)
+    db.commit()  # persistir adjudicaciones/avances hechos por el tick
+    return estado
 
 
 @router.get("/{id}/catalogo")

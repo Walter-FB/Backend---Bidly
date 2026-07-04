@@ -1,3 +1,4 @@
+from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
@@ -13,15 +14,19 @@ from app.schemas.pagos import MedioPagoCreate, MedioPagoResponse, VerificarMedio
 
 router = APIRouter()
 
+# Tipos finales: 'debito' | 'credito' | 'cuenta' | 'cheque'.
+# 'tarjeta' (legacy, sin subtipo) se trata como débito.
 TIPO_MAP = {
-    "tarjeta": "tarjeta", "TARJETA": "tarjeta",
+    "tarjeta": "debito", "TARJETA": "debito",
+    "debito": "debito", "débito": "debito",
+    "credito": "credito", "crédito": "credito",
     "cuenta": "cuenta", "CUENTA": "cuenta",
     "cheque": "cheque", "CHEQUE": "cheque",
 }
 
 
 def _normalizar_tipo(tipo: str) -> str:
-    return TIPO_MAP.get(tipo, (tipo or "").lower())
+    return TIPO_MAP.get((tipo or "").strip(), (tipo or "").strip().lower())
 
 
 def _normalizar_vencimiento(v: str | None) -> str | None:
@@ -145,18 +150,37 @@ def get_medios_pago(id: int, db: Session = Depends(get_db)):
     return db.query(MedioPago).filter(MedioPago.cliente == id).all()
 
 
-# La tarjeta/cuenta tiene un CUPO que verifica la empresa (el usuario no lo carga).
-# El CHEQUE certificado sí tiene un monto determinado: es el valor escrito en el
-# cheque físico que el usuario entrega, así que ese lo declara el usuario.
-CUPO_TARJETA_CUENTA = 500000
-MONTO_CHEQUE_DEFECTO = 10000
+# Presupuesto por defecto de las tarjetas (imita la cuenta bancaria del usuario,
+# a la que no tenemos acceso; en PESOS). Débito y crédito arrancan con esta plata.
+PRESUPUESTO_DEBITO = 100000
+PRESUPUESTO_CREDITO = 200000
 
 
 @router.post("/{id}/medios-pago", response_model=MedioPagoResponse, status_code=201)
 def add_medio_pago(id: int, body: MedioPagoCreate, db: Session = Depends(get_db)):
-    tipo = _normalizar_tipo(body.tipo)
-    montocheque = (body.montoCheque or MONTO_CHEQUE_DEFECTO) if tipo == "cheque" else None
-    saldo = None if tipo == "cheque" else CUPO_TARJETA_CUENTA
+    # Si viene tipo='tarjeta' con subtipo, ese subtipo manda (debito/credito).
+    tipo = _normalizar_tipo(body.subtipo or body.tipo)
+
+    montocheque = None
+    if tipo == "cheque":
+        # Cheque: el usuario elige el monto certificado. Queda ESPERANDO VALIDACIÓN.
+        monto = Decimal(str(body.montoCheque or body.monto or 0))
+        montocheque = monto
+        limite = saldo = monto
+        verificado = "no"
+    elif tipo == "cuenta":
+        # Cuenta: el usuario elige el monto reservado. Se valida sola (sin la
+        # burocracia del cheque), lista para pujar.
+        monto = Decimal(str(body.monto or body.montoCheque or 0))
+        limite = saldo = monto
+        verificado = "si"
+    elif tipo == "credito":
+        limite = saldo = Decimal(PRESUPUESTO_CREDITO)
+        verificado = "si"
+    else:  # debito (incluye 'tarjeta' legacy)
+        tipo = "debito"
+        limite = saldo = Decimal(PRESUPUESTO_DEBITO)
+        verificado = "si"
 
     mp = MedioPago(
         cliente=id,
@@ -168,20 +192,40 @@ def add_medio_pago(id: int, body: MedioPagoCreate, db: Session = Depends(get_db)
         banco=body.banco,
         numerocheque=body.numeroCheque,
         montocheque=montocheque,
+        limite=limite,
         saldo=saldo,
-        verificado="si",  # la empresa verifica el medio al registrarlo (demo)
+        verificado=verificado,
     )
     db.add(mp)
     db.commit()
     db.refresh(mp)
 
     from app.services import notificacion_service, categoria_service
-    tipo = _normalizar_tipo(body.tipo)
-    nombre = "tarjeta" if tipo == "tarjeta" else "cuenta bancaria" if tipo == "cuenta" else "cheque certificado" if tipo == "cheque" else "medio de pago"
-    notificacion_service.crear(id, "medio_pago", f"Se agregó un {nombre} a tu cuenta.", db)
-    categoria_service.recalcular(id, db)
+    nombre = {
+        "debito": "tarjeta de débito", "credito": "tarjeta de crédito",
+        "cuenta": "cuenta bancaria", "cheque": "cheque certificado",
+    }.get(tipo, "medio de pago")
+    if tipo == "cheque":
+        notificacion_service.crear(
+            id, "medio_pago",
+            f"Cargaste un {nombre} por ${saldo}. Queda ESPERANDO VALIDACIÓN de la empresa "
+            "antes de poder usarlo para pujar.", db)
+    else:
+        notificacion_service.crear(id, "medio_pago", f"Se agregó una {nombre} a tu cuenta.", db)
+
+    # La diversidad de medios puede mejorar la categoría (3+ → oro, etc.).
+    nueva = categoria_service.recalcular(id, db)
+    if nueva:
+        notificacion_service.crear(
+            id, "categoria", f"¡Subiste de categoría! Ahora sos {nueva.upper()}.", db)
     db.commit()
     return mp
+
+
+@router.get("/medios-pago/pendientes", response_model=List[MedioPagoResponse])
+def medios_pendientes(db: Session = Depends(get_db)):
+    """[INTERNO] Cheques a la espera de validación de la empresa."""
+    return db.query(MedioPago).filter(MedioPago.verificado != "si").all()
 
 
 @router.delete("/medios-pago/{mp_id}", status_code=204)

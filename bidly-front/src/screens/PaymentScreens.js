@@ -117,7 +117,7 @@ export function MedioPagoScreen({ navigation, route }) {
   const [medioTipo, setMedioTipo] = useState('tarjeta'); // 'tarjeta' | 'cuenta' | 'cheque'
   const [nuevo, setNuevo] = useState({
     subtipo: 'credito', numeroTarjeta: '', vencimiento: '', titular: '',
-    numeroCuenta: '', banco: '', numeroCheque: '', montoCheque: '',
+    numeroCuenta: '', banco: '', montoCuenta: '', numeroCheque: '', montoCheque: '',
   });
   const [guardando, setGuardando] = useState(false);
   const setN = (k) => (v) => setNuevo((s) => ({ ...s, [k]: v }));
@@ -133,18 +133,22 @@ export function MedioPagoScreen({ navigation, route }) {
   useEffect(cargar, [user]);
 
   const onAgregar = async () => {
-    // El usuario NO carga plata: los fondos los verifica/asigna la empresa (backend).
-    let payload = { verificado: 'si', titular: nuevo.titular.trim() };
+    // La tarjeta imita la cuenta del usuario: débito arranca con $100.000 y crédito
+    // con $200.000 de presupuesto (lo asigna el backend). La cuenta y el cheque los
+    // carga el usuario por el monto que quiera.
+    let payload = { titular: nuevo.titular.trim() };
     if (medioTipo === 'tarjeta') {
       const numero = cardDigits(nuevo.numeroTarjeta);
       const vencimiento = formatCardExpiry(nuevo.vencimiento);
       if (!numero || !vencimiento || !nuevo.titular.trim()) return Alert.alert('Campos requeridos', 'Completá los datos de la tarjeta.');
       if (!isValidCardNumber(numero)) return Alert.alert('Número inválido', 'La tarjeta debe tener entre 13 y 19 dígitos.');
       if (!isValidCardExpiry(vencimiento)) return Alert.alert('Vencimiento inválido', 'Usá el formato MM/AA (ej: 12/28).');
-      payload = { ...payload, tipo: 'tarjeta', numeroTarjeta: numero, vencimiento, banco: nuevo.subtipo };
+      // tipo = 'debito' | 'credito' (define el presupuesto por defecto en el backend).
+      payload = { ...payload, tipo: nuevo.subtipo, numeroTarjeta: numero, vencimiento };
     } else if (medioTipo === 'cuenta') {
       if (!nuevo.numeroCuenta.trim() || !nuevo.banco.trim()) return Alert.alert('Campos requeridos', 'Completá cuenta y banco.');
-      payload = { ...payload, tipo: 'cuenta', numeroCuenta: nuevo.numeroCuenta.trim(), banco: nuevo.banco.trim() };
+      if (!nuevo.montoCuenta || Number(nuevo.montoCuenta) <= 0) return Alert.alert('Monto reservado', 'Ingresá el monto que reservás en la cuenta para las subastas.');
+      payload = { ...payload, tipo: 'cuenta', numeroCuenta: nuevo.numeroCuenta.trim(), banco: nuevo.banco.trim(), monto: Number(nuevo.montoCuenta) };
     } else {
       if (!nuevo.numeroCheque.trim()) return Alert.alert('Campos requeridos', 'Ingresá el número de cheque.');
       if (!nuevo.montoCheque || Number(nuevo.montoCheque) <= 0) return Alert.alert('Monto del cheque', 'Ingresá el monto por el que está certificado el cheque.');
@@ -157,9 +161,13 @@ export function MedioPagoScreen({ navigation, route }) {
       setMedios((m) => [...m, guardada]);
       setSelIdx(medios.length);
       setMostrarForm(false);
-      setNuevo({ subtipo: 'credito', numeroTarjeta: '', vencimiento: '', titular: '', numeroCuenta: '', banco: '', numeroCheque: '', montoCheque: '' });
+      setNuevo({ subtipo: 'credito', numeroTarjeta: '', vencimiento: '', titular: '', numeroCuenta: '', banco: '', montoCuenta: '', numeroCheque: '', montoCheque: '' });
       Clientes.saldo(user.clienteId).then(setSaldoInfo).catch(() => {});
-      Alert.alert('Medio agregado', 'La empresa verificó tus fondos. Ya podés usarlo para pujar.');
+      if (medioTipo === 'cheque') {
+        Alert.alert('Cheque cargado', 'Queda ESPERANDO VALIDACIÓN de la empresa. Cuando lo validen vas a poder usarlo para pujar.');
+      } else {
+        Alert.alert('Medio agregado', 'Listo, ya podés usarlo para pujar.');
+      }
     } catch (e) {
       Alert.alert('Error', e.message || 'No se pudo guardar el medio de pago.');
     } finally {
@@ -184,10 +192,10 @@ export function MedioPagoScreen({ navigation, route }) {
   };
 
   const medioSeleccionado = medios[selIdx];
-  // Total disponible = suma de lo que hay en cada medio (coincide con lo que se ve
-  // abajo de cada uno). El cheque aporta su monto; la tarjeta/cuenta su cupo.
+  // Total disponible = suma del presupuesto restante de cada medio (todos guardan
+  // su presupuesto en `saldo`; el cheque además lo espeja en montoCheque).
   const totalDisponible = medios.reduce(
-    (acc, m) => acc + Number(m.tipo === 'cheque' ? (m.montoCheque || 0) : (m.saldo || 0)),
+    (acc, m) => acc + Number(m.saldo ?? m.montoCheque ?? 0),
     0,
   );
 
@@ -236,14 +244,16 @@ export function MedioPagoScreen({ navigation, route }) {
                 </Text>
                 <Text style={{ color: colors.muted, fontSize: 12.5 }}>
                   {m.tipo === 'cheque'
-                    ? `Cheque certificado · $${Number(m.montoCheque || 0).toLocaleString('es-AR')}`
+                    ? `Cheque certificado · $${Number(m.saldo ?? m.montoCheque ?? 0).toLocaleString('es-AR')}`
                     : m.tipo === 'cuenta'
-                      ? `Cuenta · saldo $${Number(m.saldo || 0).toLocaleString('es-AR')}`
-                      : `${tipoTarjetaLabel(m)} · saldo $${Number(m.saldo || 0).toLocaleString('es-AR')}`}
+                      ? `Cuenta · $${Number(m.saldo || 0).toLocaleString('es-AR')} reservados`
+                      : `${tipoTarjetaLabel(m)} · $${Number(m.saldo || 0).toLocaleString('es-AR')}${m.limite ? ` de $${Number(m.limite).toLocaleString('es-AR')}` : ''}`}
                 </Text>
                 {m.titular && <Text style={{ color: colors.faint, fontSize: 11.5 }}>{m.titular}</Text>}
               </View>
-              <Tag label="VERIFICADA" color={colors.green} />
+              {m.verificado === 'si'
+                ? <Tag label="VERIFICADA" color={colors.green} />
+                : <Tag label="ESPERANDO VALIDACIÓN" color={colors.gold || '#e6b23a'} />}
               <Radio on={selIdx === i} />
               <TouchableOpacity onPress={() => onEliminar(m)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
                 <Ionicons name="trash-outline" size={20} color={colors.red} />
@@ -283,6 +293,10 @@ export function MedioPagoScreen({ navigation, route }) {
                 <Field placeholder="Número de cuenta / CBU" value={nuevo.numeroCuenta} onChangeText={setN('numeroCuenta')} />
                 <Field placeholder="Banco" value={nuevo.banco} onChangeText={setN('banco')} />
                 <Field placeholder="Titular" value={nuevo.titular} onChangeText={setN('titular')} />
+                <Field placeholder="Monto reservado para subastas ($)" value={nuevo.montoCuenta} onChangeText={setN('montoCuenta')} keyboardType="numeric" />
+                <Text style={{ color: colors.muted, fontSize: 11.5 }}>
+                  Es la plata que reservás en la cuenta para pujar. Tus pujas no podrán superar ese monto.
+                </Text>
               </>
             )}
             {medioTipo === 'cheque' && (
@@ -295,9 +309,11 @@ export function MedioPagoScreen({ navigation, route }) {
                 </Text>
               </>
             )}
-            {medioTipo !== 'cheque' && (
+            {medioTipo === 'tarjeta' && (
               <Text style={{ color: colors.muted, fontSize: 11.5 }}>
-                La empresa verifica los fondos de la {medioTipo === 'cuenta' ? 'cuenta' : 'tarjeta'}. No cargás plata en la app.
+                {nuevo.subtipo === 'credito'
+                  ? 'La tarjeta de crédito arranca con $200.000 de presupuesto (imita tu cuenta). Se descuenta al pagar tus compras.'
+                  : 'La tarjeta de débito arranca con $100.000 de presupuesto (imita tu cuenta). Se descuenta al pagar tus compras.'}
               </Text>
             )}
 
@@ -457,18 +473,15 @@ export function ConfirmarPagoScreen({ navigation, route }) {
     setPagando(true);
     try {
       const registroId = await resolverRegistroId();
-      // Persistir el pago en el backend (marca el registro como pagado).
+      // Persistir el pago en el backend (marca el registro como pagado). Si el backend
+      // rechaza el medio (sin presupuesto o moneda incompatible), NO confirmamos: se
+      // le ofrece cambiar de medio o declarar el impago (multa del 10%).
       if (registroId && medioPagoId) {
-        try {
-          await RegistroSubasta.pagar(registroId, medioPagoId, {
-            retiroPersonal: entrega === 'retiro',
-            direccionEnvio: entrega === 'envio' ? 'Dirección declarada del comprador' : null,
-            envio: costoEnvio,
-          });
-        } catch (errPago) {
-          // No bloqueamos la confirmación si el medio de pago no es válido server-side.
-          console.warn('No se pudo registrar el pago:', errPago?.message);
-        }
+        await RegistroSubasta.pagar(registroId, medioPagoId, {
+          retiroPersonal: entrega === 'retiro',
+          direccionEnvio: entrega === 'envio' ? 'Dirección declarada del comprador' : null,
+          envio: costoEnvio,
+        });
       }
       navigation.navigate('PagoConfirmado', {
         registroId,
@@ -478,7 +491,20 @@ export function ConfirmarPagoScreen({ navigation, route }) {
         medioPagoLabel,
       });
     } catch (e) {
-      Alert.alert('Error al confirmar el pago', e.message || 'Intentá nuevamente.');
+      const code = e?.data?.code;
+      if (code === 'PRESUPUESTO_INSUFICIENTE' || code === 'MONEDA_INCOMPATIBLE') {
+        Alert.alert(
+          'No se pudo pagar',
+          e.message || 'El medio de pago elegido no puede cubrir esta compra.',
+          [
+            { text: 'Cambiar medio', onPress: () => navigation.navigate('MedioPago', route.params) },
+            { text: 'No puedo pagar', style: 'destructive', onPress: onNoPuedoPagar },
+            { text: 'Cancelar', style: 'cancel' },
+          ],
+        );
+      } else {
+        Alert.alert('Error al confirmar el pago', e.message || 'Intentá nuevamente.');
+      }
     } finally {
       setPagando(false);
     }

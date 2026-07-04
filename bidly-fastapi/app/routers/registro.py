@@ -170,6 +170,18 @@ def pagar(id: int, body: PagarRequest, db: Session = Depends(get_db)):
     envio = Decimal("0") if body.retiroPersonal else Decimal(str(body.envio or 0))
     importe_total = Decimal(str(r.importe or 0)) + Decimal(str(r.comision or 0)) + envio
 
+    # Presupuesto del medio: recién ACÁ (en el pago) se verifica y se descuenta la
+    # plata de crédito/débito (en la puja no se validaban). El total se lleva a pesos
+    # porque el presupuesto está en pesos. Si no alcanza, no se puede pagar.
+    from app.services import saldo_service, moneda_service
+    moneda = sm.moneda if sm else "pesos"
+    importe_pesos = moneda_service.a_pesos(importe_total, moneda)
+    if medio and medio.saldo is not None and importe_pesos > Decimal(str(medio.saldo)):
+        raise HTTPException(422, detail={
+            "message": f"El presupuesto de tu {medio.tipo} (${medio.saldo}) no alcanza para pagar ${importe_pesos}.",
+            "code": "PRESUPUESTO_INSUFICIENTE",
+        })
+
     pago = db.query(RegistroPago).filter(RegistroPago.registro == id).first()
     if not pago:
         pago = RegistroPago(registro=id)
@@ -181,6 +193,10 @@ def pagar(id: int, body: PagarRequest, db: Session = Depends(get_db)):
     pago.envio           = envio
     pago.direccion_envio = None if body.retiroPersonal else body.direccionEnvio
     pago.retiro_personal = "si" if body.retiroPersonal else "no"
+
+    # Gasta la plata del medio (el presupuesto imita la cuenta del usuario).
+    if body.medioPagoId:
+        saldo_service.descontar(body.medioPagoId, importe_pesos, db)
     db.commit()
 
     if body.retiroPersonal and r.cliente:
