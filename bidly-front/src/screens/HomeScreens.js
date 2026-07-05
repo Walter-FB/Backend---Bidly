@@ -1,6 +1,6 @@
 // BIDLY — Home, Filtros, Notificaciones (+ shared AuctionCard).
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, TextInput, StyleSheet, ActivityIndicator, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen, Header, Title, SectionLabel, Btn, Chip, Card, LiveBadge, Tag, ImgBox, Display } from '../components/ui';
@@ -11,6 +11,11 @@ import { useAuth } from '../context/AuthContext';
 import { useNotifBadge } from '../hooks/useNotifBadge';
 import { tituloSubasta, subtituloSubasta, esSubastaFinalizada } from '../utils/subasta';
 import { etiquetaTiempoSubasta, esSubastaEnVivo, formatDuracion } from '../utils/tiempo';
+
+// Texto sin acentos/mayúsculas, para comparar en la búsqueda.
+function normalizar(texto) {
+  return (texto || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+}
 
 // Convierte una Subasta del backend al shape que espera AuctionCard.
 function mapSubasta(s) {
@@ -120,6 +125,7 @@ export function HomeScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [filtros, setFiltros] = useState({});
+  const [busqueda, setBusqueda] = useState('');
 
   const cargarSubastas = useCallback(async (params = {}, silencioso = false) => {
     if (!silencioso) setLoading(true);
@@ -157,10 +163,13 @@ export function HomeScreen({ navigation }) {
     return unsubscribe;
   }, [navigation]);
 
+  const query = normalizar(busqueda);
   const subastasFiltradas = subastas.filter((a) => {
-    if (tab === 'vivo') return esSubastaEnVivo(a);
-    if (tab === 'term') return esSubastaFinalizada(a);
-    return true;
+    if (tab === 'vivo' && !esSubastaEnVivo(a)) return false;
+    if (tab === 'term' && !esSubastaFinalizada(a)) return false;
+    if (!query) return true;
+    const texto = normalizar([a.title, a.cat, a.categoria, a.ubicacion].filter(Boolean).join(' '));
+    return texto.includes(query);
   });
 
   const tituloTab = { vivo: 'En vivo', term: 'Finalizadas', todas: 'Todas' };
@@ -184,14 +193,22 @@ export function HomeScreen({ navigation }) {
       <HomeTopBar navigation={navigation} onBlocked={bloquearInvitado} />
       <View style={{ paddingHorizontal: 22, paddingTop: 12 }}>
         <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
-          <TouchableOpacity
-            style={s.search}
-            onPress={() => Alert.alert('Próximamente', 'La búsqueda estará disponible en una próxima versión.')}
-            activeOpacity={0.7}
-          >
+          <View style={s.search}>
             <Ionicons name="search" size={18} color={colors.muted} />
-            <Text style={{ color: colors.muted, fontSize: 14 }}>Buscar subastas, categorías…</Text>
-          </TouchableOpacity>
+            <TextInput
+              value={busqueda}
+              onChangeText={setBusqueda}
+              placeholder="Buscar subastas, categorías…"
+              placeholderTextColor={colors.muted}
+              style={{ flex: 1, color: '#fff', fontSize: 14, paddingVertical: 0 }}
+              returnKeyType="search"
+            />
+            {busqueda.length > 0 && (
+              <TouchableOpacity onPress={() => setBusqueda('')} hitSlop={8}>
+                <Ionicons name="close-circle" size={18} color={colors.muted} />
+              </TouchableOpacity>
+            )}
+          </View>
           <TouchableOpacity onPress={() => navigation.navigate('Filtros', { filtrosActuales: filtros })} style={s.filterBtn}>
             <Ionicons name="options-outline" size={20} color="#fff" />
           </TouchableOpacity>
@@ -228,7 +245,9 @@ export function HomeScreen({ navigation }) {
         {!loading && !error && (
           <View style={{ gap: 14 }}>
             {subastasFiltradas.length === 0 ? (
-              <Text style={{ color: colors.muted, textAlign: 'center', marginTop: 30 }}>No hay subastas disponibles.</Text>
+              <Text style={{ color: colors.muted, textAlign: 'center', marginTop: 30 }}>
+                {query ? `Sin resultados para "${busqueda}".` : 'No hay subastas disponibles.'}
+              </Text>
             ) : (
               subastasFiltradas.map((a) => (
                 <AuctionCard key={a.id} a={a} onPress={() => abrirSubasta(a)} />
