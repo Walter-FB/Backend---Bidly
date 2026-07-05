@@ -10,7 +10,7 @@ import { BASE_URL } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useNotifBadge } from '../hooks/useNotifBadge';
 import { tituloSubasta, subtituloSubasta, esSubastaFinalizada } from '../utils/subasta';
-import { etiquetaTiempoSubasta, esSubastaEnVivo } from '../utils/tiempo';
+import { etiquetaTiempoSubasta, esSubastaEnVivo, formatDuracion } from '../utils/tiempo';
 
 // Convierte una Subasta del backend al shape que espera AuctionCard.
 function mapSubasta(s) {
@@ -22,6 +22,7 @@ function mapSubasta(s) {
     puja: s.precioBase ? Number(s.precioBase).toLocaleString('es-AR') : '—',
     ppl: s.totalAsistentes || 0,
     time: etiquetaTiempoSubasta(s),
+    segundosRestantes: s.segundosRestantes,
     totalItems: s.totalItems,
     itemsPendientes: s.itemsPendientes,
     estado: s.estado,
@@ -55,9 +56,27 @@ function HomeTopBar({ navigation, onBlocked }) {
   );
 }
 
+// Countdown que tickea localmente entre cada refetch de la lista (el server
+// solo manda segundosRestantes cada tanto; acá lo bajamos de a 1s para que se
+// vea "vivo" sin tener que pollear el detalle de cada subasta).
+function useCountdown(segundosRestantes) {
+  const [restante, setRestante] = useState(segundosRestantes);
+  useEffect(() => {
+    setRestante(segundosRestantes);
+  }, [segundosRestantes]);
+  useEffect(() => {
+    if (restante == null || restante <= 0) return;
+    const id = setInterval(() => setRestante((r) => (r == null ? r : Math.max(0, r - 1))), 1000);
+    return () => clearInterval(id);
+  }, [restante == null]);
+  return restante;
+}
+
 // ─── AUCTION CARD ─────────────────────────────────────────────────────────────
 export function AuctionCard({ a, onPress }) {
   const viva = esSubastaEnVivo(a);
+  const restante = useCountdown(a.segundosRestantes);
+  const tiempoLabel = viva && restante != null ? formatDuracion(restante) : a.time;
   return (
     <Card el style={{ padding: 14 }}>
       {viva && <LiveBadge style={{ marginBottom: 10 }} />}
@@ -85,7 +104,7 @@ export function AuctionCard({ a, onPress }) {
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
           <Ionicons name="time-outline" size={14} color={colors.gold} />
-          <Text style={{ color: colors.gold, fontSize: 13, fontWeight: '800' }}>{a.time}</Text>
+          <Text style={{ color: colors.gold, fontSize: 13, fontWeight: '800' }}>{tiempoLabel}</Text>
         </View>
         <Btn title="Ver subasta" onPress={onPress} style={{ paddingVertical: 9, paddingHorizontal: 18 }} />
       </View>
@@ -102,22 +121,32 @@ export function HomeScreen({ navigation }) {
   const [error, setError] = useState(null);
   const [filtros, setFiltros] = useState({});
 
-  const cargarSubastas = useCallback(async (params = {}) => {
-    setLoading(true);
+  const cargarSubastas = useCallback(async (params = {}, silencioso = false) => {
+    if (!silencioso) setLoading(true);
     setError(null);
     try {
       const resultado = await Subastas.listar(params);
       setSubastas((resultado || []).map(mapSubasta));
     } catch (e) {
-      setError(e.message || 'No se pudieron cargar las subastas.');
+      if (!silencioso) setError(e.message || 'No se pudieron cargar las subastas.');
     } finally {
-      setLoading(false);
+      if (!silencioso) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     const estadoParam = tab === 'vivo' ? 'abierta' : tab === 'term' ? 'cerrada' : undefined;
     cargarSubastas({ ...(estadoParam ? { estado: estadoParam } : {}), ...filtros });
+  }, [tab, filtros, cargarSubastas]);
+
+  // Resincroniza el reloj del remate (y detecta adjudicaciones/próximo ítem)
+  // mientras se está viendo la tab "En vivo".
+  useEffect(() => {
+    if (tab !== 'vivo') return;
+    const id = setInterval(() => {
+      cargarSubastas({ estado: 'abierta', ...filtros }, true);
+    }, 8000);
+    return () => clearInterval(id);
   }, [tab, filtros, cargarSubastas]);
 
   useEffect(() => {

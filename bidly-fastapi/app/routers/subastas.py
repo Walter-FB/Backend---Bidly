@@ -46,7 +46,9 @@ def listar_subastas(
         q = q.filter(Subasta.estado == estado)
     if categoria:
         q = q.filter(Subasta.categoria == categoria)
-    return subasta_service.enrich_all(q.all(), db)
+    data = subasta_service.enrich_all(q.all(), db)
+    db.commit()  # persiste adjudicaciones hechas por el tick del remate al enriquecer
+    return data
 
 
 @router.get("/{id}")
@@ -54,7 +56,9 @@ def get_subasta(id: int, db: Session = Depends(get_db)):
     s = db.query(Subasta).filter(Subasta.identificador == id).first()
     if not s:
         raise HTTPException(404, "Subasta no encontrada")
-    return subasta_service.enrich(s, db)
+    data = subasta_service.enrich(s, db)
+    db.commit()
+    return data
 
 
 @router.post("", status_code=201)

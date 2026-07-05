@@ -301,7 +301,7 @@ export function MedioPagoScreen({ navigation, route }) {
             )}
             {medioTipo === 'cheque' && (
               <>
-                <Field placeholder="Número de cheque" value={nuevo.numeroCheque} onChangeText={setN('numeroCheque')} />
+                <Field placeholder="Número de cheque" value={nuevo.numeroCheque} onChangeText={(t) => setN('numeroCheque')(t.replace(/[^0-9]/g, ''))} keyboardType="numeric" />
                 <Field placeholder="Titular" value={nuevo.titular} onChangeText={setN('titular')} />
                 <Field placeholder="Monto certificado del cheque ($)" value={nuevo.montoCheque} onChangeText={setN('montoCheque')} keyboardType="numeric" />
                 <Text style={{ color: colors.muted, fontSize: 11.5 }}>

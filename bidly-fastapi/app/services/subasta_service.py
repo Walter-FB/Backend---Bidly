@@ -48,6 +48,17 @@ def enrich(subasta: Subasta, db: Session) -> dict:
     data: dict = {col.name: getattr(subasta, col.name) for col in subasta.__table__.columns}
     data["moneda"] = _moneda(subasta.identificador, db)
 
+    # Reloj del remate: si está abierta, exponer cuánto falta del ítem activo
+    # (permite mostrar el countdown en el listado, no solo en el detalle).
+    if subasta.estado == "abierta":
+        from app.services import remate_service
+        rem = remate_service.estado(subasta.identificador, db)
+        data["itemActivoId"] = rem.get("itemActivoId")
+        data["segundosRestantes"] = rem.get("segundosRestantes")
+    else:
+        data["itemActivoId"] = None
+        data["segundosRestantes"] = None
+
     items = (
         db.query(ItemCatalogo)
         .join(Catalogo, ItemCatalogo.catalogo == Catalogo.identificador)
