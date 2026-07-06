@@ -437,10 +437,34 @@ export function ConfirmarPagoScreen({ navigation, route }) {
   const [pagando, setPagando] = useState(false);
   const [declarando, setDeclarando] = useState(false);
   const [entrega, setEntrega] = useState('envio'); // 'envio' | 'retiro'
+  // Catálogo en única venta: si hay más compras pendientes de la misma subasta,
+  // se ofrece pagarlas todas juntas (un pago, un envío).
+  const [lote, setLote] = useState(null); // { count, importe, comision } del lote completo
+  const [pagarLote, setPagarLote] = useState(true);
+
+  useEffect(() => {
+    if (!user?.clienteId || !subastaId) return;
+    RegistroSubasta.porCliente(user.clienteId).then((regs) => {
+      const pend = (regs || []).filter((r) =>
+        Number(r.subasta?.identificador) === Number(subastaId)
+        && r.estadoPago !== 'pagado' && r.reembolsada !== 'si');
+      if (pend.length > 1) {
+        setLote({
+          count: pend.length,
+          importe: pend.reduce((t, r) => t + Number(r.importe || 0), 0),
+          comision: pend.reduce((t, r) => t + Number(r.comision || 0), 0),
+        });
+      }
+    }).catch(() => {});
+  }, [user, subastaId]);
+
+  const usaLote = !!(lote && pagarLote);
+  const importeRef = usaLote ? lote.importe : Number(importe);
+  const comisionRef = usaLote ? lote.comision : Number(comision);
 
   // El envío corre por cuenta del comprador (3% del bien, mínimo $1500).
-  const costoEnvio = entrega === 'retiro' ? 0 : Math.max(1500, Math.round(Number(importe) * 0.03));
-  const total = Number(importe) + Number(comision) + Number(importeSeguro) + costoEnvio;
+  const costoEnvio = entrega === 'retiro' ? 0 : Math.max(1500, Math.round(importeRef * 0.03));
+  const total = importeRef + comisionRef + Number(importeSeguro) + costoEnvio;
 
   // Ubica el registro de compra ya creado en la adjudicación del ítem.
   const resolverRegistroId = async () => {
@@ -481,6 +505,7 @@ export function ConfirmarPagoScreen({ navigation, route }) {
           retiroPersonal: entrega === 'retiro',
           direccionEnvio: entrega === 'envio' ? 'Dirección declarada del comprador' : null,
           envio: costoEnvio,
+          pagarLote: usaLote, // catálogo en única venta: paga todas las compras juntas
         });
       }
       navigation.navigate('PagoConfirmado', {
@@ -550,12 +575,24 @@ export function ConfirmarPagoScreen({ navigation, route }) {
         <Title>Confirmar{'\n'}pago</Title>
         <Card el style={{ marginTop: 8 }}>
           <Text style={s.detail}>DETALLE</Text>
-          <Row k={titulo || 'Artículo'} v={formatImporte(importe, moneda)} />
-          {Number(comision) > 0 && <Row k="Comisión BIDLY" v={formatImporte(comision, moneda)} />}
+          <Row k={usaLote ? `Catálogo completo (${lote.count} piezas)` : (titulo || 'Artículo')} v={formatImporte(importeRef, moneda)} />
+          {comisionRef > 0 && <Row k="Comisión BIDLY" v={formatImporte(comisionRef, moneda)} />}
           {Number(importeSeguro) > 0 && <Row k="Seguro" v={formatImporte(importeSeguro, moneda)} />}
           {costoEnvio > 0 && <Row k="Envío" v={formatImporte(costoEnvio, moneda)} />}
           <View style={s.divider}><Row k="TOTAL" v={formatImporte(total, moneda)} vc={colors.green} bold /></View>
         </Card>
+
+        {lote && (
+          <Card el style={{ marginTop: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: '#fff', fontSize: 13, fontWeight: '700' }}>🧺 Pagar todo el catálogo junto</Text>
+              <Text style={{ color: colors.muted, fontSize: 11.5 }}>
+                Tenés {lote.count} compras pendientes de esta subasta. Un solo pago y un solo envío.
+              </Text>
+            </View>
+            <Switch value={pagarLote} onValueChange={setPagarLote} />
+          </Card>
+        )}
 
         <SectionLabel>Entrega</SectionLabel>
         <View style={{ flexDirection: 'row', gap: 10 }}>

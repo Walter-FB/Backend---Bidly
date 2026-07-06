@@ -167,8 +167,28 @@ def pagar(id: int, body: PagarRequest, db: Session = Depends(get_db)):
             "code": "MONEDA_INCOMPATIBLE",
         })
 
+    # Lote (catálogo ganado en única venta): con pagarLote=True se pagan juntas TODAS
+    # las compras pendientes del mismo comprador en la misma subasta.
+    registros = [r]
+    if body.pagarLote:
+        hermanos = (
+            db.query(RegistroDeSubasta)
+            .filter(
+                RegistroDeSubasta.subasta == r.subasta,
+                RegistroDeSubasta.cliente == r.cliente,
+                RegistroDeSubasta.identificador != r.identificador,
+            )
+            .all()
+        )
+        for h in hermanos:
+            ph = db.query(RegistroPago).filter(RegistroPago.registro == h.identificador).first()
+            if not ph or ph.estado != "pagado":
+                registros.append(h)
+
     envio = Decimal("0") if body.retiroPersonal else Decimal(str(body.envio or 0))
-    importe_total = Decimal(str(r.importe or 0)) + Decimal(str(r.comision or 0)) + envio
+    importe_total = sum(
+        Decimal(str(x.importe or 0)) + Decimal(str(x.comision or 0)) for x in registros
+    ) + envio
 
     # Presupuesto del medio: recién ACÁ (en el pago) se verifica y se descuenta la
     # plata de crédito/débito (en la puja no se validaban). El total se lleva a pesos
@@ -182,17 +202,21 @@ def pagar(id: int, body: PagarRequest, db: Session = Depends(get_db)):
             "code": "PRESUPUESTO_INSUFICIENTE",
         })
 
-    pago = db.query(RegistroPago).filter(RegistroPago.registro == id).first()
-    if not pago:
-        pago = RegistroPago(registro=id)
-        db.add(pago)
-    pago.estado          = "pagado"
-    pago.medio_pago      = body.medioPagoId
-    pago.fecha_pago      = datetime.utcnow()
-    pago.importe_total   = importe_total
-    pago.envio           = envio
-    pago.direccion_envio = None if body.retiroPersonal else body.direccionEnvio
-    pago.retiro_personal = "si" if body.retiroPersonal else "no"
+    ahora = datetime.utcnow()
+    for x in registros:
+        pago = db.query(RegistroPago).filter(RegistroPago.registro == x.identificador).first()
+        if not pago:
+            pago = RegistroPago(registro=x.identificador)
+            db.add(pago)
+        # El envío se cobra UNA vez (va en la compra principal; las piezas viajan juntas).
+        envio_x = envio if x.identificador == r.identificador else Decimal("0")
+        pago.estado          = "pagado"
+        pago.medio_pago      = body.medioPagoId
+        pago.fecha_pago      = ahora
+        pago.importe_total   = Decimal(str(x.importe or 0)) + Decimal(str(x.comision or 0)) + envio_x
+        pago.envio           = envio_x
+        pago.direccion_envio = None if body.retiroPersonal else body.direccionEnvio
+        pago.retiro_personal = "si" if body.retiroPersonal else "no"
 
     # Gasta la plata del medio (el presupuesto imita la cuenta del usuario).
     if body.medioPagoId:

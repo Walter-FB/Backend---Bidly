@@ -17,6 +17,9 @@ class PagarRequest(BaseModel):
     retiroPersonal: Optional[bool] = False
     direccionEnvio: Optional[str] = None
     envio: Optional[Decimal] = None
+    # Catálogo en única venta: pagar juntas TODAS las compras pendientes del mismo
+    # comprador en la misma subasta (un pago, un envío, un descuento de presupuesto).
+    pagarLote: Optional[bool] = False
 
 
 class ReembolsoUpdate(BaseModel):
