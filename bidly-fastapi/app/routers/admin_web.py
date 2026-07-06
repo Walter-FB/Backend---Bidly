@@ -53,6 +53,12 @@ PAGE = r"""<!doctype html>
   .refresh{color:var(--blue);cursor:pointer;font-weight:700;font-size:13px;background:none;border:none;float:right}
   .refresh:hover{text-decoration:underline}
   a{color:var(--blue)}
+  .sec{font-size:12px;font-weight:800;letter-spacing:1.2px;color:var(--muted);margin:20px 2px 10px;text-transform:uppercase;display:flex;align-items:center;gap:8px}
+  .sec .cnt{background:var(--cardEl);border:1px solid var(--border);border-radius:999px;padding:1px 9px;font-size:11px;color:var(--txt)}
+  .chipst{font-size:10px;font-weight:800;padding:2px 8px;border-radius:999px;white-space:nowrap}
+  .pulse{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--green);margin-right:6px;animation:pu 1.2s infinite}
+  @keyframes pu{0%{opacity:1}50%{opacity:.25}100%{opacity:1}}
+  .itemrow{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:7px 10px;border:1px solid var(--border);border-radius:9px;margin-top:6px;background:var(--bg2)}
 </style></head>
 <body>
 <header>
@@ -105,7 +111,9 @@ PAGE = r"""<!doctype html>
     <div id="pos"></div>
   </section>
   <section id="s-sub" style="display:none">
-    <p class="hint">Crear / abrir / cerrar / adjudicar subastas.
+    <p class="hint">El ciclo de una subasta: la <b>creás</b> acá (queda PRÓXIMAMENTE) → le cargás bienes desde
+      <b>Admisiones</b> → cuando llega el día la <b>abrís</b> (EN VIVO: el remate corre solo, ítem por ítem o todo
+      junto) → al venderse todo queda <b>FINALIZADA</b>.
       <button class="refresh" onclick="loadSub()">↻ Actualizar</button></p>
     <div class="card tool">
       <div class="title" style="margin-bottom:4px">+ Crear subasta</div>
@@ -262,23 +270,64 @@ async function crearSub(){const f=document.getElementById('ns-fecha').value,h=do
   if(!b.subastador)return toast('ID de subastador',false);
   try{await api('/subastas','POST',b);toast(f?'Subasta creada':'Subasta creada sin fecha (a confirmar)');loadSub()}catch(e){toast(e.message,false)}}
 async function loadSub(){const el=document.getElementById('sub');el.innerHTML='Cargando…';
-  try{const subs=await api('/subastas');SUBS=subs||[];if(!subs.length){el.innerHTML='<p class="muted">No hay subastas.</p>';return}
-    const cards=await Promise.all(subs.map(subCard));el.innerHTML=cards.join('')}
+  try{const subs=await api('/subastas');SUBS=subs||[];if(!subs.length){el.innerHTML='<p class="muted">No hay subastas. Creá la primera acá arriba.</p>';return}
+    // Agrupadas por proceso, en el orden en que las mira el subastador.
+    const g={ 'EN VIVO':[], 'PRÓXIMAMENTE':[], 'FINALIZADA':[] };
+    subs.forEach(s=>g[subEstadoReal(s)[0]].push(s));
+    g['PRÓXIMAMENTE'].sort((a,b)=>String(a.fecha||'9999').localeCompare(String(b.fecha||'9999')));
+    g['FINALIZADA'].sort((a,b)=>b.identificador-a.identificador);
+    let html='';
+    for(const [titulo,lista] of [['🔴 En vivo',g['EN VIVO']],['📅 Próximamente',g['PRÓXIMAMENTE']],['✔ Finalizadas',g['FINALIZADA']]]){
+      if(!lista.length)continue;
+      const cards=await Promise.all(lista.map(subCard));
+      html+='<div class="sec">'+titulo+'<span class="cnt">'+lista.length+'</span></div>'+cards.join('');
+    }
+    el.innerHTML=html||'<p class="muted">No hay subastas.</p>'}
   catch(e){el.innerHTML='<p class="muted">Error: '+esc(e.message)+'</p>'}}
+// Estado REAL del proceso (no el crudo abierta/cerrada): una 'cerrada' puede ser
+// una PRÓXIMA (programada, sin rematar) o una FINALIZADA (todo adjudicado).
+function subEstadoReal(s){
+  const total=s.totalItems||0, pend=(s.itemsPendientes==null?total:s.itemsPendientes);
+  if(s.estado==='abierta') return pend>0?['EN VIVO','var(--green)']:['FINALIZADA','var(--muted)'];
+  if(total>0&&pend===0) return ['FINALIZADA','var(--muted)'];
+  return ['PRÓXIMAMENTE','var(--blue)'];
+}
 async function subCard(s){
   const ab=s.estado==='abierta';
   const bloque=s.ventaModo==='bloque';
+  const [estLbl,estCol]=subEstadoReal(s);
+  const esProx=estLbl==='PRÓXIMAMENTE';
   let its=[];try{its=await api('/subastas/'+s.identificador+'/catalogos')}catch(e){}
   // En única venta no se adjudica pieza por pieza (romperia el bloque): se lleva todo el mejor postor.
   const items=(its||[]).map(it=>'<div class="row" style="margin-top:6px"><div class="muted">'+esc(it.producto&&it.producto.descripcionCatalogo||('Ítem #'+it.identificador))+' · base '+esc(it.precioBase)+(it.subastado==='si'?' · <b style="color:var(--green)">ADJUDICADO</b>':'')+'</div>'
     +((it.subastado==='si'||bloque)?'':'<button class="act b-ghost" onclick="adjudicar('+it.identificador+')">Adjudicar</button>')+'</div>').join('')||'<div class="muted" style="margin-top:6px">Sin ítems.</div>';
+  const total=s.totalItems||0, pend=(s.itemsPendientes==null?total:s.itemsPendientes), vendidas=total-pend;
+  // Línea de proceso: qué está pasando y qué sigue.
+  let proceso='';
+  if(esProx){
+    let cuando='sin fecha todavía (se puede fijar al proponer un bien)';
+    if(s.fecha){const d=Math.ceil((new Date(s.fecha+'T00:00:00')-new Date())/86400000);
+      cuando=esc(s.fecha)+(d>1?' — faltan '+d+' días':d===1?' — es mañana':d===0?' — ¡es hoy!':' — ⚠ la fecha ya pasó');}
+    proceso='<div class="muted" style="margin-top:6px">📅 Programada: '+cuando+'.'
+      +(total===0?' <b style="color:var(--gold)">Sin bienes aún</b> — cargalos desde la pestaña Admisiones.':' Cuando llegue el día, tocá <b>Abrir subasta</b>.')+'</div>';
+  }else if(estLbl==='EN VIVO'){
+    const reloj=(s.segundosRestantes!=null)?(' · ⏱ al ítem en curso le quedan ~'+s.segundosRestantes+'s'):'';
+    proceso='<div class="muted" style="margin-top:6px"><span class="pulse"></span>Rematando '
+      +(bloque?'el catálogo completo en única venta':'ítem por ítem')+': vendidas '+vendidas+'/'+total+reloj+'. El remate avanza solo.</div>';
+  }else{
+    proceso='<div class="muted" style="margin-top:6px">✔ Terminada: '+vendidas+'/'+total+' piezas adjudicadas.</div>';
+  }
+  // Acciones según el estado (solo las que tienen sentido).
+  let acciones='';
+  if(esProx) acciones='<div style="margin-top:8px"><button class="act b-green" onclick="setEstado('+s.identificador+',\'abierta\')">▶ Abrir subasta (arranca el remate)</button></div>';
+  else if(estLbl==='EN VIVO') acciones='<div style="margin-top:8px"><button class="act b-red" onclick="setEstado('+s.identificador+',\'cerrada\')">■ Cerrar ahora (adjudica lo pendiente)</button></div>';
+  else if(ab) acciones='<div style="margin-top:8px"><button class="act b-ghost" onclick="setEstado('+s.identificador+',\'cerrada\')">Cerrar</button></div>';
   return '<div class="card"><div class="row"><div><div class="title">'+esc(s.titulo||('Subasta #'+s.identificador))+'</div>'
-    +'<div class="muted">#'+s.identificador+' · '+esc(s.categoria||'—')+' · '+esc(s.moneda||'pesos')+' · '+esc(s.fecha||'—')+' · '+(s.totalItems||0)+' ítems</div></div>'
+    +'<div class="muted">#'+s.identificador+' · '+esc(s.categoria||'—')+' · '+esc(s.moneda||'pesos')+' · '+total+' ítems</div></div>'
     +'<div style="display:flex;gap:6px;align-items:center">'
     +(bloque?'<span class="st" style="background:var(--gold);color:#231a02">ÚNICA VENTA</span>':'')
-    +'<span class="st" style="background:'+(ab?'var(--green)':'var(--muted)')+'">'+(ab?'ABIERTA':'CERRADA')+'</span></div></div>'
-    +'<div style="margin-top:8px"><button class="act b-green" '+(ab?'disabled style="opacity:.4"':'')+' onclick="setEstado('+s.identificador+',\'abierta\')">Abrir puja</button> '
-    +'<button class="act b-red" '+(ab?'':'disabled style="opacity:.4"')+' onclick="setEstado('+s.identificador+',\'cerrada\')">Cerrar</button></div>'+items+'</div>';
+    +'<span class="st" style="background:'+estCol+'">'+estLbl+'</span></div></div>'
+    +proceso+acciones+items+'</div>';
 }
 async function setEstado(id,e){try{await api('/subastas/'+id+'/estado','PATCH',{estado:e});toast('Subasta '+(e==='abierta'?'abierta':'cerrada'));loadSub()}catch(x){toast(x.message,false)}}
 async function adjudicar(itemId){try{await api('/items/'+itemId+'/adjudicar','PATCH',{});toast('Ítem adjudicado');loadSub()}catch(e){toast(e.message,false)}}

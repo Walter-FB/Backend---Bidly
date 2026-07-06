@@ -7,7 +7,7 @@ import { colors } from '../theme/theme';
 import { Subastas, Pujas, Asistentes, Productos, RegistroSubasta, Clientes } from '../api/endpoints';
 import { BASE_URL } from '../api/client';
 import { useAuth } from '../context/AuthContext';
-import { tituloSubasta, tagEstadoSubasta } from '../utils/subasta';
+import { tituloSubasta, tagEstadoSubasta, formatFechaSubasta } from '../utils/subasta';
 import { etiquetaTiempoSubasta, esSubastaEnVivo } from '../utils/tiempo';
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
@@ -168,7 +168,7 @@ export function ProductoScreen({ navigation, route }) {
         )}
         <Text style={st.kicker}>{categoria.toUpperCase()}</Text>
         <Title style={{ fontSize: 26, marginTop: 6 }}>{titulo}</Title>
-        <View style={{ flexDirection: 'row', gap: 20, marginVertical: 12 }}>
+        <View style={{ flexDirection: 'row', gap: 20, marginVertical: 12, flexWrap: 'wrap' }}>
           <View>
             <Text style={{ color: colors.muted, fontSize: 12 }}>Precio base</Text>
             <Text style={{ color: colors.green, fontSize: 20, fontWeight: '800' }}>
@@ -179,6 +179,12 @@ export function ProductoScreen({ navigation, route }) {
             <Text style={{ color: colors.muted, fontSize: 12 }}>Estado</Text>
             <Text style={{ color: colors.gold, fontSize: 20, fontWeight: '800' }}>
               {etiquetaTiempoSubasta(subasta)}
+            </Text>
+          </View>
+          <View>
+            <Text style={{ color: colors.muted, fontSize: 12 }}>Fecha</Text>
+            <Text style={{ color: '#fff', fontSize: 20, fontWeight: '800' }}>
+              {subasta.fecha ? formatFechaSubasta(subasta.fecha) : 'A confirmar'}
             </Text>
           </View>
         </View>

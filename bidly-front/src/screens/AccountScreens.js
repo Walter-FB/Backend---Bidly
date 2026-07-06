@@ -825,7 +825,7 @@ const PROD_LABEL = {
   solicitada:       { label: 'ESPERANDO APROBACIÓN', color: colors.gold },
   en_inspeccion:    { label: 'EN INSPECCIÓN', color: colors.blue },
   propuesta:        { label: 'PROPUESTA — REVISALA', color: colors.gold },
-  aprobada:         { label: 'EN SUBASTA', color: colors.green },
+  aprobada:         { label: 'EN CATÁLOGO', color: colors.green },
   rechazada:        { label: 'RECHAZADA', color: colors.red },
   rechazada_duenio: { label: 'DEVUELTA', color: colors.muted },
 };
@@ -949,7 +949,9 @@ export function MisProductosScreen({ navigation }) {
                 <Text style={{ color: colors.red, fontSize: 12.5 }}>Motivo: {a.observacion}</Text>
               )}
               {estado === 'aprobada' && (
-                <Text style={{ color: colors.green, fontSize: 12.5 }}>Incluido en la subasta. ¡Suerte con el remate!</Text>
+                <Text style={{ color: colors.green, fontSize: 12.5 }}>
+                  En el catálogo. {a?.subasta?.fecha ? `Se subasta el ${a.subasta.fecha}.` : 'La fecha de la subasta está a confirmar.'} ¡Suerte con el remate!
+                </Text>
               )}
               {estado === 'propuesta' && a && (
                 <View style={{ gap: 4 }}>
@@ -994,8 +996,8 @@ const ADMISION_LABEL = {
   solicitada:       { label: 'EN REVISIÓN', color: colors.gold },
   en_inspeccion:    { label: 'INSPECCIÓN', color: colors.blue },
   rechazada:        { label: 'RECHAZADA', color: colors.red },
-  propuesta:        { label: 'PROPUESTA', color: colors.gold },
-  aprobada:         { label: 'EN SUBASTA', color: colors.green },
+  propuesta:        { label: 'PROPUESTA — REVISALA', color: colors.gold },
+  aprobada:         { label: 'EN CATÁLOGO', color: colors.green },
   rechazada_duenio: { label: 'DEVUELTA', color: colors.muted },
 };
 
@@ -1106,7 +1108,9 @@ export function MisAdmisionesScreen({ navigation }) {
                 )}
                 {a.estado === 'aprobada' && (
                   <>
-                    <Text style={{ color: colors.green, fontSize: 12.5 }}>Incluido en la subasta y asegurado. ¡Suerte con el remate!</Text>
+                    <Text style={{ color: colors.green, fontSize: 12.5 }}>
+                      En el catálogo y asegurado. {a?.subasta?.fecha ? `Se subasta el ${a.subasta.fecha}.` : 'La fecha de la subasta está a confirmar.'} ¡Suerte con el remate!
+                    </Text>
                     {a.ubicacion && (
                       <Row k="Depósito" v={`${a.ubicacion.deposito}${a.ubicacion.sector ? ` · ${a.ubicacion.sector}` : ''}`} />
                     )}

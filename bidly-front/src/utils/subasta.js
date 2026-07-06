@@ -153,6 +153,11 @@ export function esMiSubasta(subasta, clienteId) {
 
 export function tagEstadoSubasta(subasta) {
   const sub = subasta || {};
-  if (sub.estado === 'abierta') return { label: 'EN VIVO', color: colors.green };
-  return { label: 'CERRADA', color: colors.muted };
+  if (esSubastaEnVivo(sub)) return { label: 'EN VIVO', color: colors.green };
+  if (esSubastaProxima(sub)) {
+    return sub.fecha
+      ? { label: 'PRÓXIMAMENTE', color: colors.gold }
+      : { label: 'FECHA A CONFIRMAR', color: colors.gold };
+  }
+  return { label: 'FINALIZADA', color: colors.muted };
 }

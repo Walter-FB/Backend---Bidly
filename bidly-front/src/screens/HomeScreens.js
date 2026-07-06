@@ -120,7 +120,9 @@ export function AuctionCard({ a, onPress }) {
 // ─── HOME SCREEN ─────────────────────────────────────────────────────────────
 export function HomeScreen({ navigation }) {
   const { user, logout } = useAuth();
-  const [tab, setTab] = useState('vivo');
+  // Arranca en "Todas": si no hay nada en vivo, el usuario igual ve las próximas
+  // y las finalizadas (antes aterrizaba en una pestaña vacía).
+  const [tab, setTab] = useState('todas');
   const [subastas, setSubastas] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -219,7 +221,7 @@ export function HomeScreen({ navigation }) {
             <Chip label="Todas" active={tab === 'todas'} onPress={() => setTab('todas')} />
             <Chip label="En vivo" active={tab === 'vivo'} dot onPress={() => setTab('vivo')} />
             <Chip label="Próximas" active={tab === 'prox'} onPress={() => setTab('prox')} />
-            <Chip label="Terminadas" active={tab === 'term'} onPress={() => setTab('term')} />
+            <Chip label="Finalizadas" active={tab === 'term'} onPress={() => setTab('term')} />
           </View>
         </ScrollView>
       </View>
