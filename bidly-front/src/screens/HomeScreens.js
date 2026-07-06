@@ -9,7 +9,7 @@ import { Subastas, Notificaciones } from '../api/endpoints';
 import { BASE_URL } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useNotifBadge } from '../hooks/useNotifBadge';
-import { tituloSubasta, subtituloSubasta, esSubastaFinalizada, esSubastaProxima } from '../utils/subasta';
+import { tituloSubasta, subtituloSubasta, esSubastaFinalizada, esSubastaProxima, desfaseInicioBackFront } from '../utils/subasta';
 import { etiquetaTiempoSubasta, esSubastaEnVivo, formatDuracion } from '../utils/tiempo';
 
 // Texto sin acentos/mayúsculas, para comparar en la búsqueda.
@@ -28,6 +28,7 @@ function mapSubasta(s) {
     ppl: s.totalAsistentes || 0,
     time: etiquetaTiempoSubasta(s),
     segundosRestantes: s.segundosRestantes,
+    segundosParaInicioBackend: s.segundosParaInicio,
     totalItems: s.totalItems,
     itemsPendientes: s.itemsPendientes,
     estado: s.estado,
@@ -213,6 +214,14 @@ export function HomeScreen({ navigation }) {
     return texto.includes(query);
   });
 
+  // Canario back/front: si el inicio que calcula el front y el que informa el back
+  // difieren mucho (típicamente por zona horaria mal alineada), lo avisamos en pantalla
+  // para corregirlo rápido. Se queda con el peor desfase detectado entre las subastas.
+  const desfaseDetectado = subastas
+    .map((a) => desfaseInicioBackFront(a))
+    .filter((d) => d != null && Math.abs(d) > 120)
+    .reduce((peor, d) => (peor == null || Math.abs(d) > Math.abs(peor) ? d : peor), null);
+
   const tituloTab = { vivo: 'En vivo', prox: 'Próximas', term: 'Finalizadas', todas: 'Todas' };
 
   // Modo visita: el invitado solo ve el listado. Abrir una subasta (o cualquier otra
@@ -268,6 +277,15 @@ export function HomeScreen({ navigation }) {
           <Display style={{ fontSize: 18 }}>{tituloTab[tab] || 'Todas'} · {subastasFiltradas.length}</Display>
           <Text style={{ color: colors.muted, fontSize: 13 }}>Más recientes ↓</Text>
         </View>
+
+        {desfaseDetectado != null && (
+          <View style={s.desyncBanner}>
+            <Ionicons name="warning" size={16} color="#1a1200" />
+            <Text style={s.desyncText}>
+              ⚠ Back/front descoordinados: {Math.abs(Math.round(desfaseDetectado / 60))} min de desfase en el inicio de una subasta. Revisar zona horaria (backend UTC vs AR).
+            </Text>
+          </View>
+        )}
 
         {loading && (
           <View style={{ paddingVertical: 40, alignItems: 'center' }}>
@@ -427,4 +445,10 @@ const s = StyleSheet.create({
   badge: { position: 'absolute', top: -5, right: -7, minWidth: 16, height: 16, borderRadius: 8,
     backgroundColor: colors.red, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 },
   badgeText: { color: '#fff', fontSize: 9, fontWeight: '800' },
+  desyncBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: colors.gold, borderRadius: 10,
+    paddingVertical: 10, paddingHorizontal: 12, marginBottom: 12,
+  },
+  desyncText: { color: '#1a1200', fontSize: 12.5, fontWeight: '700', flex: 1, lineHeight: 17 },
 });

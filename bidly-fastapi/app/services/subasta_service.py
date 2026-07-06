@@ -5,7 +5,7 @@ Sin máquina de estados en vivo: una subasta usa directamente `subastas.estado`
 quemó). Sí conserva moneda dual (subasta_moneda) y, al cerrar, genera el payout al
 dueño, la notificación al ganador y la fila de registro_pago pendiente.
 """
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 from decimal import Decimal
 from sqlalchemy.orm import Session
 
@@ -18,6 +18,18 @@ from app.models.asistente import Asistente
 from app.models.puja import Puja
 from app.models.registro_subasta import RegistroDeSubasta
 from app.models.pagos import RegistroPago, Reembolso
+
+# Argentina es UTC-3 fija (sin horario de verano). El subastador carga subastas.fecha/hora
+# en hora AR y el front cuenta el inicio en hora local del dispositivo (AR). Pero el backend
+# corre en UTC (Railway): comparar contra datetime.utcnow() abriría la subasta 3h antes.
+# Por eso traemos "ahora" a hora AR para todas las comparaciones contra fecha/hora.
+AR_UTC_OFFSET_H = 3
+
+
+def _ahora_ar() -> datetime:
+    """Ahora en hora local de Argentina (naive), alineado con cómo el subastador carga
+    fecha/hora y con cómo el front calcula la cuenta regresiva."""
+    return datetime.utcnow() - timedelta(hours=AR_UTC_OFFSET_H)
 
 
 def _moneda(subasta_id: int, db: Session) -> str:
@@ -61,7 +73,7 @@ def _autoabrir_si_corresponde(subasta: Subasta, db: Session) -> None:
     if not subasta.fecha:
         return
     inicio = datetime.combine(subasta.fecha, subasta.hora or time(0, 0))
-    if inicio > datetime.utcnow():
+    if inicio > _ahora_ar():  # hora AR, no UTC (evita abrir 3h antes)
         return
     # Lock + re-chequeo para no abrir dos veces en paralelo.
     s = (
@@ -99,6 +111,14 @@ def enrich(subasta: Subasta, db: Session) -> dict:
     data: dict = {col.name: getattr(subasta, col.name) for col in subasta.__table__.columns}
     data["moneda"] = _moneda(subasta.identificador, db)
     data["ventaModo"] = venta_modo(subasta.identificador, db)
+
+    # Cuenta regresiva al inicio (solo con fecha definida), calculada por el backend con
+    # SU reloj en hora AR. El front la compara contra la suya para detectar si back/front
+    # quedan descoordinados en la zona horaria (banner de alerta en el Home).
+    data["segundosParaInicio"] = (
+        int((datetime.combine(subasta.fecha, subasta.hora or time(0, 0)) - _ahora_ar()).total_seconds())
+        if subasta.fecha else None
+    )
 
     # Reloj del remate: si está abierta, exponer cuánto falta del ítem activo
     # (permite mostrar el countdown en el listado, no solo en el detalle).

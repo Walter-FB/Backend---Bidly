@@ -116,6 +116,19 @@ export function segundosParaInicio(subasta) {
   return Math.max(0, Math.floor((dt.getTime() - Date.now()) / 1000));
 }
 
+/** Desfasaje (en segundos) entre lo que cree el FRONT y lo que informa el BACK sobre
+ *  cuánto falta para que arranque la subasta. null si no se puede comparar (sin fecha,
+ *  o el back no mandó el dato). Un |valor| grande (p. ej. >120s) = back y front
+ *  descoordinados en la zona horaria; sirve de canario para el banner de alerta.
+ *  Nota: sin clamp — segundosParaInicio() satura en 0, así que acá recalculamos crudo. */
+export function desfaseInicioBackFront(subasta) {
+  const back = subasta?.segundosParaInicioBackend;
+  const dt = inicioSubasta(subasta);
+  if (back == null || dt == null) return null;
+  const localSeg = Math.floor((dt.getTime() - Date.now()) / 1000);
+  return Math.round(localSeg - back);
+}
+
 /** Próxima = programada: cerrada, sin adjudicar nada y con el inicio todavía por venir
  *  (o sin fecha aún = "a confirmar"). */
 export function esSubastaProxima(subasta) {
