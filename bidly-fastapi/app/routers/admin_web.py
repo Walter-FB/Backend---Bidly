@@ -83,7 +83,16 @@ PAGE = r"""<!doctype html>
         Cada pieza conserva su base y el total es la suma.</p>
       <div class="grid2">
         <input id="col-nombre" placeholder="Nombre del catálogo (ej: Colección Pérez)">
-        <select id="col-sub"></select>
+        <select id="col-sub" onchange="colSubChange()"></select>
+      </div>
+      <div id="col-nueva" style="display:none;border:1px dashed var(--blueDark);border-radius:9px;padding:10px;margin-top:4px">
+        <div class="muted" style="margin-bottom:4px"><b>Nueva subasta para este catálogo</b> — fecha opcional (vacía = "a confirmar"):</div>
+        <div class="grid2">
+          <input id="cn-fecha" type="date"><input id="cn-hora" type="time" value="15:00">
+          <select id="cn-cat"><option>comun</option><option>especial</option><option>plata</option><option>oro</option><option>platino</option></select>
+          <select id="cn-mon"><option value="pesos">Pesos</option><option value="dolares">Dólares</option></select>
+        </div>
+        <input id="cn-ubi" placeholder="Ubicación"><input id="cn-subastador" placeholder="ID subastador (empleado/persona)" value="16">
       </div>
       <div id="col-items" style="max-height:240px;overflow:auto;margin:8px 0 4px">
         <div class="muted">Cargando bienes…</div>
@@ -166,7 +175,8 @@ async function loadAdm(){
     // se podía asignar un bien a una subasta futura.
     const disp=SUBS.filter(s=>!(s.estado==='cerrada' && (s.totalItems||0)>0 && (s.itemsPendientes||0)===0));
     const cs=document.getElementById('col-sub');
-    if(cs)cs.innerHTML=disp.map(s=>'<option value="'+s.identificador+'">'+subLabel(s)+'</option>').join('');
+    if(cs){cs.innerHTML=disp.map(s=>'<option value="'+s.identificador+'">'+subLabel(s)+'</option>').join('')
+      +'<option value="nueva">➕ Crear una subasta nueva para este catálogo…</option>';colSubChange();}
     const ci=document.getElementById('col-items');if(ci)ci.innerHTML=colCandidatos(adm);
     if(!adm.length){el.innerHTML='<p class="muted">No hay solicitudes.</p>';recomputeCol();return}
     el.innerHTML=adm.map(a=>admCard(a,disp)).join('');recomputeCol()}
@@ -240,19 +250,33 @@ function recomputeCol(){
   const t=document.getElementById('col-total');if(t)t.textContent='Total: $'+total.toLocaleString('es-AR');
   const sel=document.getElementById('col-sel');if(sel)sel.innerHTML=n?(n+' bien(es)'+(duenios.size>1?' · <span style="color:var(--red)">⚠ distintos dueños</span>':'')):'Nada seleccionado.';
 }
+function colSubChange(){const v=(document.getElementById('col-sub')||{}).value;
+  const f=document.getElementById('col-nueva');if(f)f.style.display=(v==='nueva')?'':'none';}
 async function crearColeccion(){
   const nombre=(document.getElementById('col-nombre').value||'').trim();
-  const su=+document.getElementById('col-sub').value;
+  const sel=document.getElementById('col-sub').value;
   const modo=(document.querySelector('input[name=col-modo]:checked')||{}).value||'individual';
   const items=[];const duenios=new Set();
   _colChecks().forEach(chk=>{if(chk.checked){const id=+chk.id.slice(6);const vb=+((document.getElementById('colvb'+id)||{}).value||0);items.push({admisionId:id,valorBase:vb});duenios.add(chk.getAttribute('data-duenio'));}});
   if(!nombre)return toast('Poné un nombre para el catálogo',false);
-  if(!su)return toast('Elegí una subasta para el catálogo',false);
+  if(!sel)return toast('Elegí una subasta para el catálogo',false);
   if(items.length<2)return toast('Elegí al menos 2 bienes',false);
   if(duenios.size>1)return toast('El catálogo debe ser de un solo dueño',false);
   if(items.some(it=>!it.valorBase||it.valorBase<=0))return toast('Cada pieza necesita una base > 0',false);
-  try{await api('/admisiones/coleccion','POST',{subastaId:su,nombreColeccion:nombre,items:items,ventaModo:modo});
-    toast('Catálogo creado ('+items.length+' piezas'+(modo==='bloque'?' · única venta':' · pieza por pieza')+')');loadAdm()}catch(e){toast(e.message,false)}
+  try{
+    let su;
+    if(sel==='nueva'){
+      // Gestión completa en un solo flujo: crea la subasta acá mismo y le cuelga el catálogo.
+      const f=document.getElementById('cn-fecha').value,h=document.getElementById('cn-hora').value;
+      const subastador=+document.getElementById('cn-subastador').value;
+      if(!subastador)return toast('ID de subastador para la subasta nueva',false);
+      const nueva=await api('/subastas','POST',{fecha:f||null,hora:(f&&h)?h+':00':null,estado:'cerrada',
+        subastador:subastador,categoria:document.getElementById('cn-cat').value,
+        moneda:document.getElementById('cn-mon').value,ubicacion:document.getElementById('cn-ubi').value});
+      su=nueva.identificador;
+    }else{su=+sel;}
+    await api('/admisiones/coleccion','POST',{subastaId:su,nombreColeccion:nombre,items:items,ventaModo:modo});
+    toast('Catálogo creado en la subasta #'+su+' ('+items.length+' piezas'+(modo==='bloque'?' · única venta':' · pieza por pieza')+')');loadAdm()}catch(e){toast(e.message,false)}
 }
 
 // ── POSTORES ──
@@ -322,6 +346,9 @@ async function subCard(s){
   if(esProx) acciones='<div style="margin-top:8px"><button class="act b-green" onclick="setEstado('+s.identificador+',\'abierta\')">▶ Abrir subasta (arranca el remate)</button></div>';
   else if(estLbl==='EN VIVO') acciones='<div style="margin-top:8px"><button class="act b-red" onclick="setEstado('+s.identificador+',\'cerrada\')">■ Cerrar ahora (adjudica lo pendiente)</button></div>';
   else if(ab) acciones='<div style="margin-top:8px"><button class="act b-ghost" onclick="setEstado('+s.identificador+',\'cerrada\')">Cerrar</button></div>';
+  else acciones='<div style="margin-top:8px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">'
+    +'<button class="act b-ghost" onclick="reabrirSub('+s.identificador+')">↻ Reabrir subasta</button>'
+    +'<span class="muted">Vuelven a venta las piezas compradas por la empresa (las ganadas por postores no se tocan).</span></div>';
   return '<div class="card"><div class="row"><div><div class="title">'+esc(s.titulo||('Subasta #'+s.identificador))+'</div>'
     +'<div class="muted">#'+s.identificador+' · '+esc(s.categoria||'—')+' · '+esc(s.moneda||'pesos')+' · '+total+' ítems</div></div>'
     +'<div style="display:flex;gap:6px;align-items:center">'
@@ -330,6 +357,10 @@ async function subCard(s){
     +proceso+acciones+items+'</div>';
 }
 async function setEstado(id,e){try{await api('/subastas/'+id+'/estado','PATCH',{estado:e});toast('Subasta '+(e==='abierta'?'abierta':'cerrada'));loadSub()}catch(x){toast(x.message,false)}}
+async function reabrirSub(id){
+  if(!confirm('Reabrir la subasta #'+id+':\n\nLas piezas que compró la empresa (sin comprador real) vuelven a estar en venta y el remate arranca de nuevo. Las piezas ganadas por postores NO se tocan.\n\n¿Continuar?'))return;
+  await setEstado(id,'abierta');
+}
 async function adjudicar(itemId){try{await api('/items/'+itemId+'/adjudicar','PATCH',{});toast('Ítem adjudicado');loadSub()}catch(e){toast(e.message,false)}}
 
 // ── REEMBOLSOS ──

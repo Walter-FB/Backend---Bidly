@@ -80,11 +80,23 @@ function useCountdown(segundosRestantes) {
 // ─── AUCTION CARD ─────────────────────────────────────────────────────────────
 export function AuctionCard({ a, onPress }) {
   const viva = esSubastaEnVivo(a);
+  const proxima = !viva && esSubastaProxima(a);
+  const finalizada = !viva && !proxima && esSubastaFinalizada(a);
   const restante = useCountdown(a.segundosRestantes);
   const tiempoLabel = viva && restante != null ? formatDuracion(restante) : a.time;
   return (
     <Card el style={{ padding: 14 }}>
       {viva && <LiveBadge style={{ marginBottom: 10 }} />}
+      {proxima && (
+        <View style={{ flexDirection: 'row', marginBottom: 10 }}>
+          <Tag label="PRÓXIMAMENTE" color={colors.gold} />
+        </View>
+      )}
+      {finalizada && (
+        <View style={{ flexDirection: 'row', marginBottom: 10 }}>
+          <Tag label="FINALIZADA" color={colors.muted} />
+        </View>
+      )}
       <View style={{ flexDirection: 'row', gap: 12 }}>
         <ImgBox style={{ width: 74, height: 74 }} size={26} src={a.portadaUrl} />
         <View style={{ flex: 1 }}>
