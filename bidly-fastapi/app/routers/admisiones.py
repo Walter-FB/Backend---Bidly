@@ -285,15 +285,23 @@ def aprobar_duenio(id: int, body: AprobarDuenioRequest = AprobarDuenioRequest(),
         db.commit()
         return _to_dict(a, db)
 
-    # Consigna: el bien se incluye en una subasta FUTURA. Si el remate ya está en
-    # curso, la pieza no puede sumarse a mitad de la subasta (además rompería la
-    # base total en modo única venta). No aceptado a tiempo = no entra.
+    # Consigna: el bien no puede sumarse "a mitad" de un remate ya en marcha. Pero
+    # "abierta" en la DB NO alcanza: una subasta recién creada/programada (fecha futura,
+    # sin haber rematado nada) también está 'abierta'. Solo bloqueamos si el remate YA
+    # empezó a ADJUDICAR piezas (alguna vendida) — ahí sí entraría a mitad del remate.
     sub_actual = db.query(Subasta).filter(Subasta.identificador == a.subasta).first()
     if sub_actual and sub_actual.estado == "abierta":
-        raise HTTPException(409, detail={
-            "message": "La subasta ya está en curso: la pieza no puede entrar a mitad del remate. "
-                       "La empresa la reasignará a una futura subasta.",
-            "code": "SUBASTA_EN_CURSO"})
+        ya_vendio = (
+            db.query(ItemCatalogo)
+            .join(Catalogo, ItemCatalogo.catalogo == Catalogo.identificador)
+            .filter(Catalogo.subasta == a.subasta, ItemCatalogo.subastado == "si")
+            .first()
+        )
+        if ya_vendio:
+            raise HTTPException(409, detail={
+                "message": "El remate de esta subasta ya arrancó (hay piezas vendidas): "
+                           "no se puede sumar a mitad. La empresa la reasignará a una futura subasta.",
+                "code": "SUBASTA_EN_CURSO"})
 
     # Buscar (o crear) el catálogo de la subasta y agregar el ítem. Si el bien viene
     # de una colección, el catálogo lleva su nombre (visible en el panel y el Home).
@@ -458,10 +466,19 @@ def crear_coleccion(body: ColeccionRequest, db: Session = Depends(get_db)):
     sub = db.query(Subasta).filter(Subasta.identificador == body.subastaId).first()
     if not sub:
         raise HTTPException(404, "Subasta no encontrada")
+    # Solo bloqueamos si el remate ya vendió alguna pieza (ahí sí estaría "en curso");
+    # una subasta abierta pero sin nada rematado todavía acepta armar el catálogo.
     if sub.estado == "abierta":
-        raise HTTPException(409, detail={
-            "message": "No se puede armar un catálogo sobre una subasta ya en curso.",
-            "code": "SUBASTA_EN_CURSO"})
+        ya_vendio = (
+            db.query(ItemCatalogo)
+            .join(Catalogo, ItemCatalogo.catalogo == Catalogo.identificador)
+            .filter(Catalogo.subasta == body.subastaId, ItemCatalogo.subastado == "si")
+            .first()
+        )
+        if ya_vendio:
+            raise HTTPException(409, detail={
+                "message": "El remate de esta subasta ya arrancó (hay piezas vendidas): no se puede armar el catálogo.",
+                "code": "SUBASTA_EN_CURSO"})
     if not body.items:
         raise HTTPException(422, detail={"message": "La colección no tiene ítems", "code": "SIN_ITEMS"})
 
