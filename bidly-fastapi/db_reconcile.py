@@ -86,7 +86,7 @@ DDL = [
             identificador serial PRIMARY KEY,
             cliente       integer REFERENCES clientes (identificador),
             pujo          integer REFERENCES pujos (identificador),
-            importe       numeric(12,2),
+            importe       numeric(18,2),
             pagada        varchar DEFAULT 'no',
             fechagenerada date,
             fecha_limite  timestamp
@@ -166,9 +166,9 @@ DDL = [
             registro        integer PRIMARY KEY REFERENCES registrodesubasta (identificador),
             estado          varchar DEFAULT 'pendiente',
             medio_pago      integer REFERENCES mediosdepago (identificador),
-            importe_total   numeric(12,2),
+            importe_total   numeric(18,2),
             fecha_pago      timestamp,
-            envio           numeric(12,2),
+            envio           numeric(18,2),
             direccion_envio varchar,
             retiro_personal varchar DEFAULT 'no'
         );
@@ -217,6 +217,11 @@ ALTERS = [
     "ALTER TABLE admisiones ADD COLUMN IF NOT EXISTS alerta_origen_en timestamp;",
     # Payouts: costo de la cobertura premium descontado del cobro.
     "ALTER TABLE payouts ADD COLUMN IF NOT EXISTS premium numeric(18,2);",
+    # Ampliar montos a 18,2 (como pujos/registrodesubasta/payouts): con 12,2 (~10 mil
+    # millones) desbordaba al cerrar una subasta con puja grande → 500 y quedaba en vivo.
+    "ALTER TABLE registro_pago ALTER COLUMN importe_total TYPE numeric(18,2);",
+    "ALTER TABLE registro_pago ALTER COLUMN envio TYPE numeric(18,2);",
+    "ALTER TABLE multas ALTER COLUMN importe TYPE numeric(18,2);",
 ]
 
 BACKFILL_PRODUCTO_ESTADO = """

@@ -44,7 +44,8 @@ class Multa(Base):
     identificador = Column(Integer, primary_key=True, autoincrement=True)
     cliente       = Column(Integer, ForeignKey("clientes.identificador"))
     pujo          = Column(Integer, ForeignKey("pujos.identificador"))
-    importe       = Column(Numeric(precision=12, scale=2))
+    # 18,2 para no desbordar con pujas grandes (igual que pujos/registrodesubasta).
+    importe       = Column(Numeric(precision=18, scale=2))
     pagada        = Column(String, default="no")
     fechagenerada = Column(Date)
     # Vencimiento de las 72hs para presentar los fondos. Pasado este límite con la
@@ -58,9 +59,11 @@ class RegistroPago(Base):
     registro        = Column(Integer, ForeignKey("registrodesubasta.identificador"), primary_key=True)
     estado          = Column(String, default="pendiente")   # 'pendiente' | 'pagado' | 'impago'
     medio_pago      = Column(Integer, ForeignKey("mediosdepago.identificador"))
-    importe_total   = Column(Numeric(precision=12, scale=2))
+    # 18,2 (como pujos/registrodesubasta/payouts): con 12,2 desbordaba al cerrar una
+    # subasta con puja grande (importe_total = puja + comisión) → 500 y quedaba clavada.
+    importe_total   = Column(Numeric(precision=18, scale=2))
     fecha_pago      = Column(DateTime)
-    envio           = Column(Numeric(precision=12, scale=2))
+    envio           = Column(Numeric(precision=18, scale=2))
     direccion_envio = Column(String)
     retiro_personal = Column(String, default="no")
 
