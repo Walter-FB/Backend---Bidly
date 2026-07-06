@@ -150,7 +150,7 @@ PAGE = r"""<!doctype html>
 <div class="toast" id="toast"></div>
 <script>
 const API='/api';
-const ADM_ST={solicitada:['A REVISAR','#e6b23a'],en_inspeccion:['EN INSPECCIÓN','#3a8fd6'],propuesta:['PROPUESTA ENVIADA','#e6b23a'],aprobada:['EN SUBASTA','#37d66f'],rechazada:['RECHAZADA','#e23950'],rechazada_duenio:['DEVUELTA','#8a93ab']};
+const ADM_ST={solicitada:['A REVISAR','#e6b23a'],en_inspeccion:['EN INSPECCIÓN','#3a8fd6'],propuesta:['PROPUESTA ENVIADA','#e6b23a'],pendiente_subasta:['ESPERANDO SUBASTA','#3a8fd6'],aprobada:['EN SUBASTA','#37d66f'],rechazada:['RECHAZADA','#e23950'],rechazada_duenio:['DEVUELTA','#8a93ab']};
 let SUBS=[];
 function toast(m,ok=true){const t=document.getElementById('toast');t.textContent=m;t.style.background=ok?'#123a22':'#3a1220';t.style.color=ok?'#37d66f':'#ff8393';t.style.display='block';setTimeout(()=>t.style.display='none',2600)}
 async function api(path,method='GET',body){const o={method,headers:{'Content-Type':'application/json'}};if(body!==undefined)o.body=JSON.stringify(body);const r=await fetch(API+path,o);const tx=await r.text();let d=null;try{d=tx?JSON.parse(tx):null}catch(e){}if(!r.ok)throw new Error((d&&(d.message||d.error))||('HTTP '+r.status));return d}
@@ -178,7 +178,7 @@ function subLabel(s){return '#'+s.identificador+' · '+(s.estado==='abierta'?'AB
 // Lista de bienes candidatos a agrupar en una colección — TODO en la misma tarjeta,
 // así se marcan varios de una. Cada fila: check + nombre + base editable.
 function colCandidatos(adm){
-  const elig=(adm||[]).filter(a=>!['rechazada','rechazada_duenio'].includes(a.estado));
+  const elig=(adm||[]).filter(a=>!['rechazada','rechazada_duenio','aprobada'].includes(a.estado));
   if(!elig.length)return '<div class="muted">No hay bienes para agrupar todavía.</div>';
   return elig.map(a=>{
     const nombre=esc((a.producto&&a.producto.titulo)||('Producto #'+(a.producto&&a.producto.identificador)));
@@ -216,7 +216,8 @@ function admCard(a,disp){
        +'<div class="grid2"><input id="pf'+id+'" type="date"><input id="ph'+id+'" type="time" value="15:00"></div></div>'
        +'<button class="act b-green" onclick="proponer('+id+')">Aceptar y proponer</button>'
        +rechazoBox(a);
-  } else if(a.estado==='propuesta'){ acc='<p class="muted">Propuesto: base $'+esc(a.valorBase)+' · comisión $'+esc(a.comision)+' · subasta #'+esc(a.subastaId)+' · fecha: '+esc((a.subasta&&a.subasta.fecha)||'a confirmar')+' — esperando al dueño.</p>'; }
+  } else if(a.estado==='propuesta'){ acc='<p class="muted">Propuesto: base $'+esc(a.valorBase)+' · comisión $'+esc(a.comision)+(a.subastaId?' · subasta #'+esc(a.subastaId):' · <b>sin asignar</b>')+' · fecha: '+esc((a.subasta&&a.subasta.fecha)||'a confirmar')+' — esperando al dueño.</p>'; }
+  else if(a.estado==='pendiente_subasta'){ acc='<p class="muted" style="color:var(--blue)">✔ El dueño aceptó la tasación (base $'+esc(a.valorBase)+'). Metelo en una subasta desde el armador de arriba (aparece en la lista para marcar).</p>'; }
   else if(a.estado==='rechazada'){ acc='<p class="muted" style="color:var(--red)">Motivo: '+esc(a.observacion)+'</p>'; }
   return '<div class="card"><div class="row"><div><div class="title">'+esc(a.producto&&a.producto.titulo||('Producto #'+(a.producto&&a.producto.identificador)))+'</div>'
     +'<div class="muted">#'+a.identificador+' · dueño '+a.duenio+' · '+(a.producto&&a.producto.fotos||0)+' fotos · propiedad:'+esc(a.declaraPropiedad)+' · origen:'+esc(a.declaraOrigen)+'</div>'

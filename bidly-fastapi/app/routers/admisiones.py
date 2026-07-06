@@ -116,6 +116,32 @@ def _asignar_ubicacion(producto_id: int, deposito: Optional[str], db: Session) -
     db.flush()
 
 
+def _incluir_en_catalogo(a: Admision, db: Session) -> None:
+    """Crea (o encuentra) el catálogo de la subasta de la admisión y le agrega el ítem
+    con su valor base y comisión. Si el bien viene de un catálogo con nombre, el
+    catálogo lo adopta. (Reutilizado al asignar un bien YA aceptado a una subasta.)"""
+    nombre_cat = (a.nombre_coleccion if (a.es_coleccion == "si" and a.nombre_coleccion) else None)
+    catalogo = db.query(Catalogo).filter(Catalogo.subasta == a.subasta).first()
+    if not catalogo:
+        catalogo = Catalogo(
+            descripcion=nombre_cat or f"Catálogo subasta {a.subasta}",
+            subasta=a.subasta, responsable=EMPLEADO_SISTEMA,
+        )
+        db.add(catalogo)
+        db.flush()
+    elif nombre_cat and (catalogo.descripcion or "").startswith("Catálogo subasta"):
+        catalogo.descripcion = nombre_cat
+    valor = Decimal(str(a.valor_base or 0))
+    comision = Decimal(str(a.comision)) if a.comision is not None else valor * Decimal("0.10")
+    db.add(ItemCatalogo(
+        catalogo=catalogo.identificador,
+        producto=a.producto,
+        preciobase=valor,
+        comision=comision,
+        subastado="no",
+    ))
+
+
 def _to_dict(a: Admision, db: Session) -> dict:
     prod = db.query(Producto).filter(Producto.identificador == a.producto).first()
     n_fotos = db.query(Foto).filter(Foto.producto == a.producto).count() if a.producto else 0
@@ -223,8 +249,6 @@ def aprobar_duenio(id: int, body: AprobarDuenioRequest = AprobarDuenioRequest(),
     a = _get(id, db)
     if a.estado != "propuesta":
         raise HTTPException(409, detail={"message": "No hay una propuesta pendiente para aceptar", "code": "SIN_PROPUESTA"})
-    if not a.subasta:
-        raise HTTPException(409, detail={"message": "La admisión no tiene subasta asignada", "code": "SIN_SUBASTA"})
 
     # Gate B: el dinero de lo vendido va a una cuenta a la vista que el dueño debe
     # declarar antes del inicio de la subasta (enunciado). Exigimos al menos una
@@ -238,6 +262,28 @@ def aprobar_duenio(id: int, body: AprobarDuenioRequest = AprobarDuenioRequest(),
             "message": "Antes de aceptar necesitás declarar una cuenta de cobro donde recibir el dinero de la venta.",
             "code": "SIN_CUENTA_COBRO",
         })
+
+    # Sin subasta asignada: el dueño acepta la TASACIÓN. El bien se asegura y se
+    # deposita igual (independiente de la subasta) y queda 'pendiente_subasta', a la
+    # espera de que la empresa lo incluya en una subasta desde el armador.
+    if not a.subasta:
+        valor = Decimal(str(a.valor_base or 0))
+        premium = bool(body.garantiaPremium)
+        a.garantia_premium = "si" if premium else "no"
+        _asegurar_producto(a.producto, valor, db, premium=premium)
+        _asignar_ubicacion(a.producto, a.direccion_envio, db)
+        _sync_producto_estado(a.producto, "aceptado", None, db)
+        a.estado = "pendiente_subasta"
+        a.actualizado_en = datetime.utcnow()
+        db.commit()
+        notificacion_service.crear(
+            a.duenio, "seguro",
+            f"Aceptaste la tasación de tu bien (base ${valor}). Quedó asegurado y a la espera "
+            "de ser incluido en una subasta; te avisaremos la fecha.",
+            db,
+        )
+        db.commit()
+        return _to_dict(a, db)
 
     # Consigna: el bien se incluye en una subasta FUTURA. Si el remate ya está en
     # curso, la pieza no puede sumarse a mitad de la subasta (además rompería la
@@ -412,6 +458,10 @@ def crear_coleccion(body: ColeccionRequest, db: Session = Depends(get_db)):
     sub = db.query(Subasta).filter(Subasta.identificador == body.subastaId).first()
     if not sub:
         raise HTTPException(404, "Subasta no encontrada")
+    if sub.estado == "abierta":
+        raise HTTPException(409, detail={
+            "message": "No se puede armar un catálogo sobre una subasta ya en curso.",
+            "code": "SUBASTA_EN_CURSO"})
     if not body.items:
         raise HTTPException(422, detail={"message": "La colección no tiene ítems", "code": "SIN_ITEMS"})
 
@@ -440,15 +490,24 @@ def crear_coleccion(body: ColeccionRequest, db: Session = Depends(get_db)):
     resultado = []
     duenios = set()
     total = Decimal("0")
+    hay_pendientes_aceptar = False
     for a in admisiones:
-        a.estado = "propuesta"
         it = next(x for x in body.items if x.admisionId == a.identificador)
+        ya_aceptado = (a.estado == "pendiente_subasta")  # el dueño ya aceptó la tasación
         a.valor_base = it.valorBase
         a.comision = it.comision if it.comision is not None else Decimal(str(it.valorBase)) * Decimal("0.10")
         a.subasta = body.subastaId
         a.es_coleccion = "si"
         a.nombre_coleccion = body.nombreColeccion
         a.actualizado_en = datetime.utcnow()
+        if ya_aceptado:
+            # Ya aceptado por el dueño: se incluye directo en el catálogo y queda aprobado.
+            _incluir_en_catalogo(a, db)
+            _sync_producto_estado(a.producto, "aceptado", None, db)
+            a.estado = "aprobada"
+        else:
+            a.estado = "propuesta"  # el dueño acepta la propuesta después
+            hay_pendientes_aceptar = True
         total += Decimal(str(it.valorBase or 0))
         duenios.add(a.duenio)
         resultado.append(a)
@@ -460,11 +519,13 @@ def crear_coleccion(body: ColeccionRequest, db: Session = Depends(get_db)):
         "Se venden todas juntas en una única venta (el mejor postor se lleva todo)."
         if modo == "bloque" else "Se rematan pieza por pieza."
     )
+    cierre = ("Aceptá o rechazá las propuestas pendientes desde la app."
+              if hay_pendientes_aceptar else "Ya están confirmados y en el catálogo.")
     for d in duenios:
         notificacion_service.crear(
             d, "admision",
             f"Tus {len(resultado)} bienes se agruparon en el catálogo \"{body.nombreColeccion}\" "
-            f"(base total ${total}). {detalle_modo} Aceptá o rechazá las propuestas desde la app.",
+            f"(base total ${total}). {detalle_modo} {cierre}",
             db,
         )
     db.commit()
