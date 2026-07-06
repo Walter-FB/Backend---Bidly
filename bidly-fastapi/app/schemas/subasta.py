@@ -10,7 +10,8 @@ class SubastaCreate(BaseModel):
     fecha: Optional[date] = None
     hora: Optional[time] = None
     estado: Optional[str] = "cerrada"
-    subastador: int
+    # Opcional: sin subastador, el backend asigna un rematador de la casa.
+    subastador: Optional[int] = None
     ubicacion: Optional[str] = None
     capacidadAsistentes: Optional[int] = None
     tieneDeposito: Optional[str] = None

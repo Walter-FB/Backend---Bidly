@@ -92,7 +92,8 @@ PAGE = r"""<!doctype html>
           <select id="cn-cat"><option>comun</option><option>especial</option><option>plata</option><option>oro</option><option>platino</option></select>
           <select id="cn-mon"><option value="pesos">Pesos</option><option value="dolares">Dólares</option></select>
         </div>
-        <input id="cn-ubi" placeholder="Ubicación"><input id="cn-subastador" placeholder="ID subastador (empleado/persona)" value="16">
+        <input id="cn-ubi" placeholder="Ubicación">
+        <div class="muted">El rematador (martillero de la casa) se asigna solo.</div>
       </div>
       <div id="col-items" style="max-height:240px;overflow:auto;margin:8px 0 4px">
         <div class="muted">Cargando bienes…</div>
@@ -115,7 +116,8 @@ PAGE = r"""<!doctype html>
     <div id="adm"></div>
   </section>
   <section id="s-pos" style="display:none">
-    <p class="hint">Postores registrados pendientes. Asigná categoría y admitilos.
+    <p class="hint">Todos los postores registrados. Admití a los <b>pendientes</b> con su categoría; a los ya
+      <b>admitidos</b> les podés ajustar la categoría cuando quieras (común → especial → plata → oro → platino).
       <button class="refresh" onclick="loadPos()">↻ Actualizar</button></p>
     <div id="pos"></div>
   </section>
@@ -132,7 +134,8 @@ PAGE = r"""<!doctype html>
         <select id="ns-cat"><option>comun</option><option>especial</option><option>plata</option><option>oro</option><option>platino</option></select>
         <select id="ns-mon"><option value="pesos">Pesos</option><option value="dolares">Dólares</option></select>
       </div>
-      <input id="ns-ubi" placeholder="Ubicación"><input id="ns-subastador" placeholder="ID subastador (empleado/persona)" value="16">
+      <input id="ns-ubi" placeholder="Ubicación">
+      <div class="muted" style="margin-bottom:4px">El rematador (martillero de la casa) se asigna solo.</div>
       <button class="act b-blue" onclick="crearSub()">Crear subasta</button>
     </div>
     <div id="sub"></div>
@@ -266,32 +269,42 @@ async function crearColeccion(){
   try{
     let su;
     if(sel==='nueva'){
-      // Gestión completa en un solo flujo: crea la subasta acá mismo y le cuelga el catálogo.
+      // Gestión completa en un solo flujo: crea la subasta acá mismo y le cuelga el
+      // catálogo (el rematador lo asigna el backend solo).
       const f=document.getElementById('cn-fecha').value,h=document.getElementById('cn-hora').value;
-      const subastador=+document.getElementById('cn-subastador').value;
-      if(!subastador)return toast('ID de subastador para la subasta nueva',false);
       const nueva=await api('/subastas','POST',{fecha:f||null,hora:(f&&h)?h+':00':null,estado:'cerrada',
-        subastador:subastador,categoria:document.getElementById('cn-cat').value,
+        categoria:document.getElementById('cn-cat').value,
         moneda:document.getElementById('cn-mon').value,ubicacion:document.getElementById('cn-ubi').value});
       su=nueva.identificador;
     }else{su=+sel;}
     await api('/admisiones/coleccion','POST',{subastaId:su,nombreColeccion:nombre,items:items,ventaModo:modo});
-    toast('Catálogo creado en la subasta #'+su+' ('+items.length+' piezas'+(modo==='bloque'?' · única venta':' · pieza por pieza')+')');loadAdm()}catch(e){toast(e.message,false)}
+    toast('✔ Listo: subasta #'+su+' con el catálogo ('+items.length+' piezas'+(modo==='bloque'?' · única venta':'')+'). Cuando el dueño acepte, abrila desde Subastas.');loadAdm()}catch(e){toast(e.message,false)}
 }
 
 // ── POSTORES ──
 async function loadPos(){const el=document.getElementById('pos');el.innerHTML='Cargando…';
-  try{const ps=await api('/clientes/pendientes/lista');if(!ps.length){el.innerHTML='<p class="muted">No hay postores pendientes.</p>';return}
-    el.innerHTML=ps.map(p=>'<div class="card"><div class="row"><div><div class="title">'+esc(p.nombre||'Postor')+'</div><div class="muted">#'+p.identificador+' · '+esc(p.email||'—')+'</div></div><span class="st" style="background:var(--gold)">PENDIENTE</span></div>'
-      +'<select id="cat'+p.identificador+'"><option>comun</option><option>especial</option><option>plata</option><option>oro</option><option>platino</option></select>'
-      +'<button class="act b-green" onclick="admitir('+p.identificador+')">Admitir con categoría</button></div>').join('')}
+  try{const ps=await api('/clientes/todos/lista');if(!ps.length){el.innerHTML='<p class="muted">No hay postores registrados.</p>';return}
+    // Pendientes primero (son los que requieren acción), después los admitidos.
+    ps.sort((a,b)=>(a.admitido==='si')-(b.admitido==='si'));
+    el.innerHTML=ps.map(p=>{
+      const adm=p.admitido==='si';
+      const opts=['comun','especial','plata','oro','platino'].map(c=>'<option'+(c===(p.categoria||'comun')?' selected':'')+'>'+c+'</option>').join('');
+      return '<div class="card"><div class="row"><div><div class="title">'+esc(p.nombre||'Postor')+'</div>'
+        +'<div class="muted">#'+p.identificador+' · '+esc(p.email||'—')+' · categoría actual: <b>'+esc(p.categoria||'comun')+'</b></div></div>'
+        +'<span class="st" style="background:'+(adm?'var(--green)':'var(--gold)')+';color:#111">'+(adm?'ADMITIDO':'PENDIENTE')+'</span></div>'
+        +'<select id="cat'+p.identificador+'">'+opts+'</select>'
+        +(adm
+          ?'<button class="act b-blue" onclick="cambiarCat('+p.identificador+')">Actualizar categoría</button>'
+          :'<button class="act b-green" onclick="admitir('+p.identificador+')">Admitir con categoría</button>')
+        +'</div>';
+    }).join('')}
   catch(e){el.innerHTML='<p class="muted">Error: '+esc(e.message)+'</p>'}}
 async function admitir(id){const cat=document.getElementById('cat'+id).value;try{await api('/clientes/'+id+'/categoria','PATCH',{categoria:cat});await api('/clientes/'+id+'/admitido','PATCH',{admitido:'si'});toast('Postor admitido');loadPos()}catch(e){toast(e.message,false)}}
+async function cambiarCat(id){const cat=document.getElementById('cat'+id).value;try{await api('/clientes/'+id+'/categoria','PATCH',{categoria:cat});toast('Categoría actualizada a '+cat);loadPos()}catch(e){toast(e.message,false)}}
 
 // ── SUBASTAS ──
 async function crearSub(){const f=document.getElementById('ns-fecha').value,h=document.getElementById('ns-hora').value;
-  const b={fecha:f||null,hora:(f&&h)?h+':00':null,estado:'cerrada',subastador:+document.getElementById('ns-subastador').value,categoria:document.getElementById('ns-cat').value,moneda:document.getElementById('ns-mon').value,ubicacion:document.getElementById('ns-ubi').value};
-  if(!b.subastador)return toast('ID de subastador',false);
+  const b={fecha:f||null,hora:(f&&h)?h+':00':null,estado:'cerrada',categoria:document.getElementById('ns-cat').value,moneda:document.getElementById('ns-mon').value,ubicacion:document.getElementById('ns-ubi').value};
   try{await api('/subastas','POST',b);toast(f?'Subasta creada':'Subasta creada sin fecha (a confirmar)');loadSub()}catch(e){toast(e.message,false)}}
 async function loadSub(){const el=document.getElementById('sub');el.innerHTML='Cargando…';
   try{const subs=await api('/subastas');SUBS=subs||[];if(!subs.length){el.innerHTML='<p class="muted">No hay subastas. Creá la primera acá arriba.</p>';return}

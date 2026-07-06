@@ -73,6 +73,14 @@ def listar_pendientes(db: Session = Depends(get_db)):
     return [_enrich_cliente(c, db) for c in clientes]
 
 
+@router.get("/todos/lista")
+def listar_todos(db: Session = Depends(get_db)):
+    """TODOS los postores (pendientes y admitidos), para gestionarlos desde el
+    panel: admitir a los nuevos y ajustar la categoría de los ya admitidos."""
+    clientes = db.query(Cliente).order_by(Cliente.identificador.desc()).all()
+    return [_enrich_cliente(c, db) for c in clientes]
+
+
 @router.get("/{id}")
 def get_cliente(id: int, db: Session = Depends(get_db)):
     c = db.query(Cliente).filter(Cliente.identificador == id).first()

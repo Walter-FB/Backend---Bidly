@@ -34,6 +34,20 @@ def _ensure_subastador(persona_id: int, db: Session) -> int:
     return persona_id
 
 
+def _subastador_auto(db: Session) -> int:
+    """Rematador por defecto cuando no se indica uno: el primer subastador
+    registrado, o se da de alta como subastador al primer empleado de la casa.
+    (El subastador es el martillero que dirige el remate — staff de Bidly,
+    NO el dueño de los bienes.)"""
+    from app.models.subastador import Subastador
+    from app.models.empleado import Empleado, EMPLEADO_SISTEMA
+    s = db.query(Subastador).order_by(Subastador.identificador).first()
+    if s:
+        return s.identificador
+    emp = db.query(Empleado).order_by(Empleado.identificador).first()
+    return _ensure_subastador(emp.identificador if emp else EMPLEADO_SISTEMA, db)
+
+
 @router.get("")
 @router.get("/")
 def listar_subastas(
@@ -64,12 +78,14 @@ def get_subasta(id: int, db: Session = Depends(get_db)):
 @router.post("", status_code=201)
 @router.post("/", status_code=201)
 def crear_subasta(body: SubastaCreate, db: Session = Depends(get_db)):
-    _ensure_subastador(body.subastador, db)
+    subastador_id = (
+        _ensure_subastador(body.subastador, db) if body.subastador else _subastador_auto(db)
+    )
     s = Subasta(
         fecha=body.fecha,
         hora=body.hora,
         estado=body.estado or "cerrada",
-        subastador=body.subastador,
+        subastador=subastador_id,
         ubicacion=body.ubicacion,
         capacidadasistentes=body.capacidadAsistentes,
         tienedeposito=body.tieneDeposito,
