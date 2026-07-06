@@ -955,29 +955,37 @@ export function MisProductosScreen({ navigation }) {
               )}
               {estado === 'propuesta' && a && (
                 <View style={{ gap: 4 }}>
-                  <Text style={{ color: colors.gold, fontSize: 12.5, fontWeight: '700' }}>Bidly te propuso un precio. Aceptalo para entrar a la subasta:</Text>
+                  <Text style={{ color: colors.gold, fontSize: 12.5, fontWeight: '700' }}>
+                    {a.subasta ? 'Bidly te propuso un precio. Aceptalo para entrar a la subasta:' : 'Bidly tasó tu bien. Cuando lo asigne a una subasta vas a poder aceptar:'}
+                  </Text>
                   <Row k="Valor base" v={`$${Number(a.valorBase).toLocaleString('es-AR')}`} />
                   <Row k="Comisión" v={`$${Number(a.comision).toLocaleString('es-AR')}`} />
                   <Row k="Fecha de la subasta" v={a.subasta?.fecha ? `${a.subasta.fecha}${a.subasta.ubicacion ? ' · ' + a.subasta.ubicacion : ''}` : 'A confirmar'} />
-                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 6,
-                    backgroundColor: colors.card, borderRadius: 10, padding: 10 }}>
-                    <View style={{ flex: 1, paddingRight: 8 }}>
-                      <Text style={{ color: '#fff', fontSize: 13, fontWeight: '700' }}>Cobertura Premium Bidly</Text>
-                      <Text style={{ color: colors.muted, fontSize: 11.5 }}>
-                        +5% del valor base (${(Number(a.valorBase) * 0.05).toLocaleString('es-AR')}). Se descuenta de tu cobro al vender.
-                      </Text>
-                    </View>
-                    <Switch
-                      value={!!premiumSel[a.identificador]}
-                      onValueChange={(v) => setPremiumSel((s) => ({ ...s, [a.identificador]: v }))}
-                      trackColor={{ true: colors.blue, false: colors.faint }}
-                      thumbColor="#fff"
-                    />
-                  </View>
-                  <View style={{ flexDirection: 'row', gap: 10, marginTop: 6 }}>
-                    <Btn title="Aceptar" onPress={() => aceptar(a)} disabled={ctrl} style={{ flex: 1 }} />
-                    <Btn title="Rechazar" kind="danger" onPress={() => rechazar(a)} disabled={ctrl} style={{ flex: 1 }} />
-                  </View>
+                  {a.subasta ? (
+                    <>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 6,
+                        backgroundColor: colors.card, borderRadius: 10, padding: 10 }}>
+                        <View style={{ flex: 1, paddingRight: 8 }}>
+                          <Text style={{ color: '#fff', fontSize: 13, fontWeight: '700' }}>Cobertura Premium Bidly</Text>
+                          <Text style={{ color: colors.muted, fontSize: 11.5 }}>
+                            +5% del valor base (${(Number(a.valorBase) * 0.05).toLocaleString('es-AR')}). Se descuenta de tu cobro al vender.
+                          </Text>
+                        </View>
+                        <Switch
+                          value={!!premiumSel[a.identificador]}
+                          onValueChange={(v) => setPremiumSel((s) => ({ ...s, [a.identificador]: v }))}
+                          trackColor={{ true: colors.blue, false: colors.faint }}
+                          thumbColor="#fff"
+                        />
+                      </View>
+                      <View style={{ flexDirection: 'row', gap: 10, marginTop: 6 }}>
+                        <Btn title="Aceptar" onPress={() => aceptar(a)} disabled={ctrl} style={{ flex: 1 }} />
+                        <Btn title="Rechazar" kind="danger" onPress={() => rechazar(a)} disabled={ctrl} style={{ flex: 1 }} />
+                      </View>
+                    </>
+                  ) : (
+                    <Text style={{ color: colors.muted, fontSize: 12, marginTop: 4 }}>⏳ Esperando que la empresa asigne la subasta.</Text>
+                  )}
                 </View>
               )}
             </Card>
@@ -1082,28 +1090,37 @@ export function MisAdmisionesScreen({ navigation }) {
                 {a.estado === 'rechazada' && <Text style={{ color: colors.red, fontSize: 12.5 }}>Motivo: {a.observacion}</Text>}
                 {a.estado === 'propuesta' && (
                   <>
+                    {!a.subasta && (
+                      <Text style={{ color: colors.gold, fontSize: 12.5, fontWeight: '700' }}>Bidly tasó tu bien. Cuando lo asigne a una subasta vas a poder aceptar:</Text>
+                    )}
                     <Row k="Valor base" v={`$${Number(a.valorBase).toLocaleString('es-AR')}`} />
                     <Row k="Comisión" v={`$${Number(a.comision).toLocaleString('es-AR')}`} />
                     <Row k="Fecha de la subasta" v={a.subasta?.fecha ? `${a.subasta.fecha}${a.subasta.ubicacion ? ' · ' + a.subasta.ubicacion : ''}` : 'A confirmar'} />
-                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 6,
-                      backgroundColor: colors.cardEl, borderRadius: 10, padding: 10 }}>
-                      <View style={{ flex: 1, paddingRight: 8 }}>
-                        <Text style={{ color: '#fff', fontSize: 13, fontWeight: '700' }}>Cobertura Premium Bidly</Text>
-                        <Text style={{ color: colors.muted, fontSize: 11.5 }}>
-                          +5% del valor base (${(Number(a.valorBase) * 0.05).toLocaleString('es-AR')}). Se descuenta de tu cobro al vender.
-                        </Text>
-                      </View>
-                      <Switch
-                        value={!!premiumSel[a.identificador]}
-                        onValueChange={(v) => setPremiumSel((s) => ({ ...s, [a.identificador]: v }))}
-                        trackColor={{ true: colors.blue, false: colors.faint }}
-                        thumbColor="#fff"
-                      />
-                    </View>
-                    <View style={{ flexDirection: 'row', gap: 10, marginTop: 6 }}>
-                      <Btn title="Aceptar" onPress={() => aceptar(a)} disabled={ctrl} style={{ flex: 1 }} />
-                      <Btn title="Rechazar" kind="danger" onPress={() => rechazar(a)} disabled={ctrl} style={{ flex: 1 }} />
-                    </View>
+                    {a.subasta ? (
+                      <>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 6,
+                          backgroundColor: colors.cardEl, borderRadius: 10, padding: 10 }}>
+                          <View style={{ flex: 1, paddingRight: 8 }}>
+                            <Text style={{ color: '#fff', fontSize: 13, fontWeight: '700' }}>Cobertura Premium Bidly</Text>
+                            <Text style={{ color: colors.muted, fontSize: 11.5 }}>
+                              +5% del valor base (${(Number(a.valorBase) * 0.05).toLocaleString('es-AR')}). Se descuenta de tu cobro al vender.
+                            </Text>
+                          </View>
+                          <Switch
+                            value={!!premiumSel[a.identificador]}
+                            onValueChange={(v) => setPremiumSel((s) => ({ ...s, [a.identificador]: v }))}
+                            trackColor={{ true: colors.blue, false: colors.faint }}
+                            thumbColor="#fff"
+                          />
+                        </View>
+                        <View style={{ flexDirection: 'row', gap: 10, marginTop: 6 }}>
+                          <Btn title="Aceptar" onPress={() => aceptar(a)} disabled={ctrl} style={{ flex: 1 }} />
+                          <Btn title="Rechazar" kind="danger" onPress={() => rechazar(a)} disabled={ctrl} style={{ flex: 1 }} />
+                        </View>
+                      </>
+                    ) : (
+                      <Text style={{ color: colors.muted, fontSize: 12, marginTop: 4 }}>⏳ Esperando que la empresa asigne la subasta.</Text>
+                    )}
                   </>
                 )}
                 {a.estado === 'aprobada' && (

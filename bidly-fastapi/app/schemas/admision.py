@@ -23,7 +23,9 @@ class RechazarAdmisionRequest(BaseModel):
 class ProponerRequest(BaseModel):
     valorBase: Decimal
     comision: Optional[Decimal] = None
-    subastaId: int
+    # None = tasar el bien y dejarlo SIN ASIGNAR (esperando; se mete a un catálogo
+    # después desde el armador).
+    subastaId: Optional[int] = None
     # Fecha/hora opcionales: si la empresa las manda en la propuesta, se le fijan a
     # la subasta asignada (subastas.fecha). Regla del profe: ≥10 días de anticipación.
     fecha: Optional[date] = None

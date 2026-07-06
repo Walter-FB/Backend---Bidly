@@ -210,20 +210,45 @@ export function ProductoScreen({ navigation, route }) {
 
         {items.length > 0 && (
           <>
-            <SectionLabel>Items del catálogo</SectionLabel>
-            {items.map((item) => (
-              <Card key={item.identificador} el style={{ marginBottom: 10, flexDirection: 'row', gap: 12, alignItems: 'center' }}>
-                <ImgBox style={{ width: 50, height: 50 }} size={18} />
-                <View style={{ flex: 1 }}>
-                  <Display style={{ fontSize: 13 }} numberOfLines={1}>
-                    {item.producto?.descripcionCatalogo || `Item #${item.identificador}`}
-                  </Display>
-                  <Text style={{ color: colors.green, fontSize: 13, fontWeight: '800', marginTop: 2 }}>
-                    {formatImporte(item.precioBase, subasta.moneda)}
-                  </Text>
-                </View>
-              </Card>
-            ))}
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: 18, marginBottom: 6 }}>
+              <Display style={{ fontSize: 14 }}>Ítems del catálogo · {items.length}</Display>
+              <Text style={{ color: colors.muted, fontSize: 12 }}>
+                {ventaBloque ? 'Base total ' : 'Base desde '}
+                <Text style={{ color: colors.green, fontWeight: '800' }}>
+                  {formatImporte(ventaBloque ? basePendiente : precioBase, subasta.moneda)}
+                </Text>
+              </Text>
+            </View>
+            <Text style={{ color: colors.muted, fontSize: 12, marginBottom: 12, lineHeight: 17 }}>
+              {ventaBloque
+                ? '🧺 Única venta: se rematan todas las piezas juntas a un único precio; el mejor postor se lleva todo.'
+                : '🔨 Pieza por pieza: se remata un producto por vez; al cerrarse uno arranca el siguiente.'}
+            </Text>
+            {items.map((item) => {
+              const vendido = item.subastado === 'si';
+              const esActual = itemDestacado && item.identificador === itemDestacado.identificador;
+              const portada = item.producto?.identificador
+                ? `${BASE_URL}/productos/${item.producto.identificador}/portada`
+                : undefined;
+              return (
+                <Card key={item.identificador} el style={{ marginBottom: 10, flexDirection: 'row', gap: 12, alignItems: 'center' }}>
+                  <ImgBox style={{ width: 50, height: 50 }} size={18} src={portada} />
+                  <View style={{ flex: 1 }}>
+                    <Display style={{ fontSize: 13, color: vendido ? colors.muted : colors.text }} numberOfLines={1}>
+                      {item.producto?.descripcionCatalogo || `Item #${item.identificador}`}
+                    </Display>
+                    <Text style={{ color: colors.green, fontSize: 13, fontWeight: '800', marginTop: 2 }}>
+                      {formatImporte(item.precioBase ?? item.preciobase, subasta.moneda)}
+                    </Text>
+                  </View>
+                  {vendido ? (
+                    <Tag label="VENDIDO" color={colors.muted} />
+                  ) : viva && !ventaBloque && esActual ? (
+                    <LiveBadge />
+                  ) : null}
+                </Card>
+              );
+            })}
           </>
         )}
       </ScrollView>
@@ -279,6 +304,8 @@ export function SubastaEnVivoScreen({ navigation, route }) {
     totalPiezas = 1,
   } = route.params || {};
 
+  const [subasta, setSubasta] = useState(null);
+  const [items, setItems] = useState([]);
   const [pujas, setPujas] = useState([]);
   const [asistenteId, setAsistenteId] = useState(null);
   const [accesoError, setAccesoError] = useState(null);
@@ -318,24 +345,42 @@ export function SubastaEnVivoScreen({ navigation, route }) {
     : m.tipo === 'cuenta' ? `Cuenta ${m.banco || ''}`.trim()
     : `Tarjeta ****${(m.numerotarjeta || m.numeroTarjeta || '').slice(-4)}`;
 
-  // Red de seguridad: si el precio base no llegó por parámetros (o llegó en 0),
-  // se recupera del catálogo del servidor — el precio nunca se "pierde" al entrar.
-  const [baseRecuperada, setBaseRecuperada] = useState(null);
+  // Datos vivos del catálogo: traemos la subasta + sus ítems del backend para NO
+  // depender de los params (que se degradan al avanzar de ítem). Así el precio, el
+  // modo de venta, el total y el estado de cada pieza nunca se "pierden" ni quedan en 0.
+  const cargarCatalogo = useCallback(() => {
+    if (!subastaId) return;
+    Promise.all([Subastas.obtener(subastaId), Subastas.catalogos(subastaId)])
+      .then(([s, cat]) => {
+        if (!mounted.current) return;
+        setSubasta(s);
+        setItems(cat || []);
+      })
+      .catch(() => {});
+  }, [subastaId]);
+
   useEffect(() => {
-    if (Number(precioBase) > 0 || !subastaId) return;
-    Subastas.catalogos(subastaId).then((its) => {
-      if (!mounted.current) return;
-      const lista = its || [];
-      const pend = lista.filter((i) => i.subastado !== 'si');
-      if (ventaModo === 'bloque') {
-        setBaseRecuperada(pend.reduce((t, i) => t + Number(i.precioBase ?? i.preciobase ?? 0), 0) || null);
-      } else {
-        const it = lista.find((i) => Number(i.identificador) === Number(itemId)) || pend[0];
-        setBaseRecuperada(Number(it?.precioBase ?? it?.preciobase ?? 0) || null);
-      }
-    }).catch(() => {});
-  }, [subastaId, itemId, precioBase, ventaModo]);
-  const baseRef = Number(precioBase) > 0 ? Number(precioBase) : (baseRecuperada ?? 0);
+    cargarCatalogo();
+    const interval = setInterval(cargarCatalogo, 4000);
+    return () => clearInterval(interval);
+  }, [cargarCatalogo]);
+
+  // Modo de venta y montos derivados de datos vivos (con params como respaldo).
+  const ventaModoLive = subasta?.ventaModo || ventaModo;
+  const pendientes = items.filter((i) => i.subastado !== 'si');
+  const itemActual = items.find((i) => Number(i.identificador) === Number(itemId)) || null;
+  const piezasPendientes = pendientes.length || Number(totalPiezas) || 1;
+  const sumaBasesPend = pendientes.reduce((t, i) => t + Number(i.precioBase ?? i.preciobase ?? 0), 0);
+  const sumaComisionesPend = pendientes.reduce((t, i) => t + Number(i.comision ?? 0), 0);
+  // En bloque la base/comisión de referencia es la SUMA de las piezas pendientes;
+  // en individual, la del ítem que se está rematando ahora.
+  const baseLive = ventaModoLive === 'bloque'
+    ? (sumaBasesPend || Number(precioBase) || 0)
+    : Number(itemActual?.precioBase ?? itemActual?.preciobase ?? precioBase ?? 0);
+  const comisionLive = ventaModoLive === 'bloque'
+    ? (sumaComisionesPend || Number(comision) || 0)
+    : Number(itemActual?.comision ?? comision ?? 0);
+  const baseRef = baseLive > 0 ? baseLive : Number(precioBase) || 0;
 
   // Timer del remate: el ítem tiene 3 min (+15s por puja). Al llegar a 0 se adjudica
   // solo y arranca el siguiente ítem. El reloj se lee de /subastas/{id}/remate.
@@ -364,8 +409,8 @@ export function SubastaEnVivoScreen({ navigation, route }) {
   const irAlSiguienteItem = useCallback(async (listaFinal) => {
     navegado.current = true;
     try {
-      const items = await Subastas.catalogos(subastaId);
-      const siguiente = (items || []).find(
+      const catalogoItems = await Subastas.catalogos(subastaId);
+      const siguiente = (catalogoItems || []).find(
         (it) => it.subastado !== 'si' && Number(it.identificador) !== Number(itemId),
       );
       if (siguiente) {
@@ -376,7 +421,7 @@ export function SubastaEnVivoScreen({ navigation, route }) {
           precioBase: siguiente.precioBase ?? siguiente.preciobase ?? 0,
           titulo: siguiente.producto?.descripcionCatalogo || 'Subasta en vivo',
           comision: siguiente.comision ?? comision,
-          moneda, categoriaSubasta, fecha, hora,
+          moneda, categoriaSubasta, fecha, hora, ventaModo,
         });
         return;
       }
@@ -388,7 +433,7 @@ export function SubastaEnVivoScreen({ navigation, route }) {
       totalPostores: new Set((listaFinal || []).map((p) => p.asistente?.identificador)).size,
       subastaId,
     });
-  }, [subastaId, itemId, comision, moneda, categoriaSubasta, fecha, hora, titulo, navigation]);
+  }, [subastaId, itemId, comision, moneda, categoriaSubasta, fecha, hora, titulo, ventaModo, navigation]);
 
   // Cargar pujas y refrescar cada 5 segundos.
   // Detecta automáticamente cuando el ítem fue adjudicado y navega al resultado.
@@ -473,6 +518,9 @@ export function SubastaEnVivoScreen({ navigation, route }) {
       ? Number(pujaActual) + baseRef * 0.20
       : baseRef * 1.20;
 
+  // Total que pagaría el ganador = puja (o base si nadie pujó) + comisión.
+  const totalAPagar = (pujaActual != null ? Number(pujaActual) : baseRef) + Number(comisionLive || 0);
+
   // Sincronizar el input solo cuando cambia la puja líder (no en cada poll).
   useEffect(() => {
     const top = pujas[0];
@@ -551,15 +599,26 @@ export function SubastaEnVivoScreen({ navigation, route }) {
           )}
         </View>
         <Display style={{ fontSize: 20, marginVertical: 14, lineHeight: 23 }}>{titulo}</Display>
-        {ventaModo === 'bloque' && (
-          <Text style={{ color: colors.gold, fontSize: 12.5, fontWeight: '700', marginTop: -8, marginBottom: 12 }}>
-            🧺 Única venta: pujás por el catálogo completo ({totalPiezas} piezas) — el mejor postor se lleva todo.
-          </Text>
+        {ventaModoLive === 'bloque' ? (
+          <View style={st.modoBanner}>
+            <Text style={st.modoTitle}>🧺 Única venta · catálogo completo</Text>
+            <Text style={st.modoDesc}>
+              Se rematan las {piezasPendientes} piezas juntas a un único precio. El mejor postor se lleva TODO el catálogo.
+            </Text>
+          </View>
+        ) : (
+          <View style={st.modoBanner}>
+            <Text style={st.modoTitle}>🔨 Remate pieza por pieza</Text>
+            <Text style={st.modoDesc}>
+              Se subasta un producto por vez; al cerrarse uno arranca el siguiente automáticamente.
+              {piezasPendientes > 0 ? ` Quedan ${piezasPendientes} ${piezasPendientes === 1 ? 'pieza' : 'piezas'} por rematar.` : ''}
+            </Text>
+          </View>
         )}
 
         <Card el style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' }}>
           <View>
-            <Text style={{ color: colors.muted, fontSize: 12, marginBottom: 4 }}>{ventaModo === 'bloque' ? 'Base total del catálogo' : 'Precio base'}</Text>
+            <Text style={{ color: colors.muted, fontSize: 12, marginBottom: 4 }}>{ventaModoLive === 'bloque' ? 'Base total del catálogo' : 'Precio base'}</Text>
             <Text style={{ color: colors.gold, fontSize: 24, fontWeight: '800' }}>
               {formatImporte(baseRef, moneda)}
             </Text>
@@ -590,6 +649,15 @@ export function SubastaEnVivoScreen({ navigation, route }) {
               <Text style={{ color: colors.muted, fontSize: 12.5, marginTop: 2 }}>
                 Mínima: {formatImporte(proximaPuja, moneda)}{maxPuja != null ? `  ·  Tope: ${formatImporte(maxPuja, moneda)}` : '  ·  Sin tope'}
               </Text>
+              <View style={st.totalRow}>
+                <View>
+                  <Text style={{ color: colors.muted, fontSize: 11 }}>Total a pagar si ganás</Text>
+                  <Text style={{ color: colors.muted, fontSize: 10.5, marginTop: 1 }}>
+                    Puja + comisión {formatImporte(comisionLive, moneda)}{ventaModoLive === 'bloque' ? ` · ${piezasPendientes} piezas` : ''}
+                  </Text>
+                </View>
+                <Text style={{ color: '#fff', fontSize: 18, fontWeight: '800' }}>{formatImporte(totalAPagar, moneda)}</Text>
+              </View>
             </>
           )}
         </Card>
@@ -660,6 +728,35 @@ export function SubastaEnVivoScreen({ navigation, route }) {
               Registrando tu acceso a la subasta…
             </Text>
           </Card>
+        )}
+
+        {items.length > 0 && (
+          <>
+            <SectionLabel>Catálogo · {items.length} {items.length === 1 ? 'pieza' : 'piezas'}</SectionLabel>
+            {items.map((it) => {
+              const esActual = Number(it.identificador) === Number(itemId);
+              const vendido = it.subastado === 'si';
+              return (
+                <View key={it.identificador} style={st.catRow}>
+                  <View style={{ flex: 1, paddingRight: 8 }}>
+                    <Text style={{ color: vendido ? colors.muted : '#fff', fontSize: 13, fontWeight: '700' }} numberOfLines={1}>
+                      {it.producto?.descripcionCatalogo || `Ítem #${it.identificador}`}
+                    </Text>
+                    <Text style={{ color: colors.green, fontSize: 12.5, fontWeight: '800', marginTop: 2 }}>
+                      {formatImporte(it.precioBase ?? it.preciobase, moneda)}
+                    </Text>
+                  </View>
+                  {vendido ? (
+                    <Tag label="VENDIDO" color={colors.muted} />
+                  ) : ventaModoLive !== 'bloque' && esActual ? (
+                    <LiveBadge />
+                  ) : (
+                    <Tag label={ventaModoLive === 'bloque' ? 'EN VENTA' : 'EN ESPERA'} color={colors.gold} />
+                  )}
+                </View>
+              );
+            })}
+          </>
         )}
 
         <SectionLabel>Historial de pujas</SectionLabel>
@@ -1065,4 +1162,19 @@ const st = StyleSheet.create({
   },
   stepBtnDisabled: { opacity: 0.3 },
   stepBtnText: { color: '#fff', fontSize: 26, fontWeight: '700', lineHeight: 30 },
+  modoBanner: {
+    marginTop: -6, marginBottom: 12, padding: 12, borderRadius: 12,
+    backgroundColor: 'rgba(255,193,7,0.08)', borderWidth: 1, borderColor: 'rgba(255,193,7,0.35)',
+  },
+  modoTitle: { color: colors.gold, fontSize: 13.5, fontWeight: '800', marginBottom: 3 },
+  modoDesc: { color: colors.muted, fontSize: 12.5, lineHeight: 18 },
+  totalRow: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: colors.border,
+  },
+  catRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: colors.cardEl, borderRadius: 10, borderWidth: 1, borderColor: colors.border,
+    paddingVertical: 10, paddingHorizontal: 12, marginBottom: 8,
+  },
 });

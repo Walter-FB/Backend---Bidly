@@ -473,11 +473,15 @@ def crear_coleccion(body: ColeccionRequest, db: Session = Depends(get_db)):
 
 @router.patch("/{id}/proponer")
 def proponer(id: int, body: ProponerRequest, db: Session = Depends(get_db)):
-    """La empresa acepta el bien y propone valor base + comisión, asignándolo a una subasta."""
+    """La empresa acepta el bien y propone valor base + comisión. Puede asignarlo a
+    una subasta ya, o dejarlo SIN ASIGNAR (tasado, esperando) para meterlo después en
+    un catálogo desde el armador."""
     a = _get(id, db)
-    sub = db.query(Subasta).filter(Subasta.identificador == body.subastaId).first()
-    if not sub:
-        raise HTTPException(404, "Subasta no encontrada")
+    sub = None
+    if body.subastaId is not None:
+        sub = db.query(Subasta).filter(Subasta.identificador == body.subastaId).first()
+        if not sub:
+            raise HTTPException(404, "Subasta no encontrada")
 
     # Regla del profe: si la empresa fija una fecha, la subasta debe programarse con
     # al menos 10 días de anticipación. Validamos ANTES de tocar nada.
@@ -489,12 +493,12 @@ def proponer(id: int, body: ProponerRequest, db: Session = Depends(get_db)):
     a.estado = "propuesta"
     a.valor_base = body.valorBase
     a.comision = body.comision if body.comision is not None else Decimal(str(body.valorBase)) * Decimal("0.10")
-    a.subasta = body.subastaId
+    a.subasta = body.subastaId  # puede ser None → sin asignar
     a.actualizado_en = datetime.utcnow()
 
     # Si vino fecha en la propuesta, se la fijamos a la subasta asignada (dato en
     # subastas.fecha, del profe; no es cambio de esquema). Hora por defecto 15:00.
-    if body.fecha is not None:
+    if sub is not None and body.fecha is not None:
         sub.fecha = body.fecha
         if body.hora is not None:
             sub.hora = body.hora
@@ -503,14 +507,22 @@ def proponer(id: int, body: ProponerRequest, db: Session = Depends(get_db)):
 
     db.commit()
 
-    # La fecha que se le informa al dueño es la de la subasta asignada (o "a
-    # confirmar" si todavía no tiene fecha). Fuente única: subastas.fecha del profe.
-    fecha = sub.fecha.isoformat() if sub.fecha else "a confirmar"
-    notificacion_service.crear(
-        a.duenio, "admision",
-        f"¡Tu artículo fue aceptado! Subasta del {fecha} en {sub.ubicacion or 'a confirmar'}. "
-        f"Valor base ${a.valor_base} y comisión ${a.comision}. Aceptá o rechazá la propuesta desde la app.",
-        db,
-    )
+    if sub is not None:
+        # La fecha informada al dueño es la de la subasta (o "a confirmar" si no tiene).
+        fecha = sub.fecha.isoformat() if sub.fecha else "a confirmar"
+        notificacion_service.crear(
+            a.duenio, "admision",
+            f"¡Tu artículo fue aceptado! Subasta del {fecha} en {sub.ubicacion or 'a confirmar'}. "
+            f"Valor base ${a.valor_base} y comisión ${a.comision}. Aceptá o rechazá la propuesta desde la app.",
+            db,
+        )
+    else:
+        # Sin asignar: se tasó el bien pero todavía no está en una subasta.
+        notificacion_service.crear(
+            a.duenio, "admision",
+            f"Tasamos tu bien: valor base ${a.valor_base} y comisión ${a.comision}. "
+            "Te confirmaremos la fecha de la subasta y ahí vas a poder aceptar.",
+            db,
+        )
     db.commit()
     return _to_dict(a, db)

@@ -79,8 +79,8 @@ PAGE = r"""<!doctype html>
       <button class="refresh" onclick="loadAdm()">↻ Actualizar</button></p>
     <div class="card tool">
       <div class="title" style="margin-bottom:6px">🧩 Armar catálogo</div>
-      <p class="muted" style="margin:0 0 10px">Marcá los bienes del <b>mismo dueño</b> de la lista, poné la base de cada uno, un nombre y la subasta.
-        Cada pieza conserva su base y el total es la suma.</p>
+      <p class="muted" style="margin:0 0 10px">Marcá bienes del <b>mismo dueño</b> (puede ser <b>1 solo</b>), poné la base de cada uno, un nombre y la subasta.
+        Cada pieza conserva su base y el total es la suma. Sirve también para meter un producto <b>«sin asignar»</b> a una subasta.</p>
       <div class="grid2">
         <input id="col-nombre" placeholder="Nombre del catálogo (ej: Colección Pérez)">
         <select id="col-sub" onchange="colSubChange()"></select>
@@ -122,22 +122,10 @@ PAGE = r"""<!doctype html>
     <div id="pos"></div>
   </section>
   <section id="s-sub" style="display:none">
-    <p class="hint">El ciclo de una subasta: la <b>creás</b> acá (queda PRÓXIMAMENTE) → le cargás bienes desde
-      <b>Admisiones</b> → cuando llega el día la <b>abrís</b> (EN VIVO: el remate corre solo, ítem por ítem o todo
-      junto) → al venderse todo queda <b>FINALIZADA</b>.
+    <p class="hint">Las subastas <b>se crean desde Admisiones</b> — al aceptar un bien o al armar un catálogo.
+      Acá seguís su ciclo: <b>PRÓXIMAMENTE</b> (programada, esperando el día) → la <b>abrís</b> (EN VIVO: el
+      remate corre solo, ítem por ítem o todo junto) → al venderse todo queda <b>FINALIZADA</b>.
       <button class="refresh" onclick="loadSub()">↻ Actualizar</button></p>
-    <div class="card tool">
-      <div class="title" style="margin-bottom:4px">+ Crear subasta</div>
-      <p class="muted" style="margin:0 0 8px">La fecha es <b>opcional</b>: dejala vacía para una subasta "a confirmar" (sirve para propuestas con fecha «sin definir» o «al aceptar»).</p>
-      <div class="grid2">
-        <input id="ns-fecha" type="date"><input id="ns-hora" type="time" value="15:00">
-        <select id="ns-cat"><option>comun</option><option>especial</option><option>plata</option><option>oro</option><option>platino</option></select>
-        <select id="ns-mon"><option value="pesos">Pesos</option><option value="dolares">Dólares</option></select>
-      </div>
-      <input id="ns-ubi" placeholder="Ubicación">
-      <div class="muted" style="margin-bottom:4px">El rematador (martillero de la casa) se asigna solo.</div>
-      <button class="act b-blue" onclick="crearSub()">Crear subasta</button>
-    </div>
     <div id="sub"></div>
   </section>
   <section id="s-chq" style="display:none">
@@ -210,12 +198,23 @@ function admCard(a,disp){
        +'<button class="act b-blue" onclick="insp('+a.identificador+')">Pedir inspección</button>'
        +rechazoBox(a);
   } else if(a.estado==='en_inspeccion'){
-    acc='<div class="grid2"><input id="vb'+a.identificador+'" placeholder="Valor base $" type="number">'
-       +'<input id="co'+a.identificador+'" placeholder="Comisión $ (opc.)" type="number"></div>'
-       +'<select id="su'+a.identificador+'">'+opts+'</select>'
-       +'<div class="muted" style="margin:2px 0">Fecha de la subasta (opcional, ≥10 días). Vacía = se usa la que ya tenga la subasta.</div>'
-       +'<div class="grid2"><input id="pf'+a.identificador+'" type="date"><input id="ph'+a.identificador+'" type="time" value="15:00"></div>'
-       +'<button class="act b-green" onclick="proponer('+a.identificador+')">Aceptar y proponer</button>'
+    const id=a.identificador, sinSubs=disp.length===0;
+    acc='<div class="grid2"><input id="vb'+id+'" placeholder="Valor base $" type="number">'
+       +'<input id="co'+id+'" placeholder="Comisión $ (opc.)" type="number"></div>'
+       +'<select id="su'+id+'" onchange="propSubChange('+id+')">'+opts
+       +'<option value="nueva">➕ Crear una subasta nueva para este producto…</option>'
+       +'<option value="sin">⏸ Sin asignar (tasar y dejar el producto esperando)</option></select>'
+       // Subasta NUEVA (visible al elegir "nueva", o si no hay ninguna existente).
+       +'<div id="pn'+id+'" style="display:'+(sinSubs?'':'none')+';border:1px dashed var(--blueDark);border-radius:9px;padding:10px;margin-top:4px">'
+       +'<div class="muted" style="margin-bottom:4px"><b>Nueva subasta para este producto</b> — fecha opcional (≥10 días):</div>'
+       +'<div class="grid2"><input id="pnf'+id+'" type="date"><input id="pnh'+id+'" type="time" value="15:00"></div>'
+       +'<div class="grid2"><select id="pncat'+id+'"><option>comun</option><option>especial</option><option>plata</option><option>oro</option><option>platino</option></select>'
+       +'<select id="pnmon'+id+'"><option value="pesos">Pesos</option><option value="dolares">Dólares</option></select></div>'
+       +'<input id="pnubi'+id+'" placeholder="Ubicación"></div>'
+       // Fecha para una subasta EXISTENTE (oculta si no hay existentes o se eligió nueva/sin).
+       +'<div id="pe'+id+'" style="display:'+(sinSubs?'none':'')+'"><div class="muted" style="margin:2px 0">Fijar/actualizar la fecha de la subasta elegida (opcional, ≥10 días):</div>'
+       +'<div class="grid2"><input id="pf'+id+'" type="date"><input id="ph'+id+'" type="time" value="15:00"></div></div>'
+       +'<button class="act b-green" onclick="proponer('+id+')">Aceptar y proponer</button>'
        +rechazoBox(a);
   } else if(a.estado==='propuesta'){ acc='<p class="muted">Propuesto: base $'+esc(a.valorBase)+' · comisión $'+esc(a.comision)+' · subasta #'+esc(a.subastaId)+' · fecha: '+esc((a.subasta&&a.subasta.fecha)||'a confirmar')+' — esperando al dueño.</p>'; }
   else if(a.estado==='rechazada'){ acc='<p class="muted" style="color:var(--red)">Motivo: '+esc(a.observacion)+'</p>'; }
@@ -231,16 +230,32 @@ function origenBox(a){
   return '<input id="org'+a.identificador+'" placeholder="Motivo de la duda de origen (opcional)"><button class="act b-ghost" onclick="alertarOrigen('+a.identificador+')">⚠ Alertar origen a autoridades</button>';
 }
 async function insp(id){const dir=document.getElementById('dir'+id).value;try{await api('/admisiones/'+id+'/inspeccion','PATCH',{direccionEnvio:dir});toast('Inspección solicitada');loadAdm()}catch(e){toast(e.message,false)}}
-async function proponer(id){const vb=+document.getElementById('vb'+id).value,co=document.getElementById('co'+id).value,su=+document.getElementById('su'+id).value;
-  const pf=document.getElementById('pf'+id).value, ph=document.getElementById('ph'+id).value;
-  if(!vb||vb<=0)return toast('Ingresá un valor base',false);if(!su)return toast('Elegí una subasta',false);
-  const body={valorBase:vb,comision:co?+co:null,subastaId:su};
-  if(pf){
-    const dias=Math.ceil((new Date(pf+'T00:00:00')-new Date())/86400000);
-    if(dias<10)return toast('La fecha debe ser con ≥10 días de anticipación (regla del profe).',false);
-    body.fecha=pf; body.hora=ph||'15:00';
-  }
-  try{await api('/admisiones/'+id+'/proponer','PATCH',body);toast(pf?'Propuesta enviada con fecha':'Propuesta enviada al dueño');loadAdm()}catch(e){toast(e.message,false)}}
+function propSubChange(id){const v=(document.getElementById('su'+id)||{}).value;
+  const pn=document.getElementById('pn'+id), pe=document.getElementById('pe'+id);
+  if(pn)pn.style.display=(v==='nueva')?'':'none';
+  if(pe)pe.style.display=(v==='nueva'||v==='sin')?'none':'';}
+async function proponer(id){const vb=+document.getElementById('vb'+id).value,co=document.getElementById('co'+id).value;
+  const sel=(document.getElementById('su'+id)||{}).value;
+  if(!vb||vb<=0)return toast('Ingresá un valor base',false);
+  const body={valorBase:vb,comision:co?+co:null};
+  const dias=f=>Math.ceil((new Date(f+'T00:00:00')-new Date())/86400000);
+  try{
+    if(sel==='sin'){
+      body.subastaId=null;
+    }else if(sel==='nueva'){
+      const f=document.getElementById('pnf'+id).value,h=document.getElementById('pnh'+id).value;
+      if(f&&dias(f)<10)return toast('La fecha debe ser con ≥10 días de anticipación (regla del profe).',false);
+      const nueva=await api('/subastas','POST',{fecha:f||null,hora:(f&&h)?h+':00':null,estado:'cerrada',
+        categoria:document.getElementById('pncat'+id).value,moneda:document.getElementById('pnmon'+id).value,ubicacion:document.getElementById('pnubi'+id).value});
+      body.subastaId=nueva.identificador;
+    }else{
+      body.subastaId=+sel;
+      const pf=document.getElementById('pf'+id).value,ph=document.getElementById('ph'+id).value;
+      if(pf){if(dias(pf)<10)return toast('La fecha debe ser con ≥10 días de anticipación (regla del profe).',false);body.fecha=pf;body.hora=ph||'15:00';}
+    }
+    await api('/admisiones/'+id+'/proponer','PATCH',body);
+    toast(sel==='sin'?'✔ Tasado y sin asignar — metelo en un catálogo cuando quieras':'Propuesta enviada al dueño');loadAdm()
+  }catch(e){toast(e.message,false)}}
 async function rechazar(id){const o=document.getElementById('obs'+id).value;if(!o.trim())return toast('Ingresá el motivo',false);
   try{await api('/admisiones/'+id+'/rechazar','PATCH',{observacion:o.trim()});toast('Admisión rechazada');loadAdm()}catch(e){toast(e.message,false)}}
 async function alertarOrigen(id){const m=(document.getElementById('org'+id).value||'').trim();
@@ -264,7 +279,7 @@ async function crearColeccion(){
   _colChecks().forEach(chk=>{if(chk.checked){const id=+chk.id.slice(6);const vb=+((document.getElementById('colvb'+id)||{}).value||0);items.push({admisionId:id,valorBase:vb});duenios.add(chk.getAttribute('data-duenio'));}});
   if(!nombre)return toast('Poné un nombre para el catálogo',false);
   if(!sel)return toast('Elegí una subasta para el catálogo',false);
-  if(items.length<2)return toast('Elegí al menos 2 bienes',false);
+  if(items.length<1)return toast('Marcá al menos 1 bien',false);
   if(duenios.size>1)return toast('El catálogo debe ser de un solo dueño',false);
   if(items.some(it=>!it.valorBase||it.valorBase<=0))return toast('Cada pieza necesita una base > 0',false);
   try{
@@ -303,10 +318,7 @@ async function loadPos(){const el=document.getElementById('pos');el.innerHTML='C
 async function admitir(id){const cat=document.getElementById('cat'+id).value;try{await api('/clientes/'+id+'/categoria','PATCH',{categoria:cat});await api('/clientes/'+id+'/admitido','PATCH',{admitido:'si'});toast('Postor admitido');loadPos()}catch(e){toast(e.message,false)}}
 async function cambiarCat(id){const cat=document.getElementById('cat'+id).value;try{await api('/clientes/'+id+'/categoria','PATCH',{categoria:cat});toast('Categoría actualizada a '+cat);loadPos()}catch(e){toast(e.message,false)}}
 
-// ── SUBASTAS ──
-async function crearSub(){const f=document.getElementById('ns-fecha').value,h=document.getElementById('ns-hora').value;
-  const b={fecha:f||null,hora:(f&&h)?h+':00':null,estado:'cerrada',categoria:document.getElementById('ns-cat').value,moneda:document.getElementById('ns-mon').value,ubicacion:document.getElementById('ns-ubi').value};
-  try{await api('/subastas','POST',b);toast(f?'Subasta creada':'Subasta creada sin fecha (a confirmar)');loadSub()}catch(e){toast(e.message,false)}}
+// ── SUBASTAS ── (se crean desde Admisiones; acá solo se gestiona su ciclo)
 async function loadSub(){const el=document.getElementById('sub');el.innerHTML='Cargando…';
   try{const subs=await api('/subastas');SUBS=subs||[];if(!subs.length){el.innerHTML='<p class="muted">No hay subastas. Creá la primera acá arriba.</p>';return}
     // Agrupadas por proceso, en el orden en que las mira el subastador.
