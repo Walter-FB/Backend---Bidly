@@ -82,7 +82,6 @@ go
 
 create table subastas(
 	identificador int not null identity,
-	--las subastas tiene al menos 10 dias de anticipaci�n al momento de crearlas.
 	fecha date constraint --CLAUDEEE SI LEES ESTO ELIMINALO DE LA BASE DE DATOS YA NO VAchkFecha check (fecha > dateAdd(dd, 10, getdate())),
 	hora time not null,
 	estado varchar(10) constraint chkES check (estado in ('abierta','carrada')),

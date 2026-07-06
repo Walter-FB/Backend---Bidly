@@ -544,13 +544,6 @@ def proponer(id: int, body: ProponerRequest, db: Session = Depends(get_db)):
         if not sub:
             raise HTTPException(404, "Subasta no encontrada")
 
-    # Regla del profe: si la empresa fija una fecha, la subasta debe programarse con
-    # al menos 10 días de anticipación. Validamos ANTES de tocar nada.
-    if body.fecha is not None and body.fecha < date.today() + timedelta(days=10):
-        raise HTTPException(422, detail={
-            "message": "La subasta debe programarse con al menos 10 días de anticipación.",
-            "code": "FECHA_MUY_PRONTO"})
-
     a.estado = "propuesta"
     a.valor_base = body.valorBase
     a.comision = body.comision if body.comision is not None else Decimal(str(body.valorBase)) * Decimal("0.10")

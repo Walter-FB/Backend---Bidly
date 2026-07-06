@@ -206,13 +206,13 @@ function admCard(a,disp){
        +'<option value="sin">⏸ Sin asignar (tasar y dejar el producto esperando)</option></select>'
        // Subasta NUEVA (visible al elegir "nueva", o si no hay ninguna existente).
        +'<div id="pn'+id+'" style="display:'+(sinSubs?'':'none')+';border:1px dashed var(--blueDark);border-radius:9px;padding:10px;margin-top:4px">'
-       +'<div class="muted" style="margin-bottom:4px"><b>Nueva subasta para este producto</b> — fecha opcional (≥10 días):</div>'
+       +'<div class="muted" style="margin-bottom:4px"><b>Nueva subasta para este producto</b> — fecha opcional:</div>'
        +'<div class="grid2"><input id="pnf'+id+'" type="date"><input id="pnh'+id+'" type="time" value="15:00"></div>'
        +'<div class="grid2"><select id="pncat'+id+'"><option>comun</option><option>especial</option><option>plata</option><option>oro</option><option>platino</option></select>'
        +'<select id="pnmon'+id+'"><option value="pesos">Pesos</option><option value="dolares">Dólares</option></select></div>'
        +'<input id="pnubi'+id+'" placeholder="Ubicación"></div>'
        // Fecha para una subasta EXISTENTE (oculta si no hay existentes o se eligió nueva/sin).
-       +'<div id="pe'+id+'" style="display:'+(sinSubs?'none':'')+'"><div class="muted" style="margin:2px 0">Fijar/actualizar la fecha de la subasta elegida (opcional, ≥10 días):</div>'
+       +'<div id="pe'+id+'" style="display:'+(sinSubs?'none':'')+'"><div class="muted" style="margin:2px 0">Fijar/actualizar la fecha de la subasta elegida (opcional):</div>'
        +'<div class="grid2"><input id="pf'+id+'" type="date"><input id="ph'+id+'" type="time" value="15:00"></div></div>'
        +'<button class="act b-green" onclick="proponer('+id+')">Aceptar y proponer</button>'
        +rechazoBox(a);
@@ -239,20 +239,18 @@ async function proponer(id){const vb=+document.getElementById('vb'+id).value,co=
   const sel=(document.getElementById('su'+id)||{}).value;
   if(!vb||vb<=0)return toast('Ingresá un valor base',false);
   const body={valorBase:vb,comision:co?+co:null};
-  const dias=f=>Math.ceil((new Date(f+'T00:00:00')-new Date())/86400000);
   try{
     if(sel==='sin'){
       body.subastaId=null;
     }else if(sel==='nueva'){
       const f=document.getElementById('pnf'+id).value,h=document.getElementById('pnh'+id).value;
-      if(f&&dias(f)<10)return toast('La fecha debe ser con ≥10 días de anticipación (regla del profe).',false);
       const nueva=await api('/subastas','POST',{fecha:f||null,hora:(f&&h)?h+':00':null,estado:'cerrada',
         categoria:document.getElementById('pncat'+id).value,moneda:document.getElementById('pnmon'+id).value,ubicacion:document.getElementById('pnubi'+id).value});
       body.subastaId=nueva.identificador;
     }else{
       body.subastaId=+sel;
       const pf=document.getElementById('pf'+id).value,ph=document.getElementById('ph'+id).value;
-      if(pf){if(dias(pf)<10)return toast('La fecha debe ser con ≥10 días de anticipación (regla del profe).',false);body.fecha=pf;body.hora=ph||'15:00';}
+      if(pf){body.fecha=pf;body.hora=ph||'15:00';}
     }
     await api('/admisiones/'+id+'/proponer','PATCH',body);
     toast(sel==='sin'?'✔ Tasado y sin asignar — metelo en un catálogo cuando quieras':'Propuesta enviada al dueño');loadAdm()

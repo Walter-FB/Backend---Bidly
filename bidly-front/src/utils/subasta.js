@@ -117,7 +117,7 @@ export function segundosParaInicio(subasta) {
 }
 
 /** Próxima = programada: cerrada, sin adjudicar nada y con el inicio todavía por venir
- *  (o sin fecha aún = "a confirmar"). El profe crea las subastas con ≥10 días de anticipación. */
+ *  (o sin fecha aún = "a confirmar"). */
 export function esSubastaProxima(subasta) {
   if (!subasta) return false;
   return subasta.estado === 'cerrada' && !todoAdjudicado(subasta) && !inicioEnPasado(subasta);

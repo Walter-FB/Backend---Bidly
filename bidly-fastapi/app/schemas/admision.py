@@ -27,7 +27,7 @@ class ProponerRequest(BaseModel):
     # después desde el armador).
     subastaId: Optional[int] = None
     # Fecha/hora opcionales: si la empresa las manda en la propuesta, se le fijan a
-    # la subasta asignada (subastas.fecha). Regla del profe: ≥10 días de anticipación.
+    # la subasta asignada (subastas.fecha). Sin restricción de anticipación.
     fecha: Optional[date] = None
     hora: Optional[time] = None
 
