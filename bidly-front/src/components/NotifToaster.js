@@ -17,16 +17,16 @@ const nid = (n) => Number(n?.identificador ?? n?.id ?? 0);
 const LABEL = {
   ganaste: '¡Ganaste una subasta!', multa: 'Multa generada', admision: 'Novedad de tu bien',
   seguro: 'Seguro contratado', payout: 'Cobro disponible', medio_pago: 'Medio de pago',
-  retiro: 'Retiro personal', reembolso: 'Reembolso', pago: 'Compra pagada',
+  retiro: 'Retiro personal', reembolso: 'Reembolso',
 };
 const ICON = {
   ganaste: 'trophy-outline', multa: 'warning-outline', admision: 'cube-outline',
   seguro: 'shield-checkmark-outline', payout: 'cash-outline', medio_pago: 'card-outline',
-  retiro: 'walk-outline', reembolso: 'cash-outline', pago: 'checkmark-circle-outline',
+  retiro: 'walk-outline', reembolso: 'cash-outline',
 };
 const ACCENT = {
   ganaste: colors.gold, multa: colors.red, payout: colors.green, reembolso: colors.green,
-  seguro: colors.blue, pago: colors.green,
+  seguro: colors.blue,
 };
 
 export default function NotifToaster() {

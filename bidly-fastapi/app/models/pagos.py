@@ -28,8 +28,8 @@ class MedioPago(Base):
     numerocheque  = Column(String)
     montocheque   = Column(Numeric(precision=12, scale=2))
     # Presupuesto del medio (imita la cuenta/tarjeta del usuario, en PESOS):
-    #   - debito / credito -> 500 por defecto (secreto: se chequea al cobrar; bajo
-    #     a propósito para que el cobro automático dispare la multa por impago)
+    #   - debito  -> 100.000 por defecto
+    #   - credito -> 200.000 por defecto
     #   - cuenta / cheque -> el monto que declara el usuario
     # `limite` es el presupuesto original; `saldo` es lo que queda (se gasta al pagar).
     # En cheque/cuenta el `saldo` también funciona como tope de puja (garantía).

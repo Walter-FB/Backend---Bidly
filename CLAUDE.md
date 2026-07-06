@@ -23,8 +23,7 @@ reloj se maneja en la tabla propia `item_remate` (ver Features), sin tocar `suba
 
 ### Features de la consigna (12 tablas propias)
 - `mediosdepago`: medio de pago del postor con **presupuesto** en pesos (`limite`=original,
-  `saldo`=restante). `tipo` = `debito` | `credito` (ambos **default $500**, secreto: se chequea
-  recién al cobrar; bajo a propósito para disparar la multa del cobro automático) | `cuenta`
+  `saldo`=restante). `tipo` = `debito` (default 100k) | `credito` (default 200k) | `cuenta`
   (monto que elige el usuario) | `cheque` certificado (monto que elige el usuario). El cheque
   nace `verificado='no'` (se valida en /admin); cuenta/tarjetas se validan solas.
 - `multas`: multa 10% por impago (bloquea participación).
@@ -75,15 +74,6 @@ Estas cosas ya se decidieron/arreglaron con el usuario. Revertirlas = reabrir bu
    `GET /subastas/{id}/remate` como fuente de verdad para pasar al siguiente ítem — avanza
    **aunque el ítem cierre sin pujas** (la empresa lo compra, no hay puja ganadora). NO volver a
    depender solo de detectar la puja ganadora.
-7. **Cobro automático de la compra + multa automática** (`services/cobro_service.py`). Al
-   adjudicarse un ítem (patrón lazy, dentro de `subasta_service.adjudicar_item`/`adjudicar_bloque`)
-   se cobra SOLO la tarjeta crédito/débito del ganador: alcanza el saldo → `registro_pago='pagado'`
-   + descuenta; NO alcanza (pujó por más que su tarjeta de $500) → `registro_pago='impago'` +
-   **multa 10% automática**. El postor NO confirma nada; la multa aparece sola en "Mis compras".
-   Corre en un **savepoint propio** y `cobrar_automatico` NUNCA propaga excepción (si falla, la
-   compra queda `pendiente` y NO se aborta la adjudicación → nada de subastas clavadas). El pago
-   manual (`/registro-subasta/{id}/pagar`, pantalla `MedioPago`) queda solo como fallback de
-   `pendiente`. NO volver a dejar la compra en `pendiente` por defecto ni exigir confirmación.
 
 > **Gotcha del token:** si un dato aparece en Home pero NO en el detalle/vivo (solo para
 > logueados), sospechá del token vencido (Railway reinició → `_token_store` vacío), NO de la DB.
@@ -95,8 +85,7 @@ Estas cosas ya se decidieron/arreglaron con el usuario. Revertirlas = reabrir bu
 - **Presupuesto de medios**: cada medio tiene un tope en pesos que se gasta al pagar.
   **Cheque y cuenta** se validan EN LA PUJA (no podés pujar por más que su monto); el medio
   elegido debe estar validado. **Crédito y débito** NO se validan al pujar → se chequean y
-  descuentan **al cerrar la subasta**, en el cobro automático (`services/cobro_service.py`;
-  el pago manual `routers/registro.py` + `saldo_service.py` queda como fallback).
+  descuentan al **pagar** (`services/saldo_service.py`, `routers/registro.py`).
 - **Categorías** (solo suben, `services/categoria_service.py`): combina actividad + medios.
   3+ medios → **oro**; 3+ medios y ≥1 puja ganada → **platino**; cada 2 subastas ganadas sube
   un escalón. Notifica el ascenso.
@@ -112,10 +101,8 @@ Estas cosas ya se decidieron/arreglaron con el usuario. Revertirlas = reabrir bu
 - **Seguro / ubicación**: al aceptar, el bien se asegura según el valor base y se guarda en un
   depósito; el dueño ve póliza + depósito desde la app. Premium → póliza reforzada (base +5%).
 - **Cierre de subasta**: mejor postor gana → `registroDeSubasta` + payout al dueño +
-  **cobro automático** (`cobro_service`: cobra su tarjeta o genera la multa) + notificación;
-  si nadie pujó, la empresa compra a base. (También cierra a mano el subastador.)
-- **Impago**: si el cobro automático no alcanza (o falta plata) → multa 10% + bloqueo + 72hs
-  automáticos; si no cumple, derivado a la justicia. (También existe `/impago` manual.)
+  notificación; si nadie pujó, la empresa compra a base. (También cierra a mano el subastador.)
+- **Impago**: multa 10% + bloqueo + 72hs; si no cumple, derivado a la justicia.
 
 ## Roles y visibilidad (importante)
 - **postor / dueño (usuario normal):** registro, medios de pago, ver/pujar subastas,

@@ -169,11 +169,9 @@ def get_medios_pago(id: int, db: Session = Depends(get_db)):
 
 
 # Presupuesto por defecto de las tarjetas (imita la cuenta bancaria del usuario,
-# a la que no tenemos acceso; en PESOS). Es "secreto": no se muestra y recién se
-# chequea al cobrar (cobro_service). Arranca bajo ($500) a propósito para que el
-# cobro automático dispare la multa cuando el ganador pujó por más de lo que tiene.
-PRESUPUESTO_DEBITO = 500
-PRESUPUESTO_CREDITO = 500
+# a la que no tenemos acceso; en PESOS). Débito y crédito arrancan con esta plata.
+PRESUPUESTO_DEBITO = 100000
+PRESUPUESTO_CREDITO = 200000
 
 
 @router.post("/{id}/medios-pago", response_model=MedioPagoResponse, status_code=201)

@@ -50,15 +50,10 @@ def _puja_ganadora_registro(registro: RegistroDeSubasta, db: Session):
     )
 
 
-def generar_multa_impago(registro: RegistroDeSubasta, db: Session, importe_base=None) -> Multa:
-    """Genera la multa del 10% del importe ofertado, con 72hs de límite.
-
-    `importe_base` permite calcular la multa sobre un total distinto al del
-    registro (venta en bloque: una sola multa por el catálogo completo). Si no se
-    pasa, usa `registro.importe`."""
+def generar_multa_impago(registro: RegistroDeSubasta, db: Session) -> Multa:
+    """Genera la multa del 10% del importe ofertado, con 72hs de límite."""
     puja = _puja_ganadora_registro(registro, db)
-    base = _d(importe_base) if importe_base is not None else _d(registro.importe)
-    monto = (base * PORCENTAJE_MULTA).quantize(Decimal("0.01"))
+    monto = (_d(registro.importe) * PORCENTAJE_MULTA).quantize(Decimal("0.01"))
     multa = Multa(
         cliente=registro.cliente,
         pujo=puja.identificador if puja else None,
