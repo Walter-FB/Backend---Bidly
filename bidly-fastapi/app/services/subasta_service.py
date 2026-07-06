@@ -50,14 +50,22 @@ def enrich(subasta: Subasta, db: Session) -> dict:
 
     # Reloj del remate: si está abierta, exponer cuánto falta del ítem activo
     # (permite mostrar el countdown en el listado, no solo en el detalle).
+    # OJO: estado() puede adjudicar ítems (escribe). Lo hacemos dentro de un
+    # SAVEPOINT para que, si el remate de ESTA subasta falla (dato inconsistente,
+    # etc.), no aborte la transacción entera ni tumbe todo el listado: se revierte
+    # solo este ítem y la subasta se muestra igual, sin countdown.
+    data["itemActivoId"] = None
+    data["segundosRestantes"] = None
     if subasta.estado == "abierta":
         from app.services import remate_service
-        rem = remate_service.estado(subasta.identificador, db)
-        data["itemActivoId"] = rem.get("itemActivoId")
-        data["segundosRestantes"] = rem.get("segundosRestantes")
-    else:
-        data["itemActivoId"] = None
-        data["segundosRestantes"] = None
+        try:
+            with db.begin_nested():
+                rem = remate_service.estado(subasta.identificador, db)
+            data["itemActivoId"] = rem.get("itemActivoId")
+            data["segundosRestantes"] = rem.get("segundosRestantes")
+        except Exception:
+            # Subasta con remate roto: se la deja sin countdown y sigue el resto.
+            pass
 
     items = (
         db.query(ItemCatalogo)

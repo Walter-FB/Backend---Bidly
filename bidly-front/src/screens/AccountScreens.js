@@ -956,7 +956,7 @@ export function MisProductosScreen({ navigation }) {
                   <Text style={{ color: colors.gold, fontSize: 12.5, fontWeight: '700' }}>Bidly te propuso un precio. Aceptalo para entrar a la subasta:</Text>
                   <Row k="Valor base" v={`$${Number(a.valorBase).toLocaleString('es-AR')}`} />
                   <Row k="Comisión" v={`$${Number(a.comision).toLocaleString('es-AR')}`} />
-                  {a.subasta?.fecha && <Row k="Subasta" v={`${a.subasta.fecha} · ${a.subasta.ubicacion || ''}`} />}
+                  <Row k="Fecha de la subasta" v={a.subasta?.fecha ? `${a.subasta.fecha}${a.subasta.ubicacion ? ' · ' + a.subasta.ubicacion : ''}` : 'A confirmar'} />
                   <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 6,
                     backgroundColor: colors.card, borderRadius: 10, padding: 10 }}>
                     <View style={{ flex: 1, paddingRight: 8 }}>
@@ -1082,7 +1082,7 @@ export function MisAdmisionesScreen({ navigation }) {
                   <>
                     <Row k="Valor base" v={`$${Number(a.valorBase).toLocaleString('es-AR')}`} />
                     <Row k="Comisión" v={`$${Number(a.comision).toLocaleString('es-AR')}`} />
-                    {a.subasta?.fecha && <Row k="Subasta" v={`${a.subasta.fecha} · ${a.subasta.ubicacion || ''}`} />}
+                    <Row k="Fecha de la subasta" v={a.subasta?.fecha ? `${a.subasta.fecha}${a.subasta.ubicacion ? ' · ' + a.subasta.ubicacion : ''}` : 'A confirmar'} />
                     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 6,
                       backgroundColor: colors.cardEl, borderRadius: 10, padding: 10 }}>
                       <View style={{ flex: 1, paddingRight: 8 }}>

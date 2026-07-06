@@ -1,8 +1,8 @@
 // Etiquetas de tiempo para subastas (derivadas de subastas.estado: abierta/cerrada).
 
-import { esSubastaFinalizada, esSubastaEnVivo } from './subasta';
+import { esSubastaFinalizada, esSubastaEnVivo, esSubastaProxima, segundosParaInicio } from './subasta';
 
-export { esSubastaEnVivo };
+export { esSubastaEnVivo, esSubastaProxima };
 
 export function formatDuracion(segundos) {
   if (segundos == null || segundos < 0) return '—';
@@ -19,9 +19,24 @@ export function formatDuracion(segundos) {
   return `${s}s`;
 }
 
+/** Cuánto falta para que arranque una subasta próxima ("Faltan 2 días" / "a confirmar"). */
+export function etiquetaProxima(subasta) {
+  const s = segundosParaInicio(subasta);
+  if (s == null) return 'Fecha a confirmar';
+  if (s <= 0) return 'Por comenzar';
+  const dias = Math.floor(s / 86400);
+  if (dias >= 1) return 'Faltan ' + dias + (dias === 1 ? ' día' : ' días');
+  const hs = Math.floor(s / 3600);
+  if (hs >= 1) return 'Faltan ' + hs + (hs === 1 ? ' hora' : ' horas');
+  const min = Math.floor(s / 60);
+  if (min >= 1) return 'Faltan ' + min + ' min';
+  return 'Por comenzar';
+}
+
 export function etiquetaTiempoSubasta(subasta) {
   if (!subasta) return '—';
   if (esSubastaEnVivo(subasta)) return 'En vivo';
+  if (esSubastaProxima(subasta)) return etiquetaProxima(subasta);
   if (esSubastaFinalizada(subasta)) return 'Finalizada';
   return '—';
 }

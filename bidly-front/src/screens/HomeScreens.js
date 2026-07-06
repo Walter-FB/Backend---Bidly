@@ -9,7 +9,7 @@ import { Subastas, Notificaciones } from '../api/endpoints';
 import { BASE_URL } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useNotifBadge } from '../hooks/useNotifBadge';
-import { tituloSubasta, subtituloSubasta, esSubastaFinalizada } from '../utils/subasta';
+import { tituloSubasta, subtituloSubasta, esSubastaFinalizada, esSubastaProxima } from '../utils/subasta';
 import { etiquetaTiempoSubasta, esSubastaEnVivo, formatDuracion } from '../utils/tiempo';
 
 // Texto sin acentos/mayúsculas, para comparar en la búsqueda.
@@ -141,7 +141,7 @@ export function HomeScreen({ navigation }) {
   }, []);
 
   useEffect(() => {
-    const estadoParam = tab === 'vivo' ? 'abierta' : tab === 'term' ? 'cerrada' : undefined;
+    const estadoParam = tab === 'vivo' ? 'abierta' : (tab === 'term' || tab === 'prox') ? 'cerrada' : undefined;
     cargarSubastas({ ...(estadoParam ? { estado: estadoParam } : {}), ...filtros });
   }, [tab, filtros, cargarSubastas]);
 
@@ -166,13 +166,14 @@ export function HomeScreen({ navigation }) {
   const query = normalizar(busqueda);
   const subastasFiltradas = subastas.filter((a) => {
     if (tab === 'vivo' && !esSubastaEnVivo(a)) return false;
+    if (tab === 'prox' && !esSubastaProxima(a)) return false;
     if (tab === 'term' && !esSubastaFinalizada(a)) return false;
     if (!query) return true;
     const texto = normalizar([a.title, a.cat, a.categoria, a.ubicacion].filter(Boolean).join(' '));
     return texto.includes(query);
   });
 
-  const tituloTab = { vivo: 'En vivo', term: 'Finalizadas', todas: 'Todas' };
+  const tituloTab = { vivo: 'En vivo', prox: 'Próximas', term: 'Finalizadas', todas: 'Todas' };
 
   // Modo visita: el invitado solo ve el listado. Abrir una subasta (o cualquier otra
   // acción) lo empuja a crear cuenta.
@@ -217,6 +218,7 @@ export function HomeScreen({ navigation }) {
           <View style={{ flexDirection: 'row', gap: 9 }}>
             <Chip label="Todas" active={tab === 'todas'} onPress={() => setTab('todas')} />
             <Chip label="En vivo" active={tab === 'vivo'} dot onPress={() => setTab('vivo')} />
+            <Chip label="Próximas" active={tab === 'prox'} onPress={() => setTab('prox')} />
             <Chip label="Terminadas" active={tab === 'term'} onPress={() => setTab('term')} />
           </View>
         </ScrollView>

@@ -5,8 +5,10 @@ from decimal import Decimal
 
 
 class SubastaCreate(BaseModel):
-    fecha: date
-    hora: time
+    # Opcionales: una subasta puede crearse sin fecha ("a confirmar") y definirse
+    # después (o al aceptar la propuesta el dueño, según el modo de la admisión).
+    fecha: Optional[date] = None
+    hora: Optional[time] = None
     estado: Optional[str] = "cerrada"
     subastador: int
     ubicacion: Optional[str] = None

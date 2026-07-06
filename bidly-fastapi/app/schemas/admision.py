@@ -1,6 +1,7 @@
 from pydantic import BaseModel
 from typing import Optional
 from decimal import Decimal
+from datetime import date, time
 
 
 class AdmisionCreate(BaseModel):
@@ -23,6 +24,10 @@ class ProponerRequest(BaseModel):
     valorBase: Decimal
     comision: Optional[Decimal] = None
     subastaId: int
+    # Fecha/hora opcionales: si la empresa las manda en la propuesta, se le fijan a
+    # la subasta asignada (subastas.fecha). Regla del profe: ≥10 días de anticipación.
+    fecha: Optional[date] = None
+    hora: Optional[time] = None
 
 
 class RechazarDuenioRequest(BaseModel):

@@ -93,16 +93,46 @@ function todoAdjudicado(subasta) {
   return !!subasta && (subasta.totalItems ?? 0) > 0 && (subasta.itemsPendientes ?? 1) === 0;
 }
 
-/** Todavía no abierta. */
-export function esSubastaPendiente(subasta) {
-  if (!subasta) return false;
-  return subasta.estado === 'cerrada';
+/** Date de inicio (fecha + hora) de la subasta, o null si todavía no tiene fecha. */
+export function inicioSubasta(subasta) {
+  if (!subasta || !subasta.fecha) return null;
+  const [y, m, d] = String(subasta.fecha).split('-').map(Number);
+  if (!y || !m || !d) return null;
+  let hh = 0, mm = 0;
+  if (subasta.hora) { const p = String(subasta.hora).split(':'); hh = Number(p[0]) || 0; mm = Number(p[1]) || 0; }
+  return new Date(y, m - 1, d, hh, mm);
 }
 
-/** Finalizada = cerrada, o ya se adjudicó todo el catálogo (aunque no la cerraron). */
+/** El horario de inicio ya pasó (tiene fecha y quedó en el pasado). */
+function inicioEnPasado(subasta) {
+  const dt = inicioSubasta(subasta);
+  return dt != null && dt.getTime() < Date.now();
+}
+
+/** Segundos hasta el inicio (null si no tiene fecha; 0 si ya llegó). */
+export function segundosParaInicio(subasta) {
+  const dt = inicioSubasta(subasta);
+  if (dt == null) return null;
+  return Math.max(0, Math.floor((dt.getTime() - Date.now()) / 1000));
+}
+
+/** Próxima = programada: cerrada, sin adjudicar nada y con el inicio todavía por venir
+ *  (o sin fecha aún = "a confirmar"). El profe crea las subastas con ≥10 días de anticipación. */
+export function esSubastaProxima(subasta) {
+  if (!subasta) return false;
+  return subasta.estado === 'cerrada' && !todoAdjudicado(subasta) && !inicioEnPasado(subasta);
+}
+
+/** Alias histórico de esSubastaProxima. */
+export function esSubastaPendiente(subasta) {
+  return esSubastaProxima(subasta);
+}
+
+/** Finalizada = ya se adjudicó todo el catálogo, o está cerrada y su inicio ya pasó. */
 export function esSubastaFinalizada(subasta) {
   if (!subasta) return false;
-  return subasta.estado === 'cerrada' || todoAdjudicado(subasta);
+  if (todoAdjudicado(subasta)) return true;
+  return subasta.estado === 'cerrada' && inicioEnPasado(subasta);
 }
 
 /** Subasta en vivo = abierta Y todavía con ítems por subastar. */

@@ -11,7 +11,7 @@ valor base + comisión + subasta → el dueño acepta (pasa al catálogo) o rech
 El seguro del bien se contrata inline sobre la tabla `seguros` (sin ubicacion_bien,
 que quedó borrada).
 """
-from datetime import datetime
+from datetime import datetime, date, time, timedelta
 from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -409,6 +409,7 @@ def crear_coleccion(body: ColeccionRequest, db: Session = Depends(get_db)):
 
     resultado = []
     duenios = set()
+    total = Decimal("0")
     for a in admisiones:
         a.estado = "propuesta"
         it = next(x for x in body.items if x.admisionId == a.identificador)
@@ -418,15 +419,18 @@ def crear_coleccion(body: ColeccionRequest, db: Session = Depends(get_db)):
         a.es_coleccion = "si"
         a.nombre_coleccion = body.nombreColeccion
         a.actualizado_en = datetime.utcnow()
+        total += Decimal(str(it.valorBase or 0))
         duenios.add(a.duenio)
         resultado.append(a)
     db.commit()
 
+    # Consigna: cada pieza conserva su precio base (no se funden en un lote único);
+    # el total es la suma de las bases, informativo para el dueño.
     for d in duenios:
         notificacion_service.crear(
             d, "admision",
-            f"Tus bienes se agruparon en la colección \"{body.nombreColeccion}\". "
-            "Aceptá o rechazá las propuestas desde la app.",
+            f"Tus {len(resultado)} bienes se agruparon en la colección \"{body.nombreColeccion}\" "
+            f"(base total ${total}). Aceptá o rechazá las propuestas desde la app.",
             db,
         )
     db.commit()
@@ -441,13 +445,32 @@ def proponer(id: int, body: ProponerRequest, db: Session = Depends(get_db)):
     if not sub:
         raise HTTPException(404, "Subasta no encontrada")
 
+    # Regla del profe: si la empresa fija una fecha, la subasta debe programarse con
+    # al menos 10 días de anticipación. Validamos ANTES de tocar nada.
+    if body.fecha is not None and body.fecha < date.today() + timedelta(days=10):
+        raise HTTPException(422, detail={
+            "message": "La subasta debe programarse con al menos 10 días de anticipación.",
+            "code": "FECHA_MUY_PRONTO"})
+
     a.estado = "propuesta"
     a.valor_base = body.valorBase
     a.comision = body.comision if body.comision is not None else Decimal(str(body.valorBase)) * Decimal("0.10")
     a.subasta = body.subastaId
     a.actualizado_en = datetime.utcnow()
+
+    # Si vino fecha en la propuesta, se la fijamos a la subasta asignada (dato en
+    # subastas.fecha, del profe; no es cambio de esquema). Hora por defecto 15:00.
+    if body.fecha is not None:
+        sub.fecha = body.fecha
+        if body.hora is not None:
+            sub.hora = body.hora
+        elif not sub.hora:
+            sub.hora = time(15, 0)
+
     db.commit()
 
+    # La fecha que se le informa al dueño es la de la subasta asignada (o "a
+    # confirmar" si todavía no tiene fecha). Fuente única: subastas.fecha del profe.
     fecha = sub.fecha.isoformat() if sub.fecha else "a confirmar"
     notificacion_service.crear(
         a.duenio, "admision",
