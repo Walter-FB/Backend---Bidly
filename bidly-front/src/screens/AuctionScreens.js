@@ -518,9 +518,47 @@ export function SubastaEnVivoScreen({ navigation, route }) {
   const cargarRemate = useCallback(() => {
     if (!subastaId) return;
     Subastas.remate(subastaId)
-      .then((r) => { if (mounted.current) setTimeLeft(r?.segundosRestantes ?? null); })
+      .then((r) => {
+        if (!mounted.current) return;
+        setTimeLeft(r?.segundosRestantes ?? null);
+        if (navegado.current) return;
+
+        // El backend es la FUENTE DE VERDAD de qué ítem se remata. Si el ítem activo
+        // ya no es el mío (el remate avanzó) o la subasta cerró, el ítem actual terminó
+        // —haya tenido pujas o no—. OJO: si nadie pujó, la empresa lo compra y NO queda
+        // puja ganadora, así que el otro camino (cargarPujas) no lo detecta. Por eso el
+        // avance robusto se decide acá, con itemActivoId, así se subasta TODO el catálogo.
+        const activo = r?.itemActivoId;
+        const subastaCerrada = r?.estado === 'cerrada' || activo == null;
+        const avanzoDeItem = activo != null && Number(activo) !== Number(itemId);
+        if (!avanzoDeItem && !subastaCerrada) return; // seguimos en el mismo ítem
+
+        navegado.current = true;
+        Pujas.porItem(itemId)
+          .catch(() => [])
+          .then((data) => {
+            if (!mounted.current) return;
+            const lista = data || [];
+            const ganadora = lista.find((p) => p.ganador === 'si');
+            const yoGane = !user?.isGuest && asistenteIdRef.current != null &&
+              ganadora?.asistente?.identificador === asistenteIdRef.current;
+            if (yoGane) {
+              buscarRegistroId(user?.clienteId, subastaId, productoId)
+                .then((registroId) => {
+                  if (mounted.current) navigation.replace('Ganaste', {
+                    titulo, moneda, importe: ganadora.importe, subastaId, itemId, comision, registroId,
+                  });
+                })
+                .catch(() => { navegado.current = false; });
+            } else {
+              // No gané (o el ítem cerró sin pujas): sigo al próximo ítem del catálogo
+              // (o al fin de la subasta si ya no queda nada por rematar).
+              irAlSiguienteItem(lista);
+            }
+          });
+      })
       .catch(() => {});
-  }, [subastaId]);
+  }, [subastaId, itemId, user, productoId, titulo, moneda, comision, navigation, irAlSiguienteItem]);
 
   useEffect(() => {
     cargarRemate();
