@@ -4,7 +4,6 @@ from typing import List
 from decimal import Decimal
 
 from app.database import get_db
-from app.auth import get_optional_client
 from app.models.catalogo import Catalogo
 from app.models.item_catalogo import ItemCatalogo
 from app.models.producto import Producto
@@ -34,9 +33,11 @@ def crear_catalogo(body: CatalogoCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/{id}/items")
-def get_items(id: int, db: Session = Depends(get_db), current: dict = Depends(get_optional_client)):
+def get_items(id: int, db: Session = Depends(get_db)):
+    # Precio base visible para todos (el token en memoria se pierde al reiniciar
+    # Railway y ocultaba el precio a usuarios ya logueados). Ver routers/subastas.py.
     items = db.query(ItemCatalogo).filter(ItemCatalogo.catalogo == id).all()
-    return [item_to_dict(i, db, mostrar_precio=current is not None) for i in items]
+    return [item_to_dict(i, db) for i in items]
 
 
 @router.post("/{id}/items", status_code=201)

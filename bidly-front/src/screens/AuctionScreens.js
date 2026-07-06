@@ -129,9 +129,20 @@ export function ProductoScreen({ navigation, route }) {
   // es la SUMA de las bases pendientes (el backend valida con el mismo criterio).
   const ventaBloque = subasta.ventaModo === 'bloque';
   const itemsPendientes = items.filter((i) => i.subastado !== 'si');
-  const basePendiente = itemsPendientes.reduce((t, i) => t + Number(i.precioBase ?? i.preciobase ?? 0), 0);
+  // Precio con respaldo: si /catalogos no lo trae (token en memoria caído tras
+  // reinicio de Railway), lo tomamos del resumen del enrich (no gatea el precio).
+  const resumenPorId = {};
+  (subasta.itemsResumen || []).forEach((r) => { resumenPorId[r.id] = r.precioBase; });
+  const precioItem = (it) => {
+    if (!it) return null;
+    const p = it.precioBase ?? it.preciobase;
+    if (p != null) return Number(p);
+    const r = resumenPorId[it.identificador];
+    return r != null ? Number(r) : null;
+  };
+  const basePendiente = itemsPendientes.reduce((t, i) => t + (precioItem(i) ?? 0), 0);
   const comisionPendiente = itemsPendientes.reduce((t, i) => t + Number(i.comision ?? 0), 0);
-  const precioBase = ventaBloque ? basePendiente : itemDestacado?.precioBase;
+  const precioBase = ventaBloque ? basePendiente : (precioItem(itemDestacado) ?? subasta.precioBase ?? null);
   const viva = esSubastaEnVivo(subasta);
   const fotoUrls = fotoIds.map((id) => `${BASE_URL}/fotos/${id}`);
 
@@ -238,7 +249,7 @@ export function ProductoScreen({ navigation, route }) {
                       {item.producto?.descripcionCatalogo || `Item #${item.identificador}`}
                     </Display>
                     <Text style={{ color: colors.green, fontSize: 13, fontWeight: '800', marginTop: 2 }}>
-                      {formatImporte(item.precioBase ?? item.preciobase, subasta.moneda)}
+                      {formatImporte(precioItem(item), subasta.moneda)}
                     </Text>
                   </View>
                   {vendido ? (
@@ -370,17 +381,31 @@ export function SubastaEnVivoScreen({ navigation, route }) {
   const pendientes = items.filter((i) => i.subastado !== 'si');
   const itemActual = items.find((i) => Number(i.identificador) === Number(itemId)) || null;
   const piezasPendientes = pendientes.length || Number(totalPiezas) || 1;
-  const sumaBasesPend = pendientes.reduce((t, i) => t + Number(i.precioBase ?? i.preciobase ?? 0), 0);
+
+  // Precio de un ítem con respaldo: si /catalogos no trae el precio (backend con el
+  // token en memoria caído tras un reinicio de Railway lo ocultaba), lo tomamos del
+  // resumen del enrich (`itemsResumen`), que NO gatea el precio.
+  const resumenPorId = {};
+  (subasta?.itemsResumen || []).forEach((r) => { resumenPorId[r.id] = r.precioBase; });
+  const precioDe = (it) => {
+    if (!it) return null;
+    const p = it.precioBase ?? it.preciobase;
+    if (p != null) return Number(p);
+    const r = resumenPorId[it.identificador];
+    return r != null ? Number(r) : null;
+  };
+
+  const sumaBasesPend = pendientes.reduce((t, i) => t + (precioDe(i) ?? 0), 0);
   const sumaComisionesPend = pendientes.reduce((t, i) => t + Number(i.comision ?? 0), 0);
   // En bloque la base/comisión de referencia es la SUMA de las piezas pendientes;
   // en individual, la del ítem que se está rematando ahora.
   const baseLive = ventaModoLive === 'bloque'
     ? (sumaBasesPend || Number(precioBase) || 0)
-    : Number(itemActual?.precioBase ?? itemActual?.preciobase ?? precioBase ?? 0);
+    : Number(precioDe(itemActual) ?? precioBase ?? subasta?.precioBase ?? 0);
   const comisionLive = ventaModoLive === 'bloque'
     ? (sumaComisionesPend || Number(comision) || 0)
     : Number(itemActual?.comision ?? comision ?? 0);
-  const baseRef = baseLive > 0 ? baseLive : Number(precioBase) || 0;
+  const baseRef = baseLive > 0 ? baseLive : (Number(precioBase) || Number(subasta?.precioBase) || 0);
 
   // Timer del remate: el ítem tiene 3 min (+15s por puja). Al llegar a 0 se adjudica
   // solo y arranca el siguiente ítem. El reloj se lee de /subastas/{id}/remate.
@@ -743,7 +768,7 @@ export function SubastaEnVivoScreen({ navigation, route }) {
                       {it.producto?.descripcionCatalogo || `Ítem #${it.identificador}`}
                     </Text>
                     <Text style={{ color: colors.green, fontSize: 12.5, fontWeight: '800', marginTop: 2 }}>
-                      {formatImporte(it.precioBase ?? it.preciobase, moneda)}
+                      {formatImporte(precioDe(it), moneda)}
                     </Text>
                   </View>
                   {vendido ? (

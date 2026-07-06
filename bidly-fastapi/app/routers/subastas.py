@@ -9,7 +9,6 @@ from sqlalchemy.orm import Session
 from typing import Optional
 
 from app.database import get_db
-from app.auth import get_optional_client
 from app.models.subasta import Subasta
 from app.models.asistente import Asistente
 from app.models.catalogo import Catalogo
@@ -145,7 +144,7 @@ def get_remate(id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/{id}/catalogo")
-def get_catalogo(id: int, db: Session = Depends(get_db), current: dict = Depends(get_optional_client)):
+def get_catalogo(id: int, db: Session = Depends(get_db)):
     item = (
         db.query(ItemCatalogo)
         .join(Catalogo, ItemCatalogo.catalogo == Catalogo.identificador)
@@ -155,11 +154,14 @@ def get_catalogo(id: int, db: Session = Depends(get_db), current: dict = Depends
     )
     if not item:
         raise HTTPException(404, "Sin items en el catálogo")
-    return item_to_dict(item, db, mostrar_precio=current is not None)
+    # El precio base es visible para todos (igual que en el listado/Home). Antes se
+    # gateaba por token, pero el token vive en memoria y se pierde al reiniciar el
+    # backend (Railway) → el precio desaparecía en el detalle/vivo. Ver auth.py.
+    return item_to_dict(item, db)
 
 
 @router.get("/{id}/catalogos")
-def get_catalogos(id: int, db: Session = Depends(get_db), current: dict = Depends(get_optional_client)):
+def get_catalogos(id: int, db: Session = Depends(get_db)):
     items = (
         db.query(ItemCatalogo)
         .join(Catalogo, ItemCatalogo.catalogo == Catalogo.identificador)
@@ -167,7 +169,8 @@ def get_catalogos(id: int, db: Session = Depends(get_db), current: dict = Depend
         .order_by(ItemCatalogo.identificador)
         .all()
     )
-    return [item_to_dict(item, db, mostrar_precio=current is not None) for item in items]
+    # Precio base visible para todos (ver nota en get_catalogo).
+    return [item_to_dict(item, db) for item in items]
 
 
 @router.get("/{id}/portada")
