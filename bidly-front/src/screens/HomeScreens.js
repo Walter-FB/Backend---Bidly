@@ -184,12 +184,13 @@ export function HomeScreen({ navigation }) {
     cargarSubastas({ ...(estadoParam ? { estado: estadoParam } : {}), ...filtros });
   }, [tab, filtros, cargarSubastas]);
 
-  // Resincroniza el reloj del remate (y detecta adjudicaciones/próximo ítem)
-  // mientras se está viendo la tab "En vivo".
+  // Resincroniza cada 8s en "En vivo" (reloj del remate / adjudicaciones) y en
+  // "Próximas" (así se ve cuando una programada se abre sola al llegar su fecha).
   useEffect(() => {
-    if (tab !== 'vivo') return;
+    if (tab !== 'vivo' && tab !== 'prox') return;
+    const estado = tab === 'vivo' ? 'abierta' : 'cerrada';
     const id = setInterval(() => {
-      cargarSubastas({ estado: 'abierta', ...filtros }, true);
+      cargarSubastas({ estado, ...filtros }, true);
     }, 8000);
     return () => clearInterval(id);
   }, [tab, filtros, cargarSubastas]);

@@ -5,6 +5,7 @@ Sin máquina de estados en vivo: una subasta usa directamente `subastas.estado`
 quemó). Sí conserva moneda dual (subasta_moneda) y, al cerrar, genera el payout al
 dueño, la notificación al ganador y la fila de registro_pago pendiente.
 """
+from datetime import datetime, time
 from decimal import Decimal
 from sqlalchemy.orm import Session
 
@@ -52,7 +53,49 @@ def _ensure_duenio(persona_id: int, db: Session) -> None:
     db.flush()
 
 
+def _autoabrir_si_corresponde(subasta: Subasta, db: Session) -> None:
+    """Abre sola una subasta programada cuando llega su fecha/hora de inicio: pasa de
+    PRÓXIMAMENTE a EN VIVO sin que el subastador la abra a mano. Sin cron: se evalúa
+    'lazy' en cada lectura (igual que el reloj del remate). Requiere fecha definida,
+    hora cumplida e ítems pendientes (una 'a confirmar', sin fecha, NO se abre sola)."""
+    if not subasta.fecha:
+        return
+    inicio = datetime.combine(subasta.fecha, subasta.hora or time(0, 0))
+    if inicio > datetime.utcnow():
+        return
+    # Lock + re-chequeo para no abrir dos veces en paralelo.
+    s = (
+        db.query(Subasta)
+        .filter(Subasta.identificador == subasta.identificador)
+        .with_for_update()
+        .first()
+    )
+    if not s or s.estado != "cerrada":
+        return
+    pend = (
+        db.query(ItemCatalogo)
+        .join(Catalogo, ItemCatalogo.catalogo == Catalogo.identificador)
+        .filter(Catalogo.subasta == s.identificador, ItemCatalogo.subastado == "no")
+        .count()
+    )
+    if pend == 0:
+        return  # sin ítems para rematar (vacía o ya terminada)
+    from app.services import remate_service
+    s.estado = "abierta"            # s ES el mismo objeto que `subasta` (identity map)
+    reabrir_items(s.identificador, db)
+    remate_service.iniciar(s.identificador, db)
+
+
 def enrich(subasta: Subasta, db: Session) -> dict:
+    # Auto-apertura: una subasta programada cuya fecha/hora ya llegó se abre sola.
+    # En un SAVEPOINT para que un fallo acá no tumbe el enriquecido de la subasta.
+    if subasta.estado == "cerrada":
+        try:
+            with db.begin_nested():
+                _autoabrir_si_corresponde(subasta, db)
+        except Exception:
+            pass
+
     data: dict = {col.name: getattr(subasta, col.name) for col in subasta.__table__.columns}
     data["moneda"] = _moneda(subasta.identificador, db)
     data["ventaModo"] = venta_modo(subasta.identificador, db)
