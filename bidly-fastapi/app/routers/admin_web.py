@@ -63,18 +63,8 @@ PAGE = r"""<!doctype html>
     <div id="pos"></div>
   </section>
   <section id="s-sub" style="display:none">
-    <p class="hint">Crear / abrir / cerrar / adjudicar subastas.
+    <p class="hint">Abrir / cerrar / adjudicar subastas.
       <button class="refresh" onclick="loadSub()">↻ Actualizar</button></p>
-    <div class="card">
-      <div class="title" style="margin-bottom:8px">+ Crear subasta</div>
-      <div class="grid2">
-        <input id="ns-fecha" type="date"><input id="ns-hora" type="time" value="15:00">
-        <select id="ns-cat"><option>comun</option><option>especial</option><option>plata</option><option>oro</option><option>platino</option></select>
-        <select id="ns-mon"><option value="pesos">Pesos</option><option value="dolares">Dólares</option></select>
-      </div>
-      <input id="ns-ubi" placeholder="Ubicación"><input id="ns-subastador" placeholder="ID subastador (empleado/persona)" value="16">
-      <button class="act b-blue" onclick="crearSub()">Crear subasta</button>
-    </div>
     <div id="sub"></div>
   </section>
   <section id="s-chq" style="display:none">
@@ -161,9 +151,6 @@ async function loadPos(){const el=document.getElementById('pos');el.innerHTML='C
 async function admitir(id){const cat=document.getElementById('cat'+id).value;try{await api('/clientes/'+id+'/categoria','PATCH',{categoria:cat});await api('/clientes/'+id+'/admitido','PATCH',{admitido:'si'});toast('Postor admitido');loadPos()}catch(e){toast(e.message,false)}}
 
 // ── SUBASTAS ──
-async function crearSub(){const b={fecha:document.getElementById('ns-fecha').value,hora:document.getElementById('ns-hora').value+':00',estado:'cerrada',subastador:+document.getElementById('ns-subastador').value,categoria:document.getElementById('ns-cat').value,moneda:document.getElementById('ns-mon').value,ubicacion:document.getElementById('ns-ubi').value};
-  if(!b.fecha)return toast('Elegí una fecha',false);if(!b.subastador)return toast('ID de subastador',false);
-  try{await api('/subastas','POST',b);toast('Subasta creada');loadSub()}catch(e){toast(e.message,false)}}
 async function loadSub(){const el=document.getElementById('sub');el.innerHTML='Cargando…';
   try{const subs=await api('/subastas');SUBS=subs||[];if(!subs.length){el.innerHTML='<p class="muted">No hay subastas.</p>';return}
     const cards=await Promise.all(subs.map(subCard));el.innerHTML=cards.join('')}
