@@ -213,11 +213,31 @@ export function MisComprasScreen({ navigation }) {
         <Text style={{ color: colors.muted, textAlign: 'center', marginTop: 20 }}>Sin compras aún.</Text>
       )}
       <View style={{ gap: 12, marginTop: 12 }}>
-        {registros.map((r) => (
-          <TouchableOpacity key={r.id} onPress={() => navigation.navigate('CompraDetalle', r)}>
-            <ListRow item={r} />
-          </TouchableOpacity>
-        ))}
+        {registros.map((r) => {
+          const pendiente = r.estadoPago !== 'pagado' && r.reembolsada !== 'si';
+          const totalR = r.importe != null ? Number(r.importe) + Number(r.comision || 0) : null;
+          return (
+            <View key={r.id} style={{ gap: 8 }}>
+              <TouchableOpacity onPress={() => navigation.navigate('CompraDetalle', r)}>
+                <ListRow item={r} />
+              </TouchableOpacity>
+              {pendiente && (
+                <Btn
+                  title={`Pagar${totalR != null ? ` · $ ${totalR.toLocaleString('es-AR')}` : ''}`}
+                  onPress={() => navigation.navigate('MedioPago', {
+                    registroId: r.registroId,
+                    subastaId: r.subastaId,
+                    importe: r.importe,
+                    comision: r.comision,
+                    moneda: r.moneda,
+                    titulo: r.title,
+                  })}
+                  style={{ paddingVertical: 11 }}
+                />
+              )}
+            </View>
+          );
+        })}
       </View>
     </Screen>
   );
