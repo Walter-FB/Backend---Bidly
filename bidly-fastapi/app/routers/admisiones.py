@@ -52,6 +52,9 @@ class ColeccionRequest(BaseModel):
     subastaId: int
     nombreColeccion: str
     items: List[ItemColeccion]
+    # Modo de venta del catálogo: 'individual' (pieza por pieza, default) o
+    # 'bloque' (única venta: el mejor postor se lleva todas las piezas).
+    ventaModo: Optional[str] = "individual"
 
 
 def _sync_producto_estado(producto_id: int, estado: str, causa: Optional[str], db: Session) -> None:
@@ -404,8 +407,17 @@ def crear_coleccion(body: ColeccionRequest, db: Session = Depends(get_db)):
     duenios_distintos = {a.duenio for a in admisiones}
     if len(duenios_distintos) > 1:
         raise HTTPException(422, detail={
-            "message": "Una colección debe ser de un solo dueño (lleva su nombre y el seguro tiene un único beneficiario).",
+            "message": "El catálogo debe ser de un solo dueño (lleva su nombre y el seguro tiene un único beneficiario).",
             "code": "COLECCION_MULTIPLE_DUENIO"})
+
+    # Modo de venta del catálogo (tabla propia subasta_venta_modo; sin fila = individual).
+    modo = body.ventaModo if body.ventaModo in ("individual", "bloque") else "individual"
+    from app.models.venta_modo import SubastaVentaModo
+    vm = db.query(SubastaVentaModo).filter(SubastaVentaModo.subasta == body.subastaId).first()
+    if vm:
+        vm.modo = modo
+    else:
+        db.add(SubastaVentaModo(subasta=body.subastaId, modo=modo))
 
     resultado = []
     duenios = set()
@@ -426,11 +438,15 @@ def crear_coleccion(body: ColeccionRequest, db: Session = Depends(get_db)):
 
     # Consigna: cada pieza conserva su precio base (no se funden en un lote único);
     # el total es la suma de las bases, informativo para el dueño.
+    detalle_modo = (
+        "Se venden todas juntas en una única venta (el mejor postor se lleva todo)."
+        if modo == "bloque" else "Se rematan pieza por pieza."
+    )
     for d in duenios:
         notificacion_service.crear(
             d, "admision",
-            f"Tus {len(resultado)} bienes se agruparon en la colección \"{body.nombreColeccion}\" "
-            f"(base total ${total}). Aceptá o rechazá las propuestas desde la app.",
+            f"Tus {len(resultado)} bienes se agruparon en el catálogo \"{body.nombreColeccion}\" "
+            f"(base total ${total}). {detalle_modo} Aceptá o rechazá las propuestas desde la app.",
             db,
         )
     db.commit()

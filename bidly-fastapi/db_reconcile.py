@@ -44,6 +44,7 @@ FEATURES = [
     "payouts", "notificaciones", "registro_pago", "reembolsos",
     "ubicaciones_bien",  # depósito donde está guardada la pieza (visible al dueño)
     "item_remate",       # timer del ítem que se está rematando
+    "subasta_venta_modo",  # modo de venta del catálogo: individual | bloque (única venta)
 ]
 ESQUEMA_FINAL = set(PROFE + AUTH + ["producto_estado"] + FEATURES)
 
@@ -190,6 +191,12 @@ DDL = [
         CREATE TABLE IF NOT EXISTS item_remate (
             item       integer PRIMARY KEY REFERENCES itemscatalogo (identificador),
             termina_en timestamp
+        );
+    """),
+    ("subasta_venta_modo", """
+        CREATE TABLE IF NOT EXISTS subasta_venta_modo (
+            subasta integer PRIMARY KEY REFERENCES subastas (identificador),
+            modo    varchar DEFAULT 'individual'
         );
     """),
 ]

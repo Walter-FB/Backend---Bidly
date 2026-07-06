@@ -21,7 +21,7 @@ from app.models.asistente import Asistente
 from app.models.cliente import Cliente
 from app.models.subasta import Subasta
 from app.schemas.puja import PujaCreate
-from app.services import categoria_service, acceso_service, multa_service, saldo_service, remate_service
+from app.services import categoria_service, acceso_service, multa_service, saldo_service, remate_service, subasta_service
 from app.serializers import puja_to_dict
 
 router = APIRouter()
@@ -68,6 +68,16 @@ def colocar_puja(body: PujaCreate, db: Session = Depends(get_db)):
     if not subasta or subasta.estado != "abierta":
         raise HTTPException(409, detail={"message": "La subasta no está abierta", "code": "AUCTION_CLOSED"})
 
+    # El remate va de a un ítem por vez: si hay reloj en marcha, solo se puja en el
+    # ítem en curso (en modo bloque, el líder concentra las pujas del catálogo).
+    modo = subasta_service.venta_modo(subasta.identificador, db)
+    activo = remate_service.item_activo(subasta.identificador, db)
+    if activo and activo.identificador != item_id and (
+        modo == "bloque" or remate_service._remate_de(activo.identificador, db)
+    ):
+        raise HTTPException(409, detail={
+            "message": "Ese ítem no es el que se está rematando ahora.", "code": "ITEM_NO_ACTIVO"})
+
     # Reloj del remate: si el tiempo del ítem ya se agotó, no se acepta la puja
     # (está por adjudicarse solo).
     rem = remate_service._remate_de(item_id, db)
@@ -98,10 +108,22 @@ def colocar_puja(body: PujaCreate, db: Session = Depends(get_db)):
     saldo_service.validar_puja(cliente_id, importe, db, item_id=item_id, medio_id=body.medioPagoId)
 
     # Mínimo / máximo respecto de la mejor oferta y el valor base.
+    # En modo bloque se puja por el catálogo COMPLETO → la base de referencia para
+    # los límites (1% / 20%) es la SUMA de las bases de las piezas pendientes.
     ultima = (
         db.query(Puja).filter(Puja.item == item_id).order_by(Puja.importe.desc()).first()
     )
-    precio_base = Decimal(str(item.preciobase))
+    if modo == "bloque":
+        from sqlalchemy import func
+        total = (
+            db.query(func.coalesce(func.sum(ItemCatalogo.preciobase), 0))
+            .join(Catalogo, ItemCatalogo.catalogo == Catalogo.identificador)
+            .filter(Catalogo.subasta == subasta.identificador, ItemCatalogo.subastado == "no")
+            .scalar()
+        )
+        precio_base = Decimal(str(total or 0)) or Decimal(str(item.preciobase))
+    else:
+        precio_base = Decimal(str(item.preciobase))
     ultima_imp  = Decimal(str(ultima.importe)) if ultima else Decimal("0")
 
     minimo = max(ultima_imp + precio_base * Decimal("0.01"), precio_base)

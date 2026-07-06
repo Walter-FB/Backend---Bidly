@@ -1069,7 +1069,7 @@ export function MisAdmisionesScreen({ navigation }) {
                   <Tag label={meta.label} color={meta.color} />
                 </View>
                 {a.esColeccion === 'si' && a.nombreColeccion && (
-                  <Text style={{ color: colors.blue, fontSize: 12 }}>Colección: {a.nombreColeccion}</Text>
+                  <Text style={{ color: colors.blue, fontSize: 12 }}>Catálogo: {a.nombreColeccion}</Text>
                 )}
                 {a.alertaOrigen === 'si' && (
                   <Text style={{ color: colors.red, fontSize: 12.5 }}>

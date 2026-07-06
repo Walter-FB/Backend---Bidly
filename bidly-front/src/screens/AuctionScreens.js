@@ -125,7 +125,13 @@ export function ProductoScreen({ navigation, route }) {
   const itemDestacado = itemEnVivo || items[0];
   const titulo = tituloSubasta(subasta, items);
   const categoria = `${subasta.categoria || 'General'} · ${subasta.ubicacion || ''}`.replace(/·\s*$/, '').trim();
-  const precioBase = itemDestacado?.precioBase;
+  // En única venta (bloque) se puja por el catálogo completo: la base de referencia
+  // es la SUMA de las bases pendientes (el backend valida con el mismo criterio).
+  const ventaBloque = subasta.ventaModo === 'bloque';
+  const itemsPendientes = items.filter((i) => i.subastado !== 'si');
+  const basePendiente = itemsPendientes.reduce((t, i) => t + Number(i.precioBase ?? i.preciobase ?? 0), 0);
+  const comisionPendiente = itemsPendientes.reduce((t, i) => t + Number(i.comision ?? 0), 0);
+  const precioBase = ventaBloque ? basePendiente : itemDestacado?.precioBase;
   const viva = esSubastaEnVivo(subasta);
   const fotoUrls = fotoIds.map((id) => `${BASE_URL}/fotos/${id}`);
 
@@ -231,13 +237,16 @@ export function ProductoScreen({ navigation, route }) {
               subastaId: subasta.identificador,
               itemId: itemDestacado.identificador,
               productoId: itemDestacado.producto?.identificador,
-              precioBase: itemDestacado.precioBase,
+              // En bloque, base y comisión de referencia = las del catálogo completo.
+              precioBase,
               titulo,
               moneda: subasta.moneda,
-              comision: itemDestacado.comision,
+              comision: ventaBloque ? comisionPendiente : itemDestacado.comision,
               fecha: subasta.fecha,
               hora: subasta.hora,
               categoriaSubasta: subasta.categoria,
+              ventaModo: subasta.ventaModo,
+              totalPiezas: itemsPendientes.length,
             })}
           />
         </BottomBar>
@@ -260,6 +269,8 @@ export function SubastaEnVivoScreen({ navigation, route }) {
     fecha,
     hora,
     categoriaSubasta,
+    ventaModo = 'individual',
+    totalPiezas = 1,
   } = route.params || {};
 
   const [pujas, setPujas] = useState([]);
@@ -515,10 +526,15 @@ export function SubastaEnVivoScreen({ navigation, route }) {
           )}
         </View>
         <Display style={{ fontSize: 20, marginVertical: 14, lineHeight: 23 }}>{titulo}</Display>
+        {ventaModo === 'bloque' && (
+          <Text style={{ color: colors.gold, fontSize: 12.5, fontWeight: '700', marginTop: -8, marginBottom: 12 }}>
+            🧺 Única venta: pujás por el catálogo completo ({totalPiezas} piezas) — el mejor postor se lleva todo.
+          </Text>
+        )}
 
         <Card el style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' }}>
           <View>
-            <Text style={{ color: colors.muted, fontSize: 12, marginBottom: 4 }}>Precio base</Text>
+            <Text style={{ color: colors.muted, fontSize: 12, marginBottom: 4 }}>{ventaModo === 'bloque' ? 'Base total del catálogo' : 'Precio base'}</Text>
             <Text style={{ color: colors.gold, fontSize: 24, fontWeight: '800' }}>
               {formatImporte(precioBase, moneda)}
             </Text>
@@ -881,7 +897,9 @@ export function SubastaAdminScreen({ navigation, route }) {
               />
             )}
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Text style={{ color: colors.muted, fontSize: 11, fontWeight: '800', letterSpacing: 1 }}>ÍTEM EN SUBASTA</Text>
+              <Text style={{ color: colors.muted, fontSize: 11, fontWeight: '800', letterSpacing: 1 }}>
+                {subasta?.ventaModo === 'bloque' ? 'CATÁLOGO COMPLETO · ÚNICA VENTA' : 'ÍTEM EN SUBASTA'}
+              </Text>
               {itemActivoAdjudicado
                 ? <Tag label="ADJUDICADO" color={colors.green} />
                 : (enVivo && timeLeft != null && (
@@ -896,6 +914,12 @@ export function SubastaAdminScreen({ navigation, route }) {
             <Text style={{ color: colors.muted, fontSize: 13 }}>
               Precio base: {formatImporte(itemActivo.precioBase, moneda)}
             </Text>
+            {subasta?.ventaModo === 'bloque' && (
+              <Text style={{ color: colors.gold, fontSize: 12.5, fontWeight: '700' }}>
+                🧺 Única venta: el mejor postor se lleva las {items.filter((i) => i.subastado !== 'si').length} piezas
+                {' '}· base total {formatImporte(items.filter((i) => i.subastado !== 'si').reduce((t, i) => t + Number(i.precioBase ?? 0), 0), moneda)}
+              </Text>
+            )}
 
             {/* Puja más alta */}
             <View style={{ marginTop: 6 }}>

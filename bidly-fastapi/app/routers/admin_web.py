@@ -14,28 +14,44 @@ PAGE = r"""<!doctype html>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Bidly — Panel interno</title>
 <style>
-  :root{--bg:#0b1022;--card:#141a30;--cardEl:#1b2340;--border:#26304f;--blue:#3a8fd6;--green:#37d66f;--gold:#e6b23a;--red:#e23950;--muted:#8a93ab;--txt:#eef2ff}
+  :root{
+    --bg:#0b1022; --bg2:#0e142a; --card:#151b33; --cardEl:#1b2340; --border:#2a3556;
+    --blue:#4b9fe6; --blueDark:#2f7fc4; --green:#37d66f; --gold:#e6b23a; --red:#e2504f;
+    --muted:#8b94ad; --txt:#eef2ff; --shadow:0 2px 10px rgba(0,0,0,.28);
+  }
   *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--txt);font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;font-size:14px}
-  header{display:flex;align-items:center;gap:14px;padding:16px 22px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg);z-index:5}
-  header h1{font-size:19px;margin:0;color:var(--blue)}
-  .tag{font-size:11px;font-weight:800;padding:3px 9px;border-radius:6px;color:#fff}
-  nav{display:flex;gap:6px;padding:12px 22px;border-bottom:1px solid var(--border);flex-wrap:wrap}
-  nav button{background:var(--card);border:1px solid var(--border);color:var(--muted);padding:9px 16px;border-radius:9px;cursor:pointer;font-weight:700}
+  body{margin:0;background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;font-size:14px;line-height:1.45}
+  header{display:flex;align-items:center;gap:12px;padding:14px 24px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg);z-index:6}
+  header h1{font-size:20px;margin:0;color:var(--blue);letter-spacing:.5px;font-weight:900}
+  .tag{font-size:10.5px;font-weight:800;padding:4px 10px;border-radius:999px;color:#fff;letter-spacing:.4px}
+  nav{display:flex;gap:8px;padding:12px 24px;border-bottom:1px solid var(--border);flex-wrap:wrap}
+  nav button{background:transparent;border:1px solid var(--border);color:var(--muted);padding:8px 16px;border-radius:999px;cursor:pointer;font-weight:700;font-size:13px;transition:.15s}
+  nav button:hover{color:var(--txt);border-color:var(--blue)}
   nav button.active{background:var(--blue);color:#fff;border-color:var(--blue)}
-  main{padding:20px 22px;max-width:920px;margin:0 auto}
-  .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:12px}
-  .row{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+  main{padding:22px 24px 60px;max-width:960px;margin:0 auto}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:14px;box-shadow:var(--shadow)}
+  .card.tool{background:var(--bg2);border-color:var(--blueDark)}
+  .row{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
   .muted{color:var(--muted);font-size:12.5px}
-  .title{font-weight:800;font-size:15px}
-  input,select{background:var(--cardEl);border:1px solid var(--border);color:var(--txt);border-radius:8px;padding:9px 10px;font-size:13px;width:100%;margin:4px 0}
-  button.act{border:none;border-radius:8px;padding:9px 12px;font-weight:800;cursor:pointer;color:#fff;font-size:13px}
+  .title{font-weight:800;font-size:15.5px;letter-spacing:.2px}
+  input,select{background:var(--cardEl);border:1px solid var(--border);color:var(--txt);border-radius:9px;padding:10px 12px;font-size:13.5px;width:100%;margin:5px 0;transition:.15s;outline:none}
+  input::placeholder{color:var(--muted)}
+  input:focus,select:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(75,159,230,.18)}
+  button.act{border:none;border-radius:9px;padding:10px 14px;font-weight:800;cursor:pointer;color:#fff;font-size:13px;transition:.15s;margin-top:2px}
+  button.act:hover{filter:brightness(1.08)}
+  button.act:disabled{opacity:.4;cursor:not-allowed;filter:none}
   .b-blue{background:var(--blue)} .b-green{background:var(--green);color:#04220f} .b-red{background:var(--red)} .b-ghost{background:transparent;border:1px solid var(--border);color:var(--txt)}
-  .st{font-size:11px;font-weight:800;padding:3px 8px;border-radius:6px;color:#fff}
-  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-  .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);padding:10px 18px;border-radius:10px;font-weight:700;z-index:20;display:none}
-  .hint{color:var(--muted);font-size:12.5px;line-height:1.5;margin:0 0 12px}
+  .b-ghost:hover{border-color:var(--blue)}
+  .st{font-size:10.5px;font-weight:800;padding:4px 10px;border-radius:999px;color:#fff;white-space:nowrap;letter-spacing:.3px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .colitem{display:flex;align-items:center;gap:10px;padding:8px 11px;border:1px solid var(--border);border-radius:9px;margin:6px 0;background:var(--card)}
+  .colitem input[type=checkbox]{width:auto;margin:0;flex:0 0 auto;cursor:pointer}
+  .colitem-name{flex:1;font-size:13px}
+  .colitem-base{max-width:120px;margin:0}
+  .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);padding:12px 22px;border-radius:12px;font-weight:700;z-index:20;display:none;box-shadow:0 6px 24px rgba(0,0,0,.4)}
+  .hint{color:var(--muted);font-size:12.5px;line-height:1.55;margin:0 0 14px}
   .refresh{color:var(--blue);cursor:pointer;font-weight:700;font-size:13px;background:none;border:none;float:right}
+  .refresh:hover{text-decoration:underline}
   a{color:var(--blue)}
 </style></head>
 <body>
@@ -55,17 +71,30 @@ PAGE = r"""<!doctype html>
     <p class="hint">Solicitudes de los usuarios. Pedí la inspección, rechazá con motivo, o aceptá proponiendo
       valor base + comisión y asignando a una subasta (el dueño confirma desde la app).
       <button class="refresh" onclick="loadAdm()">↻ Actualizar</button></p>
-    <div class="card">
-      <div class="title" style="margin-bottom:6px">🧩 Armar colección</div>
-      <p class="muted" style="margin:0 0 8px">Tildá abajo "Sumar a colección" en bienes del <b>mismo dueño</b>, poné la base de cada pieza y un nombre.
-        Se agrupan en una sola subasta; cada pieza conserva su base y el total es la suma.</p>
+    <div class="card tool">
+      <div class="title" style="margin-bottom:6px">🧩 Armar catálogo</div>
+      <p class="muted" style="margin:0 0 10px">Marcá los bienes del <b>mismo dueño</b> de la lista, poné la base de cada uno, un nombre y la subasta.
+        Cada pieza conserva su base y el total es la suma.</p>
       <div class="grid2">
-        <input id="col-nombre" placeholder="Nombre de la colección (ej: Colección Pérez)">
+        <input id="col-nombre" placeholder="Nombre del catálogo (ej: Colección Pérez)">
         <select id="col-sub"></select>
       </div>
-      <div class="row" style="margin-top:6px;align-items:center">
-        <div><b id="col-total">Total: $0</b> · <span id="col-sel" class="muted">Nada seleccionado.</span></div>
-        <button class="act b-blue" onclick="crearColeccion()">Crear colección</button>
+      <div id="col-items" style="max-height:240px;overflow:auto;margin:8px 0 4px">
+        <div class="muted">Cargando bienes…</div>
+      </div>
+      <div class="row" style="align-items:center;gap:14px">
+        <div style="flex:1">
+          <div><b id="col-total">Total: $0</b> · <span id="col-sel" class="muted">Nada seleccionado.</span></div>
+          <div style="margin-top:6px">
+            <label class="muted" style="display:flex;gap:7px;align-items:center;cursor:pointer">
+              <input type="radio" name="col-modo" value="individual" checked style="width:auto;margin:0">
+              Venta pieza por pieza (cada ítem se remata por separado)</label>
+            <label class="muted" style="display:flex;gap:7px;align-items:center;cursor:pointer">
+              <input type="radio" name="col-modo" value="bloque" style="width:auto;margin:0">
+              Todo junto en una <b>&nbsp;única venta&nbsp;</b> (el mejor postor se lleva el catálogo completo)</label>
+          </div>
+        </div>
+        <button class="act b-blue" onclick="crearColeccion()">Crear catálogo</button>
       </div>
     </div>
     <div id="adm"></div>
@@ -78,7 +107,7 @@ PAGE = r"""<!doctype html>
   <section id="s-sub" style="display:none">
     <p class="hint">Crear / abrir / cerrar / adjudicar subastas.
       <button class="refresh" onclick="loadSub()">↻ Actualizar</button></p>
-    <div class="card">
+    <div class="card tool">
       <div class="title" style="margin-bottom:4px">+ Crear subasta</div>
       <p class="muted" style="margin:0 0 8px">La fecha es <b>opcional</b>: dejala vacía para una subasta "a confirmar" (sirve para propuestas con fecha «sin definir» o «al aceptar»).</p>
       <div class="grid2">
@@ -130,20 +159,25 @@ async function loadAdm(){
     const disp=SUBS.filter(s=>!(s.estado==='cerrada' && (s.totalItems||0)>0 && (s.itemsPendientes||0)===0));
     const cs=document.getElementById('col-sub');
     if(cs)cs.innerHTML=disp.map(s=>'<option value="'+s.identificador+'">'+subLabel(s)+'</option>').join('');
+    const ci=document.getElementById('col-items');if(ci)ci.innerHTML=colCandidatos(adm);
     if(!adm.length){el.innerHTML='<p class="muted">No hay solicitudes.</p>';recomputeCol();return}
     el.innerHTML=adm.map(a=>admCard(a,disp)).join('');recomputeCol()}
   catch(e){el.innerHTML='<p class="muted">Error: '+esc(e.message)+'</p>'}
 }
 function subLabel(s){return '#'+s.identificador+' · '+(s.estado==='abierta'?'ABIERTA':'programada')+' · '+esc(s.fecha||'sin fecha')+' · '+esc(s.categoria||'')+' · '+esc(s.moneda||'pesos');}
-// Fila para sumar el bien a una colección (mismo dueño). Editás la base por pieza;
-// el total (suma) se calcula solo. Consigna: cada pieza conserva su precio base.
-function colRow(a){
-  if(a.estado==='rechazada'||a.estado==='rechazada_duenio')return '';
-  const base=a.valorBase!=null?a.valorBase:'';
-  const aviso=(a.estado==='solicitada'||a.estado==='en_inspeccion')?' <span style="color:var(--gold)">⚠ sin inspección</span>':'';
-  return '<div class="row" style="margin-top:8px;border-top:1px dashed var(--border);padding-top:8px">'
-    +'<label class="muted" style="display:flex;align-items:center;gap:6px"><input type="checkbox" style="width:auto;margin:0" id="colchk'+a.identificador+'" data-duenio="'+a.duenio+'" onchange="recomputeCol()"> Sumar a colección'+aviso+'</label>'
-    +'<input style="max-width:150px" id="colvb'+a.identificador+'" type="number" placeholder="Base $" value="'+esc(base)+'" oninput="recomputeCol()"></div>';
+// Lista de bienes candidatos a agrupar en una colección — TODO en la misma tarjeta,
+// así se marcan varios de una. Cada fila: check + nombre + base editable.
+function colCandidatos(adm){
+  const elig=(adm||[]).filter(a=>!['rechazada','rechazada_duenio'].includes(a.estado));
+  if(!elig.length)return '<div class="muted">No hay bienes para agrupar todavía.</div>';
+  return elig.map(a=>{
+    const nombre=esc((a.producto&&a.producto.titulo)||('Producto #'+(a.producto&&a.producto.identificador)));
+    const base=a.valorBase!=null?a.valorBase:'';
+    const aviso=(a.estado==='solicitada'||a.estado==='en_inspeccion')?' · <span style="color:var(--gold)">⚠ sin inspección</span>':'';
+    return '<label class="colitem"><input type="checkbox" id="colchk'+a.identificador+'" data-duenio="'+a.duenio+'" onchange="recomputeCol()">'
+      +'<span class="colitem-name">'+nombre+' <span class="muted">#'+a.identificador+' · dueño '+a.duenio+aviso+'</span></span>'
+      +'<input class="colitem-base" id="colvb'+a.identificador+'" type="number" placeholder="Base $" value="'+esc(base)+'" oninput="recomputeCol()"></label>';
+  }).join('');
 }
 function admCard(a,disp){
   const [lbl,col]=ADM_ST[a.estado]||ADM_ST.solicitada;
@@ -165,8 +199,8 @@ function admCard(a,disp){
   else if(a.estado==='rechazada'){ acc='<p class="muted" style="color:var(--red)">Motivo: '+esc(a.observacion)+'</p>'; }
   return '<div class="card"><div class="row"><div><div class="title">'+esc(a.producto&&a.producto.titulo||('Producto #'+(a.producto&&a.producto.identificador)))+'</div>'
     +'<div class="muted">#'+a.identificador+' · dueño '+a.duenio+' · '+(a.producto&&a.producto.fotos||0)+' fotos · propiedad:'+esc(a.declaraPropiedad)+' · origen:'+esc(a.declaraOrigen)+'</div>'
-    +(a.esColeccion==='si'?'<div class="muted" style="color:var(--blue)">Colección: '+esc(a.nombreColeccion)+'</div>':'')+'</div>'
-    +'<span class="st" style="background:'+col+'">'+lbl+'</span></div>'+acc+colRow(a)+origenBox(a)+'</div>';
+    +(a.esColeccion==='si'?'<div class="muted" style="color:var(--blue)">Catálogo: '+esc(a.nombreColeccion)+'</div>':'')+'</div>'
+    +'<span class="st" style="background:'+col+'">'+lbl+'</span></div>'+acc+origenBox(a)+'</div>';
 }
 function rechazoBox(a){return '<input id="obs'+a.identificador+'" placeholder="Motivo del rechazo"><button class="act b-red" onclick="rechazar('+a.identificador+')">Rechazar y devolver</button>'}
 function origenBox(a){
@@ -190,7 +224,7 @@ async function rechazar(id){const o=document.getElementById('obs'+id).value;if(!
 async function alertarOrigen(id){const m=(document.getElementById('org'+id).value||'').trim();
   try{await api('/admisiones/'+id+'/alertar-origen','PATCH',{motivo:m||'Sin especificar'});toast('Aviso de origen registrado');loadAdm()}catch(e){toast(e.message,false)}}
 
-// ── COLECCIÓN (armador) ──
+// ── CATÁLOGO (armador; "colección" en la consigna del profe) ──
 function _colChecks(){return document.querySelectorAll('input[id^=colchk]');}
 function recomputeCol(){
   let total=0,n=0;const duenios=new Set();
@@ -201,14 +235,16 @@ function recomputeCol(){
 async function crearColeccion(){
   const nombre=(document.getElementById('col-nombre').value||'').trim();
   const su=+document.getElementById('col-sub').value;
+  const modo=(document.querySelector('input[name=col-modo]:checked')||{}).value||'individual';
   const items=[];const duenios=new Set();
   _colChecks().forEach(chk=>{if(chk.checked){const id=+chk.id.slice(6);const vb=+((document.getElementById('colvb'+id)||{}).value||0);items.push({admisionId:id,valorBase:vb});duenios.add(chk.getAttribute('data-duenio'));}});
-  if(!nombre)return toast('Poné un nombre de colección',false);
-  if(!su)return toast('Elegí una subasta para la colección',false);
+  if(!nombre)return toast('Poné un nombre para el catálogo',false);
+  if(!su)return toast('Elegí una subasta para el catálogo',false);
   if(items.length<2)return toast('Elegí al menos 2 bienes',false);
-  if(duenios.size>1)return toast('La colección debe ser de un solo dueño',false);
+  if(duenios.size>1)return toast('El catálogo debe ser de un solo dueño',false);
   if(items.some(it=>!it.valorBase||it.valorBase<=0))return toast('Cada pieza necesita una base > 0',false);
-  try{await api('/admisiones/coleccion','POST',{subastaId:su,nombreColeccion:nombre,items:items});toast('Colección creada ('+items.length+' piezas)');loadAdm()}catch(e){toast(e.message,false)}
+  try{await api('/admisiones/coleccion','POST',{subastaId:su,nombreColeccion:nombre,items:items,ventaModo:modo});
+    toast('Catálogo creado ('+items.length+' piezas'+(modo==='bloque'?' · única venta':' · pieza por pieza')+')');loadAdm()}catch(e){toast(e.message,false)}
 }
 
 // ── POSTORES ──
@@ -231,12 +267,16 @@ async function loadSub(){const el=document.getElementById('sub');el.innerHTML='C
   catch(e){el.innerHTML='<p class="muted">Error: '+esc(e.message)+'</p>'}}
 async function subCard(s){
   const ab=s.estado==='abierta';
+  const bloque=s.ventaModo==='bloque';
   let its=[];try{its=await api('/subastas/'+s.identificador+'/catalogos')}catch(e){}
+  // En única venta no se adjudica pieza por pieza (romperia el bloque): se lleva todo el mejor postor.
   const items=(its||[]).map(it=>'<div class="row" style="margin-top:6px"><div class="muted">'+esc(it.producto&&it.producto.descripcionCatalogo||('Ítem #'+it.identificador))+' · base '+esc(it.precioBase)+(it.subastado==='si'?' · <b style="color:var(--green)">ADJUDICADO</b>':'')+'</div>'
-    +(it.subastado==='si'?'':'<button class="act b-ghost" onclick="adjudicar('+it.identificador+')">Adjudicar</button>')+'</div>').join('')||'<div class="muted" style="margin-top:6px">Sin ítems.</div>';
+    +((it.subastado==='si'||bloque)?'':'<button class="act b-ghost" onclick="adjudicar('+it.identificador+')">Adjudicar</button>')+'</div>').join('')||'<div class="muted" style="margin-top:6px">Sin ítems.</div>';
   return '<div class="card"><div class="row"><div><div class="title">'+esc(s.titulo||('Subasta #'+s.identificador))+'</div>'
     +'<div class="muted">#'+s.identificador+' · '+esc(s.categoria||'—')+' · '+esc(s.moneda||'pesos')+' · '+esc(s.fecha||'—')+' · '+(s.totalItems||0)+' ítems</div></div>'
-    +'<span class="st" style="background:'+(ab?'var(--green)':'var(--muted)')+'">'+(ab?'ABIERTA':'CERRADA')+'</span></div>'
+    +'<div style="display:flex;gap:6px;align-items:center">'
+    +(bloque?'<span class="st" style="background:var(--gold);color:#231a02">ÚNICA VENTA</span>':'')
+    +'<span class="st" style="background:'+(ab?'var(--green)':'var(--muted)')+'">'+(ab?'ABIERTA':'CERRADA')+'</span></div></div>'
     +'<div style="margin-top:8px"><button class="act b-green" '+(ab?'disabled style="opacity:.4"':'')+' onclick="setEstado('+s.identificador+',\'abierta\')">Abrir puja</button> '
     +'<button class="act b-red" '+(ab?'':'disabled style="opacity:.4"')+' onclick="setEstado('+s.identificador+',\'cerrada\')">Cerrar</button></div>'+items+'</div>';
 }

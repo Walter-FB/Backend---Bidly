@@ -35,6 +35,13 @@ def _remate_de(item_id: int, db: Session) -> ItemRemate | None:
     return db.query(ItemRemate).filter(ItemRemate.item == item_id).first()
 
 
+def item_activo(subasta_id: int, db: Session) -> ItemCatalogo | None:
+    """El ítem que se está rematando ahora (primer pendiente del catálogo).
+    En modo bloque es el ítem líder, donde viven todas las pujas del catálogo."""
+    pendientes = _items_pendientes(subasta_id, db)
+    return pendientes[0] if pendientes else None
+
+
 def _activar_siguiente(subasta_id: int, db: Session) -> ItemRemate | None:
     """Pone en marcha el reloj del primer ítem pendiente que no lo tenga."""
     pendientes = _items_pendientes(subasta_id, db)
@@ -86,8 +93,14 @@ def tick(subasta_id: int, db: Session):
             # No tenía reloj (ej. subasta recién abierta): lo arranca.
             return _activar_siguiente(subasta_id, db)
         if rem.termina_en and datetime.utcnow() >= rem.termina_en:
-            # Se acabó el tiempo → se adjudica solo y sigue con el próximo ítem.
-            subasta_service.adjudicar_item(item.identificador, db)
+            # Se acabó el tiempo → se adjudica solo.
+            if subasta_service.venta_modo(subasta_id, db) == "bloque":
+                # Única venta: el mejor postor del líder se lleva TODAS las piezas
+                # (o la empresa compra todo a base si nadie pujó). No hay "próximo".
+                subasta_service.adjudicar_bloque(subasta_id, db)
+            else:
+                # Pieza por pieza: se adjudica este ítem y sigue con el próximo.
+                subasta_service.adjudicar_item(item.identificador, db)
             db.delete(rem)
             db.flush()
             continue

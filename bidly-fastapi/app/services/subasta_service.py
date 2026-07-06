@@ -24,6 +24,14 @@ def _moneda(subasta_id: int, db: Session) -> str:
     return sm.moneda if sm else "pesos"
 
 
+def venta_modo(subasta_id: int, db: Session) -> str:
+    """Modo de venta del catálogo: 'individual' (pieza por pieza, default) o
+    'bloque' (única venta: el mejor postor se lleva todas las piezas)."""
+    from app.models.venta_modo import SubastaVentaModo
+    vm = db.query(SubastaVentaModo).filter(SubastaVentaModo.subasta == subasta_id).first()
+    return vm.modo if (vm and vm.modo) else "individual"
+
+
 def _ensure_duenio(persona_id: int, db: Session) -> None:
     """Garantiza una fila en `duenios` para el comprador antes de asignarle un
     producto (productos.duenio es FK NOT NULL a duenios). Un postor puede no ser
@@ -47,6 +55,7 @@ def _ensure_duenio(persona_id: int, db: Session) -> None:
 def enrich(subasta: Subasta, db: Session) -> dict:
     data: dict = {col.name: getattr(subasta, col.name) for col in subasta.__table__.columns}
     data["moneda"] = _moneda(subasta.identificador, db)
+    data["ventaModo"] = venta_modo(subasta.identificador, db)
 
     # Reloj del remate: si está abierta, exponer cuánto falta del ítem activo
     # (permite mostrar el countdown en el listado, no solo en el detalle).
@@ -234,6 +243,107 @@ def adjudicar_item(item_id: int, db: Session) -> ItemCatalogo:
     _cerrar_si_completa(subasta_id, db)
     db.flush()
     return item
+
+
+def adjudicar_bloque(subasta_id: int, db: Session) -> None:
+    """Venta en bloque (única venta): el mejor postor del ítem líder se lleva TODAS
+    las piezas pendientes del catálogo. El importe ganador se prorratea entre las
+    piezas según su precio base — así cada producto conserva su registroDeSubasta,
+    payout y seguro individuales (DDL del profe: registro por producto).
+    Sin pujas → la empresa compra cada pieza al valor base (flujo estándar)."""
+    from app.services import payout_service, notificacion_service, categoria_service
+
+    pendientes = (
+        db.query(ItemCatalogo)
+        .join(Catalogo, ItemCatalogo.catalogo == Catalogo.identificador)
+        .filter(Catalogo.subasta == subasta_id, ItemCatalogo.subastado == "no")
+        .order_by(ItemCatalogo.identificador)
+        .with_for_update(of=ItemCatalogo)
+        .all()
+    )
+    if not pendientes:
+        return
+
+    # Las pujas del bloque viven en el ítem líder (el primero pendiente).
+    lider = pendientes[0]
+    puja_ganadora = (
+        db.query(Puja)
+        .filter(Puja.item == lider.identificador, Puja.ganador == "no")
+        .order_by(Puja.importe.desc())
+        .first()
+    )
+    if not puja_ganadora:
+        # Nadie pujó: la empresa compra pieza por pieza al valor base.
+        for it in pendientes:
+            adjudicar_item(it.identificador, db)
+        return
+
+    puja_ganadora.ganador = "si"
+    asistente = db.query(Asistente).filter(Asistente.identificador == puja_ganadora.asistente).first()
+    comprador = asistente.cliente if asistente else None
+
+    ganado = Decimal(str(puja_ganadora.importe))
+    total_base = sum(Decimal(str(it.preciobase or 0)) for it in pendientes) or Decimal("1")
+    total_comision = Decimal("0")
+    restante = ganado
+
+    for i, it in enumerate(pendientes):
+        base_i = Decimal(str(it.preciobase or 0))
+        # Prorrateo por base; la última pieza absorbe el redondeo (la suma da exacto).
+        parte = restante if i == len(pendientes) - 1 else (ganado * base_i / total_base).quantize(Decimal("0.01"))
+        restante -= parte
+        comision_i = Decimal(str(it.comision or 0))
+        total_comision += comision_i
+
+        it.subastado = "si"
+        prod = db.query(Producto).filter(Producto.identificador == it.producto).first()
+        registro = RegistroDeSubasta(
+            subasta=subasta_id,
+            duenio=prod.duenio if prod else None,
+            producto=it.producto,
+            cliente=comprador,
+            importe=parte,
+            comision=comision_i,
+        )
+        db.add(registro)
+        db.flush()
+        db.add(RegistroPago(registro=registro.identificador, estado="pendiente", importe_total=parte + comision_i))
+        db.add(Reembolso(registro=registro.identificador, reembolsada="no"))
+
+        # Payout al dueño ORIGINAL (antes de transferir la pieza al comprador).
+        if prod and not payout_service.existe_payout(it.producto, db):
+            payout_service.crear_payout(
+                duenio_id=prod.duenio,
+                producto_id=it.producto,
+                subasta_id=subasta_id,
+                importe_bruto=parte,
+                comision=comision_i,
+                origen="venta",
+                db=db,
+                premium=_premium_de(it.producto, it.preciobase, db),
+            )
+        if prod and comprador:
+            _ensure_duenio(comprador, db)
+            prod.duenio = comprador
+            prod.disponible = "no"
+
+    if comprador:
+        notificacion_service.crear(
+            comprador, "ganaste",
+            f"¡Ganaste el catálogo completo ({len(pendientes)} piezas) en única venta! "
+            f"Pujado ${ganado} + comisiones ${total_comision} = ${ganado + total_comision}. "
+            "El costo de envío a tu dirección declarada se suma al pagar "
+            "(o retirás en persona y perdés el seguro).",
+            db,
+        )
+        nueva_cat = categoria_service.recalcular(comprador, db)
+        if nueva_cat:
+            notificacion_service.crear(
+                comprador, "categoria",
+                f"¡Subiste de categoría por tu actividad! Ahora sos {nueva_cat.upper()}.", db)
+
+    _cerrar_si_completa(subasta_id, db)
+    db.flush()
 
 
 def _cerrar_si_completa(subasta_id, db: Session) -> None:

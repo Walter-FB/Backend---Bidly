@@ -49,6 +49,9 @@ async def lifespan(app: FastAPI):
         models.Payout.__table__, models.CuentaDuenio.__table__,
         models.Admision.__table__, models.SubastaMoneda.__table__,
         models.Notificacion.__table__, models.UbicacionBien.__table__,
+        # Timer del remate + modo de venta del catálogo (individual/bloque): también
+        # se crean solas al arrancar (deploy sin migración a mano).
+        models.ItemRemate.__table__, models.SubastaVentaModo.__table__,
     ]
     Base.metadata.create_all(bind=engine, tables=feature_tables)
 
