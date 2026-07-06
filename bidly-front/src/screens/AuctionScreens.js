@@ -318,6 +318,25 @@ export function SubastaEnVivoScreen({ navigation, route }) {
     : m.tipo === 'cuenta' ? `Cuenta ${m.banco || ''}`.trim()
     : `Tarjeta ****${(m.numerotarjeta || m.numeroTarjeta || '').slice(-4)}`;
 
+  // Red de seguridad: si el precio base no llegó por parámetros (o llegó en 0),
+  // se recupera del catálogo del servidor — el precio nunca se "pierde" al entrar.
+  const [baseRecuperada, setBaseRecuperada] = useState(null);
+  useEffect(() => {
+    if (Number(precioBase) > 0 || !subastaId) return;
+    Subastas.catalogos(subastaId).then((its) => {
+      if (!mounted.current) return;
+      const lista = its || [];
+      const pend = lista.filter((i) => i.subastado !== 'si');
+      if (ventaModo === 'bloque') {
+        setBaseRecuperada(pend.reduce((t, i) => t + Number(i.precioBase ?? i.preciobase ?? 0), 0) || null);
+      } else {
+        const it = lista.find((i) => Number(i.identificador) === Number(itemId)) || pend[0];
+        setBaseRecuperada(Number(it?.precioBase ?? it?.preciobase ?? 0) || null);
+      }
+    }).catch(() => {});
+  }, [subastaId, itemId, precioBase, ventaModo]);
+  const baseRef = Number(precioBase) > 0 ? Number(precioBase) : (baseRecuperada ?? 0);
+
   // Timer del remate: el ítem tiene 3 min (+15s por puja). Al llegar a 0 se adjudica
   // solo y arranca el siguiente ítem. El reloj se lee de /subastas/{id}/remate.
 
@@ -441,25 +460,25 @@ export function SubastaEnVivoScreen({ navigation, route }) {
 
   // Calcular puja actual, próximo importe y tope máximo.
   const pujaActual = pujas.length > 0 ? pujas[0].importe : null;
-  const minIncremento = precioBase > 0
-    ? Math.ceil(Number(precioBase) * 0.01 * 100) / 100
+  const minIncremento = baseRef > 0
+    ? Math.ceil(baseRef * 0.01 * 100) / 100
     : 1;
   const proximaPuja = pujaActual != null
     ? Number(pujaActual) + minIncremento
-    : Number(precioBase);
+    : baseRef;
   const CATS_SIN_LIMITE = new Set(['oro', 'platino']);
   const maxPuja = CATS_SIN_LIMITE.has(categoriaSubasta)
     ? null
     : pujaActual != null
-      ? Number(pujaActual) + Number(precioBase) * 0.20
-      : Number(precioBase) * 1.20;
+      ? Number(pujaActual) + baseRef * 0.20
+      : baseRef * 1.20;
 
   // Sincronizar el input solo cuando cambia la puja líder (no en cada poll).
   useEffect(() => {
     const top = pujas[0];
     const firma = top
       ? `${top.identificador ?? 'p'}-${Number(top.importe)}`
-      : `base-${Number(precioBase)}`;
+      : `base-${baseRef}`;
     if (ultimaPujaTopRef.current === firma) return;
     ultimaPujaTopRef.current = firma;
 
@@ -467,7 +486,7 @@ export function SubastaEnVivoScreen({ navigation, route }) {
       const num = parseFloat(prev.replace(',', '.'));
       return Number.isNaN(num) || num < proximaPuja - 0.001 ? String(proximaPuja) : prev;
     });
-  }, [pujas, proximaPuja, precioBase]);
+  }, [pujas, proximaPuja, baseRef]);
 
   // Validación del monto ingresado.
   const montoNum = parseFloat(montoIngresado.replace(',', '.'));
@@ -542,7 +561,7 @@ export function SubastaEnVivoScreen({ navigation, route }) {
           <View>
             <Text style={{ color: colors.muted, fontSize: 12, marginBottom: 4 }}>{ventaModo === 'bloque' ? 'Base total del catálogo' : 'Precio base'}</Text>
             <Text style={{ color: colors.gold, fontSize: 24, fontWeight: '800' }}>
-              {formatImporte(precioBase, moneda)}
+              {formatImporte(baseRef, moneda)}
             </Text>
           </View>
           <View style={{ alignItems: 'center' }}>
@@ -566,7 +585,7 @@ export function SubastaEnVivoScreen({ navigation, route }) {
           ) : (
             <>
               <Text style={{ color: colors.green, fontSize: 30, fontWeight: '800', marginTop: 2 }}>
-                {pujaActual != null ? formatImporte(pujaActual, moneda) : formatImporte(precioBase, moneda)}
+                {pujaActual != null ? formatImporte(pujaActual, moneda) : formatImporte(baseRef, moneda)}
               </Text>
               <Text style={{ color: colors.muted, fontSize: 12.5, marginTop: 2 }}>
                 Mínima: {formatImporte(proximaPuja, moneda)}{maxPuja != null ? `  ·  Tope: ${formatImporte(maxPuja, moneda)}` : '  ·  Sin tope'}

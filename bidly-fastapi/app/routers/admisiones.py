@@ -239,6 +239,16 @@ def aprobar_duenio(id: int, body: AprobarDuenioRequest = AprobarDuenioRequest(),
             "code": "SIN_CUENTA_COBRO",
         })
 
+    # Consigna: el bien se incluye en una subasta FUTURA. Si el remate ya está en
+    # curso, la pieza no puede sumarse a mitad de la subasta (además rompería la
+    # base total en modo única venta). No aceptado a tiempo = no entra.
+    sub_actual = db.query(Subasta).filter(Subasta.identificador == a.subasta).first()
+    if sub_actual and sub_actual.estado == "abierta":
+        raise HTTPException(409, detail={
+            "message": "La subasta ya está en curso: la pieza no puede entrar a mitad del remate. "
+                       "La empresa la reasignará a una futura subasta.",
+            "code": "SUBASTA_EN_CURSO"})
+
     # Buscar (o crear) el catálogo de la subasta y agregar el ítem. Si el bien viene
     # de una colección, el catálogo lleva su nombre (visible en el panel y el Home).
     nombre_cat = (a.nombre_coleccion if (a.es_coleccion == "si" and a.nombre_coleccion) else None)
