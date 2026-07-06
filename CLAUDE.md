@@ -38,7 +38,7 @@ reloj se maneja en la tabla propia `item_remate` (ver Features), sin tocar `suba
 - `registro_pago`: pago del comprador (medio, envío, retiro personal).
 - `reembolsos`: reembolso de una compra.
 - `ubicaciones_bien`: depósito/sector donde está guardada la pieza (visible al dueño).
-- `item_remate`: **timer del remate** (item + `termina_en`). 3 min por ítem, +15s por puja.
+- `item_remate`: **timer del remate** (item + `termina_en`). 3 min por ítem, +1 min por puja.
 - `subasta_venta_modo`: **modo de venta del catálogo** — `individual` (default, pieza por pieza)
   | `bloque` (única venta: se rematan todas las piezas juntas a un único precio, el mejor postor
   se lleva todo, importe prorrateado por base). Sin fila = individual. Se elige en el panel web.
@@ -92,7 +92,7 @@ Estas cosas ya se decidieron/arreglaron con el usuario. Revertirlas = reabrir bu
 - **Moneda**: en dólares se paga en dólares (el cheque no vale para dólares). Conversión demo
   a $1500 para comparar contra el presupuesto (en pesos).
 - **Timer del remate** (`services/remate_service.py`, `item_remate`): el catálogo se remata de
-  a un ítem por vez. Al abrir la subasta arranca el ítem 1 (3 min); cada puja suma 15s; al
+  a un ítem por vez. Al abrir la subasta arranca el ítem 1 (3 min); cada puja suma 1 min; al
   llegar a 0 se **adjudica solo** y arranca el siguiente. Sin cron: el reloj avanza "lazy" en
   cada `GET /subastas/{id}/remate` (el front lo poll-ea) o al entrar una puja.
 - **Admisiones**: la empresa propone base+comisión+subasta → el dueño acepta (entra al

@@ -407,7 +407,7 @@ export function SubastaEnVivoScreen({ navigation, route }) {
     : Number(itemActual?.comision ?? comision ?? 0);
   const baseRef = baseLive > 0 ? baseLive : (Number(precioBase) || Number(subasta?.precioBase) || 0);
 
-  // Timer del remate: el ítem tiene 3 min (+15s por puja). Al llegar a 0 se adjudica
+  // Timer del remate: el ítem tiene 3 min (+1 min por puja). Al llegar a 0 se adjudica
   // solo y arranca el siguiente ítem. El reloj se lee de /subastas/{id}/remate.
 
   // Inscribir al usuario como asistente.

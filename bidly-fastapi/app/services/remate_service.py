@@ -1,7 +1,7 @@
 """Timer del remate (subasta dinámica ascendente con reloj).
 
 El catálogo se remata de a un ítem por vez: el ítem "activo" tiene una fila en
-`item_remate` con su `termina_en`. Arranca en 3 minutos y suma 15s por cada puja.
+`item_remate` con su `termina_en`. Arranca en 3 minutos y suma 1 minuto por cada puja.
 Al llegar a 0 el ítem se adjudica solo (mejor postor, o la empresa si nadie pujó)
 y arranca el siguiente ítem del catálogo. Cuando cae el último, la subasta cierra.
 
@@ -17,7 +17,7 @@ from app.models.catalogo import Catalogo
 from app.models.subasta import Subasta
 
 DURACION_SEG = 180   # 3 minutos por ítem
-EXTENSION_SEG = 15   # +15s por cada puja
+EXTENSION_SEG = 60   # +1 minuto por cada puja
 
 
 def _items_pendientes(subasta_id: int, db: Session):
@@ -65,7 +65,7 @@ def iniciar(subasta_id: int, db: Session) -> None:
 
 
 def extender(item_id: int, db: Session) -> None:
-    """Suma 15s al ítem activo cuando entra una puja (si el reloj sigue vivo)."""
+    """Suma 1 minuto al ítem activo cuando entra una puja (si el reloj sigue vivo)."""
     rem = _remate_de(item_id, db)
     if not rem:
         return

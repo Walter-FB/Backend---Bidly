@@ -143,7 +143,7 @@ def colocar_puja(body: PujaCreate, db: Session = Depends(get_db)):
 
     puja = Puja(asistente=asistente_id, item=item_id, importe=importe, ganador="no")
     db.add(puja)
-    remate_service.extender(item_id, db)  # cada puja suma 15s al reloj del ítem
+    remate_service.extender(item_id, db)  # cada puja suma 1 minuto al reloj del ítem
     db.commit()  # confirma la transacción antes de habilitar otra puja
     db.refresh(puja)
     return puja_to_dict(puja, db)

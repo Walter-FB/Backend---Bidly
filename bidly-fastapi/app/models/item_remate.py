@@ -6,7 +6,7 @@ class ItemRemate(Base):
     """Timer del ítem que se está rematando (tabla propia — no toca las 16 del profe).
 
     Un ítem "activo" (el que se está subastando ahora) tiene acá su `termina_en`.
-    El remate arranca con 3 minutos y suma 15s por cada puja; al llegar a 0 el ítem
+    El remate arranca con 3 minutos y suma 1 minuto por cada puja; al llegar a 0 el ítem
     se adjudica solo y arranca el siguiente del catálogo. PK = item, así que hay
     a lo sumo una fila por ítem (y el catálogo va de a uno).
     """
