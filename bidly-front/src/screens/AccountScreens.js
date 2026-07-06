@@ -33,6 +33,7 @@ const ESTADO_PRODUCTO_LABEL = {
 function mapRegistro(r) {
   const fecha = r.subasta?.fecha ? new Date(r.subasta.fecha).toLocaleDateString('es-AR') : '—';
   const pagada = r.estadoPago === 'pagado';
+  const impaga = r.estadoPago === 'impago';   // el cobro automático no alcanzó → multa
   const reembolsada = r.reembolsada === 'si';
   return {
     id: r.identificador,
@@ -40,8 +41,8 @@ function mapRegistro(r) {
     date: fecha,
     sub: subtituloSubasta(r.subasta),
     price: r.importe ? Number(r.importe).toLocaleString('es-AR', { maximumFractionDigits: 2 }) : '—',
-    tag: reembolsada ? 'Reembolsada' : pagada ? 'Pagada' : 'A pagar',
-    tagColor: reembolsada ? colors.muted : pagada ? colors.green : colors.gold,
+    tag: reembolsada ? 'Reembolsada' : pagada ? 'Pagada' : impaga ? 'Impaga' : 'A pagar',
+    tagColor: reembolsada ? colors.muted : pagada ? colors.green : impaga ? colors.red : colors.gold,
     registroId: r.identificador,
     importe: r.importe,
     comision: r.comision,
@@ -214,13 +215,21 @@ export function MisComprasScreen({ navigation }) {
       )}
       <View style={{ gap: 12, marginTop: 12 }}>
         {registros.map((r) => {
-          const pendiente = r.estadoPago !== 'pagado' && r.reembolsada !== 'si';
+          // El cobro es automático al cerrar la subasta: 'pagado' o 'impago'. El
+          // botón manual queda solo como fallback si algo quedó 'pendiente'.
+          const pendiente = r.estadoPago === 'pendiente';
+          const impaga = r.estadoPago === 'impago';
           const totalR = r.importe != null ? Number(r.importe) + Number(r.comision || 0) : null;
           return (
             <View key={r.id} style={{ gap: 8 }}>
               <TouchableOpacity onPress={() => navigation.navigate('CompraDetalle', r)}>
                 <ListRow item={r} />
               </TouchableOpacity>
+              {impaga && (
+                <Text style={{ color: colors.red, fontSize: 12, fontWeight: '600', paddingHorizontal: 4 }}>
+                  No se pudo cobrar de tu tarjeta. Pagá la multa de arriba para desbloquear tu cuenta.
+                </Text>
+              )}
               {pendiente && (
                 <Btn
                   title={`Pagar${totalR != null ? ` · $ ${totalR.toLocaleString('es-AR')}` : ''}`}
@@ -375,7 +384,8 @@ export function MisSubastasScreen({ navigation, route }) {
         {tab === 'ganadas' && (
           <View style={{ gap: 14 }}>
             {ganadas.map((g) => {
-              const yaPaga = g.estadoPago === 'pagado' || g.reembolsada === 'si';
+              // El cobro es automático: solo 'pendiente' (fallback) va al pago manual.
+              const yaPaga = g.estadoPago !== 'pendiente';
               return (
               <TouchableOpacity
                 key={g.registroId}
@@ -661,6 +671,8 @@ export function CompraDetalleScreen({ navigation, route }) {
   const comision = reg.comision;
   const total = importe != null ? Number(importe) + Number(comision || 0) : null;
   const pagada = reg.estadoPago === 'pagado';
+  const impaga = reg.estadoPago === 'impago';   // cobro automático no alcanzó → multa
+  const pendiente = reg.estadoPago === 'pendiente';
   const rEstado = reg.reembolsoEstado || (reg.reembolsada === 'si' ? 'aceptado' : 'ninguno');
   const rMeta = REEMBOLSO_LABEL[rEstado];
 
@@ -686,8 +698,8 @@ export function CompraDetalleScreen({ navigation, route }) {
         <Card el style={{ marginTop: 12, gap: 8 }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <Display style={{ fontSize: 16, lineHeight: 20, flex: 1, paddingRight: 8 }}>{title}</Display>
-            <Tag label={rMeta ? rMeta.label : pagada ? 'PAGADA ✓' : 'A PAGAR'}
-                 color={rMeta ? rMeta.color : pagada ? colors.green : colors.gold} />
+            <Tag label={rMeta ? rMeta.label : pagada ? 'PAGADA ✓' : impaga ? 'IMPAGA' : 'A PAGAR'}
+                 color={rMeta ? rMeta.color : pagada ? colors.green : impaga ? colors.red : colors.gold} />
           </View>
           {reg.sub ? <Text style={{ color: colors.muted, fontSize: 13 }}>{reg.sub}</Text> : null}
           {reg.date ? <Text style={{ color: colors.faint, fontSize: 12 }}>{reg.date}</Text> : null}
@@ -703,9 +715,22 @@ export function CompraDetalleScreen({ navigation, route }) {
           )}
         </Card>
 
-        {/* Pagar la compra: entra al flujo de pago (medio → seguro → confirmar). Visible
-            solo si está pendiente (sin pagar y sin reembolso en curso). */}
-        {!pagada && rEstado === 'ninguno' && (
+        {/* El cobro es automático al cerrar la subasta. Si no se pudo cobrar (impago)
+            se generó una multa; el pago manual queda solo como fallback si algo raro
+            dejó la compra 'pendiente'. */}
+        {impaga && (
+          <Card el style={{ marginTop: 14, borderColor: colors.red, borderWidth: 1.5, gap: 6 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Ionicons name="warning" size={18} color={colors.red} />
+              <Text style={{ color: colors.red, fontWeight: '800', fontSize: 14 }}>No se pudo cobrar</Text>
+            </View>
+            <Text style={{ color: colors.muted, fontSize: 12.5 }}>
+              Tu tarjeta no tenía fondos suficientes, así que se generó una multa del 10%.
+              Pagá la multa desde "Mis compras" para volver a participar.
+            </Text>
+          </Card>
+        )}
+        {pendiente && rEstado === 'ninguno' && (
           <Btn
             title={`Pagar${total != null ? ` · $ ${total.toLocaleString('es-AR')}` : ''}`}
             onPress={() => navigation.navigate('MedioPago', {
@@ -737,7 +762,7 @@ export function CompraDetalleScreen({ navigation, route }) {
           <Card el><Text style={{ color: colors.red, fontWeight: '700' }}>Reembolso rechazado</Text>
             {reg.motivoReembolso ? <Text style={{ color: colors.muted, fontSize: 12.5, marginTop: 4 }}>Motivo: {reg.motivoReembolso}</Text> : null}</Card>
         )}
-        {rEstado === 'ninguno' && !pagada && (
+        {rEstado === 'ninguno' && (pendiente || impaga) && (
           <Text style={{ color: colors.muted, fontSize: 13 }}>Vas a poder pedir el reembolso una vez que la compra esté pagada.</Text>
         )}
         {rEstado === 'ninguno' && pagada && !form && (

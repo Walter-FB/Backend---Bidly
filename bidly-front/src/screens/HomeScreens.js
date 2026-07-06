@@ -424,6 +424,7 @@ function tipoLabel(tipo) {
   const l = {
     ganaste: '¡Ganaste una subasta!', multa: 'Multa generada', admision: 'Admisión de tu bien',
     seguro: 'Seguro contratado', payout: 'Cobro disponible', medio_pago: 'Medio de pago', retiro: 'Retiro personal',
+    pago: 'Compra pagada',
   };
   return l[tipo] || tipo || 'Notificación';
 }
@@ -431,6 +432,7 @@ function iconoNotif(tipo) {
   const i = {
     ganaste: 'trophy-outline', multa: 'warning-outline', admision: 'cube-outline',
     seguro: 'shield-checkmark-outline', payout: 'cash-outline', medio_pago: 'card-outline',
+    pago: 'checkmark-circle-outline',
   };
   return i[tipo] || 'notifications-outline';
 }
