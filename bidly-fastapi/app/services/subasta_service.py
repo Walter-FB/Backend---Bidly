@@ -87,12 +87,30 @@ def enrich(subasta: Subasta, db: Session) -> dict:
     precios = [i.preciobase for i in items if i.preciobase is not None]
     data["precioBase"] = min(precios) if precios else None
 
-    first_item = items[0] if items else None
-    if first_item:
-        prod = db.query(Producto).filter(Producto.identificador == first_item.producto).first()
-        data["titulo"] = prod.descripcioncatalogo if prod else None
-    else:
-        data["titulo"] = None
+    # Nombres de los productos en una sola query (evita N+1 por ítem).
+    prods = {}
+    if items:
+        ids = [i.producto for i in items]
+        for p in db.query(Producto).filter(Producto.identificador.in_(ids)).all():
+            prods[p.identificador] = p
+
+    data["titulo"] = (
+        prods[items[0].producto].descripcioncatalogo
+        if items and items[0].producto in prods else None
+    )
+
+    # Catálogo linkeado: nombre + resumen de ítems (para el panel y el Home).
+    cat = db.query(Catalogo).filter(Catalogo.subasta == subasta.identificador).first()
+    data["catalogoNombre"] = cat.descripcion if cat else None
+    data["itemsResumen"] = [
+        {
+            "id": i.identificador,
+            "nombre": (prods[i.producto].descripcioncatalogo if i.producto in prods else f"Ítem #{i.identificador}"),
+            "precioBase": float(i.preciobase) if i.preciobase is not None else None,
+            "subastado": i.subastado,
+        }
+        for i in items[:12]  # tope defensivo para no inflar el listado
+    ]
 
     data["totalAsistentes"] = (
         db.query(Asistente).filter(Asistente.subasta == subasta.identificador).count()

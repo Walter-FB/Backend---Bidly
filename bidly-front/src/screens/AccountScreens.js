@@ -824,7 +824,7 @@ export function DatosPersonalesScreen() {
 const PROD_LABEL = {
   solicitada:       { label: 'ESPERANDO APROBACIÓN', color: colors.gold },
   en_inspeccion:    { label: 'EN INSPECCIÓN', color: colors.blue },
-  propuesta:        { label: 'PROPUESTA — REVISALA', color: colors.gold },
+  propuesta:        { label: 'PROPUESTA ENVIADA', color: colors.gold },
   aprobada:         { label: 'EN CATÁLOGO', color: colors.green },
   rechazada:        { label: 'RECHAZADA', color: colors.red },
   rechazada_duenio: { label: 'DEVUELTA', color: colors.muted },
@@ -996,7 +996,7 @@ const ADMISION_LABEL = {
   solicitada:       { label: 'EN REVISIÓN', color: colors.gold },
   en_inspeccion:    { label: 'INSPECCIÓN', color: colors.blue },
   rechazada:        { label: 'RECHAZADA', color: colors.red },
-  propuesta:        { label: 'PROPUESTA — REVISALA', color: colors.gold },
+  propuesta:        { label: 'PROPUESTA ENVIADA', color: colors.gold },
   aprobada:         { label: 'EN CATÁLOGO', color: colors.green },
   rechazada_duenio: { label: 'DEVUELTA', color: colors.muted },
 };

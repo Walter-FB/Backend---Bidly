@@ -185,7 +185,8 @@ async function loadAdm(){
     el.innerHTML=adm.map(a=>admCard(a,disp)).join('');recomputeCol()}
   catch(e){el.innerHTML='<p class="muted">Error: '+esc(e.message)+'</p>'}
 }
-function subLabel(s){return '#'+s.identificador+' · '+(s.estado==='abierta'?'ABIERTA':'programada')+' · '+esc(s.fecha||'sin fecha')+' · '+esc(s.categoria||'')+' · '+esc(s.moneda||'pesos');}
+function subLabel(s){return '#'+s.identificador+' · '+(s.estado==='abierta'?'ABIERTA':'programada')+' · '+esc(s.fecha||'sin fecha')+' · '+esc(s.categoria||'')+' · '+esc(s.moneda||'pesos')
+  +' · '+(s.totalItems||0)+' ítems'+(s.totalItems>0?' (los nuevos se AGREGAN)':'');}
 // Lista de bienes candidatos a agrupar en una colección — TODO en la misma tarjeta,
 // así se marcan varios de una. Cada fila: check + nombre + base editable.
 function colCandidatos(adm){
@@ -363,7 +364,8 @@ async function subCard(s){
     +'<button class="act b-ghost" onclick="reabrirSub('+s.identificador+')">↻ Reabrir subasta</button>'
     +'<span class="muted">Vuelven a venta las piezas compradas por la empresa (las ganadas por postores no se tocan).</span></div>';
   return '<div class="card"><div class="row"><div><div class="title">'+esc(s.titulo||('Subasta #'+s.identificador))+'</div>'
-    +'<div class="muted">#'+s.identificador+' · '+esc(s.categoria||'—')+' · '+esc(s.moneda||'pesos')+' · '+total+' ítems</div></div>'
+    +'<div class="muted">#'+s.identificador+' · '+esc(s.categoria||'—')+' · '+esc(s.moneda||'pesos')+' · '+total+' ítems'
+    +(s.catalogoNombre?' · 🧩 <b style="color:var(--blue)">'+esc(s.catalogoNombre)+'</b>':'')+'</div></div>'
     +'<div style="display:flex;gap:6px;align-items:center">'
     +(bloque?'<span class="st" style="background:var(--gold);color:#231a02">ÚNICA VENTA</span>':'')
     +'<span class="st" style="background:'+estCol+'">'+estLbl+'</span></div></div>'

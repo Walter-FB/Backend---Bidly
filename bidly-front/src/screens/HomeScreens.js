@@ -38,6 +38,8 @@ function mapSubasta(s) {
     fecha: s.fecha,
     hora: s.hora,
     categoria: s.categoria,
+    catalogoNombre: s.catalogoNombre,
+    items: s.itemsResumen || [],
   };
 }
 
@@ -84,6 +86,9 @@ export function AuctionCard({ a, onPress }) {
   const finalizada = !viva && !proxima && esSubastaFinalizada(a);
   const restante = useCountdown(a.segundosRestantes);
   const tiempoLabel = viva && restante != null ? formatDuracion(restante) : a.time;
+  // Desplegable con los ítems del catálogo (cerrado por defecto).
+  const [verItems, setVerItems] = useState(false);
+  const items = a.items || [];
   return (
     <Card el style={{ padding: 14 }}>
       {viva && <LiveBadge style={{ marginBottom: 10 }} />}
@@ -118,6 +123,26 @@ export function AuctionCard({ a, onPress }) {
           </View>
         </View>
       </View>
+      {items.length > 0 && (
+        <TouchableOpacity onPress={() => setVerItems((v) => !v)} activeOpacity={0.7}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 10 }}>
+          <Ionicons name={verItems ? 'chevron-up' : 'chevron-down'} size={14} color={colors.blue} />
+          <Text style={{ color: colors.blue, fontSize: 12.5, fontWeight: '700' }}>
+            🧩 {a.catalogoNombre || 'Catálogo'} · {a.totalItems || items.length} ítem{(a.totalItems || items.length) !== 1 ? 's' : ''}
+          </Text>
+        </TouchableOpacity>
+      )}
+      {verItems && items.map((it) => (
+        <View key={it.id} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+          backgroundColor: colors.card, borderRadius: 8, paddingVertical: 6, paddingHorizontal: 10, marginTop: 6 }}>
+          <Text style={{ color: '#fff', fontSize: 12.5, flex: 1, paddingRight: 8 }} numberOfLines={1}>{it.nombre}</Text>
+          {it.subastado === 'si'
+            ? <Text style={{ color: colors.muted, fontSize: 11, fontWeight: '800' }}>VENDIDO</Text>
+            : <Text style={{ color: colors.green, fontSize: 12, fontWeight: '800' }}>
+                {it.precioBase != null ? `$ ${Number(it.precioBase).toLocaleString('es-AR')}` : '—'}
+              </Text>}
+        </View>
+      ))}
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
           <Ionicons name="time-outline" size={14} color={colors.gold} />

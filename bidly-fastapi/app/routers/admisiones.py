@@ -239,12 +239,20 @@ def aprobar_duenio(id: int, body: AprobarDuenioRequest = AprobarDuenioRequest(),
             "code": "SIN_CUENTA_COBRO",
         })
 
-    # Buscar (o crear) el catálogo de la subasta y agregar el ítem.
+    # Buscar (o crear) el catálogo de la subasta y agregar el ítem. Si el bien viene
+    # de una colección, el catálogo lleva su nombre (visible en el panel y el Home).
+    nombre_cat = (a.nombre_coleccion if (a.es_coleccion == "si" and a.nombre_coleccion) else None)
     catalogo = db.query(Catalogo).filter(Catalogo.subasta == a.subasta).first()
     if not catalogo:
-        catalogo = Catalogo(descripcion=f"Catálogo subasta {a.subasta}", subasta=a.subasta, responsable=EMPLEADO_SISTEMA)
+        catalogo = Catalogo(
+            descripcion=nombre_cat or f"Catálogo subasta {a.subasta}",
+            subasta=a.subasta, responsable=EMPLEADO_SISTEMA,
+        )
         db.add(catalogo)
         db.flush()
+    elif nombre_cat and (catalogo.descripcion or "").startswith("Catálogo subasta"):
+        # El catálogo existía con el nombre genérico: adopta el de la colección.
+        catalogo.descripcion = nombre_cat
 
     valor = Decimal(str(a.valor_base or 0))
     comision = Decimal(str(a.comision)) if a.comision is not None else valor * Decimal("0.10")
