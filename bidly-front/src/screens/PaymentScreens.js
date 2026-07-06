@@ -192,9 +192,10 @@ export function MedioPagoScreen({ navigation, route }) {
   };
 
   const medioSeleccionado = medios[selIdx];
-  // Total disponible = suma del presupuesto restante de cada medio (todos guardan
-  // su presupuesto en `saldo`; el cheque además lo espeja en montoCheque).
-  const totalDisponible = medios.reduce(
+  // Disponible para pujar = solo las garantías (cheque/cuenta). El presupuesto de
+  // las tarjetas es secreto: imita el límite del banco y se valida recién al pagar.
+  const garantias = medios.filter((m) => m.tipo === 'cheque' || m.tipo === 'cuenta');
+  const totalDisponible = garantias.reduce(
     (acc, m) => acc + Number(m.saldo ?? m.montoCheque ?? 0),
     0,
   );
@@ -211,7 +212,7 @@ export function MedioPagoScreen({ navigation, route }) {
         <Title>Medio de pago</Title>
         <Sub>{esFlujoPago ? 'Elegí un medio para continuar con el pago.' : 'Administrá tus medios (tarjeta, cuenta o cheque) para pujar.'}</Sub>
 
-        {medios.length > 0 && (
+        {garantias.length > 0 && (
           <Card el style={{ marginBottom: 12 }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
               <Text style={{ color: colors.muted, fontSize: 13, fontWeight: '700' }}>Disponible para pujar</Text>
@@ -221,10 +222,8 @@ export function MedioPagoScreen({ navigation, route }) {
             </View>
             <Text style={{ color: colors.faint, fontSize: 11.5, marginTop: 4 }}>
               {saldoInfo && saldoInfo.comprometido > 0
-                ? `De $${Number(saldoInfo.saldoTotal).toLocaleString('es-AR')} en tus medios, ya comprometiste $${Number(saldoInfo.comprometido).toLocaleString('es-AR')} en pujas.`
-                : medios.length > 1
-                  ? `Total de tus ${medios.length} medios de pago`
-                  : 'Saldo de tu medio de pago'}
+                ? `De $${Number(saldoInfo.saldoTotal).toLocaleString('es-AR')} en garantías, ya comprometiste $${Number(saldoInfo.comprometido).toLocaleString('es-AR')} en pujas.`
+                : `Suma de tus ${garantias.length > 1 ? 'cheques y cuentas' : 'garantías (cheque/cuenta)'}. Las tarjetas se validan al pagar.`}
             </Text>
           </Card>
         )}
@@ -247,7 +246,7 @@ export function MedioPagoScreen({ navigation, route }) {
                     ? `Cheque certificado · $${Number(m.saldo ?? m.montoCheque ?? 0).toLocaleString('es-AR')}`
                     : m.tipo === 'cuenta'
                       ? `Cuenta · $${Number(m.saldo || 0).toLocaleString('es-AR')} reservados`
-                      : `${tipoTarjetaLabel(m)} · $${Number(m.saldo || 0).toLocaleString('es-AR')}${m.limite ? ` de $${Number(m.limite).toLocaleString('es-AR')}` : ''}`}
+                      : `${tipoTarjetaLabel(m)} · se valida al pagar`}
                 </Text>
                 {m.titular && <Text style={{ color: colors.faint, fontSize: 11.5 }}>{m.titular}</Text>}
               </View>

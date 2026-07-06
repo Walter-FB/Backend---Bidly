@@ -9,7 +9,9 @@
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
       "Bash(git merge *)",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "mcp__visualize__read_me",
+      "mcp__visualize__show_widget"
     ]
   }
 }

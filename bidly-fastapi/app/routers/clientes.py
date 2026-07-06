@@ -140,14 +140,24 @@ def get_metricas(id: int, db: Session = Depends(get_db)):
 # ── Medios de pago del postor + saldo ─────────────────────────────────────────
 @router.get("/{id}/saldo")
 def get_saldo(id: int, db: Session = Depends(get_db)):
-    """Saldo total, comprometido y disponible del cliente (suma de sus medios)."""
+    """Saldo visible del cliente (solo garantías: cheques y cuentas)."""
     from app.services import saldo_service
     return saldo_service.resumen(id, db)
 
 
 @router.get("/{id}/medios-pago", response_model=List[MedioPagoResponse])
 def get_medios_pago(id: int, db: Session = Depends(get_db)):
-    return db.query(MedioPago).filter(MedioPago.cliente == id).all()
+    medios = db.query(MedioPago).filter(MedioPago.cliente == id).all()
+    out = []
+    for m in medios:
+        r = MedioPagoResponse.model_validate(m)
+        if m.tipo in ("credito", "debito"):
+            # El presupuesto de las tarjetas es secreto: imita el límite del
+            # banco (que el postor no conoce) y se chequea recién al pagar.
+            r.limite = None
+            r.saldo = None
+        out.append(r)
+    return out
 
 
 # Presupuesto por defecto de las tarjetas (imita la cuenta bancaria del usuario,

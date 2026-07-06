@@ -46,8 +46,17 @@ def _moneda_de_item(item_id, db: Session) -> str:
 
 
 def saldo_total(cliente_id: int, db: Session) -> Decimal:
-    """Suma del presupuesto restante de TODOS los medios del cliente (en pesos)."""
-    medios = db.query(MedioPago).filter(MedioPago.cliente == cliente_id).all()
+    """Suma del presupuesto restante de las GARANTÍAS del cliente (cheque/cuenta).
+
+    Las tarjetas (crédito/débito) quedan afuera a propósito: su presupuesto es
+    interno (imita el límite del banco, que el postor no conoce) y recién se
+    chequea al pagar. No debe figurar en el saldo visible.
+    """
+    medios = (
+        db.query(MedioPago)
+        .filter(MedioPago.cliente == cliente_id, MedioPago.tipo.in_(VALIDA_EN_PUJA))
+        .all()
+    )
     return sum((_d(m.saldo) for m in medios), Decimal("0"))
 
 
@@ -109,6 +118,6 @@ def descontar(medio_id: int, importe_pesos, db: Session) -> None:
 
 
 def resumen(cliente_id: int, db: Session) -> dict:
-    """Presupuesto total restante del cliente (suma de sus medios)."""
+    """Presupuesto visible del cliente (solo garantías: cheques y cuentas)."""
     total = saldo_total(cliente_id, db)
     return {"saldoTotal": float(total), "comprometido": 0.0, "disponible": float(total)}
