@@ -5,7 +5,7 @@ La DDL del profe (16 tablas) es el **eje central**. El sistema está alineado a 
 esquema; las tablas propias son las mínimas que la consigna necesita y NO están en
 la DDL. Prioridad de decisiones: **consigna del profe + `EstructuraActual.sql`**.
 
-## Tablas (30 en total). Cada una con utilidad real.
+## Tablas (31 en total). Cada una con utilidad real.
 
 ### Las 16 del profe (protegidas — NO se tocan: nada de ALTER/DROP/rename ni FK)
 `paises, personas, empleados, sectores, seguros, clientes, duenios, subastadores,
@@ -21,7 +21,7 @@ reloj se maneja en la tabla propia `item_remate` (ver Features), sin tocar `suba
 - `producto_estado`: estado técnico del bien (`solicitado/en_inspeccion/aceptado/rechazado`
   + causa). Se mantiene en sync con `admisiones` y con `productos.disponible`.
 
-### Features de la consigna (11 tablas propias)
+### Features de la consigna (12 tablas propias)
 - `mediosdepago`: medio de pago del postor con **presupuesto** en pesos (`limite`=original,
   `saldo`=restante). `tipo` = `debito` (default 100k) | `credito` (default 200k) | `cuenta`
   (monto que elige el usuario) | `cheque` certificado (monto que elige el usuario). El cheque
@@ -39,9 +39,44 @@ reloj se maneja en la tabla propia `item_remate` (ver Features), sin tocar `suba
 - `reembolsos`: reembolso de una compra.
 - `ubicaciones_bien`: depósito/sector donde está guardada la pieza (visible al dueño).
 - `item_remate`: **timer del remate** (item + `termina_en`). 3 min por ítem, +15s por puja.
+- `subasta_venta_modo`: **modo de venta del catálogo** — `individual` (default, pieza por pieza)
+  | `bloque` (única venta: se rematan todas las piezas juntas a un único precio, el mejor postor
+  se lleva todo, importe prorrateado por base). Sin fila = individual. Se elige en el panel web.
 
 > **Regla:** si una tarea pide tocar la estructura de una de las 16 del profe → STOP,
 > no se codea. Se puede crear tabla nueva (fuera de las 16) + FK, o cambiar código.
+
+## ⚠️ Decisiones recientes — NO revertir (leer antes de tocar estas áreas)
+Estas cosas ya se decidieron/arreglaron con el usuario. Revertirlas = reabrir bugs que ya odió.
+
+1. **Regla "subastas con ≥10 días de anticipación": ELIMINADA.** El usuario la sacó a propósito.
+   NO reponer el check en `routers/admisiones.py` (/proponer) ni las validaciones JS del panel
+   (`admin_web.py`). El `chkFecha` de `EstructuraActual.sql` es **SQL Server / doc de referencia**,
+   nunca aplicó al Postgres real (lo verifiqué: la tabla `subastas` no tiene CHECK de fecha).
+2. **El precio base es PÚBLICO.** `/subastas/{id}/catalogos`, `/subastas/{id}/catalogo` y
+   `/catalogos/{id}/items` devuelven el precio a todos. **NO re-gatear** con
+   `mostrar_precio = current is not None`. Motivo: el token vive en un dict EN MEMORIA
+   (`auth.py _token_store`) que Railway borra al reiniciar → el gate ocultaba el precio a
+   usuarios ya logueados (salía "$0"/"—" en detalle/vivo pero sí en Home, que usa `enrich`).
+3. **Fechas de subasta se comparan en hora AR (UTC-3), no UTC.** `subasta_service._ahora_ar()`.
+   El backend corre en UTC (Railway); comparar el inicio contra `datetime.utcnow()` abría las
+   subastas ~3h antes. `enrich` expone `segundosParaInicio` (hora AR) y el Home muestra un
+   banner-canario si back/front difieren >2min (zona horaria mal alineada).
+4. **Montos en `numeric(18,2)`** (no 12,2) en `registro_pago.importe_total/envio` y
+   `multas.importe` — antes desbordaban al cerrar una subasta con puja grande
+   (`NumericValueOutOfRange` → 500 → subasta clavada "en vivo"). `db_reconcile.py` ya lo aplica.
+   Son tablas propias (features); NO se tocó ninguna de las 16 del profe.
+5. **Entrar a MIRAR una subasta es libre.** `acceso_service.validar_inscripcion` (corre al
+   inscribirse) NO bloquea `YA_CONECTADO` — ese límite ("una a la vez") es de PUJAR y vive en
+   `routers/pujas.py`. `SUBASTA_EN_CURSO` (aceptar propuesta / armar colección) solo bloquea si
+   el remate YA vendió alguna pieza (`subastado='si'`), no por estar `'abierta'` sin más.
+6. **Avance del remate en vivo** (front `SubastaEnVivoScreen`): usa `itemActivoId` de
+   `GET /subastas/{id}/remate` como fuente de verdad para pasar al siguiente ítem — avanza
+   **aunque el ítem cierre sin pujas** (la empresa lo compra, no hay puja ganadora). NO volver a
+   depender solo de detectar la puja ganadora.
+
+> **Gotcha del token:** si un dato aparece en Home pero NO en el detalle/vivo (solo para
+> logueados), sospechá del token vencido (Railway reinició → `_token_store` vacío), NO de la DB.
 
 ## Reglas de negocio implementadas
 - **Puja**: mín = mejor + 1% base; máx = mejor + 20% base; **oro/platino** sin tope máximo.
@@ -100,9 +135,11 @@ reloj se maneja en la tabla propia `item_remate` (ver Features), sin tocar `suba
   como variable de entorno en Railway. (Baja prioridad para el usuario, pero queda anotado.)
 - [ ] Passwords de usuarios guardadas en **texto plano** (`credenciales.passwordhash`). Para
   entrega de facultad alcanza; si se quiere, hashear.
-- [ ] **Migrar la DB tras estos cambios**: correr `db_reconcile.py` (agrega `limite`,
-  `garantia_premium`, `premium`, tablas `item_remate` y `ubicaciones_bien`) y **redeploy del
-  backend en Railway** con el código nuevo (30 tablas) para que producción funcione.
+- **DB ya migrada y en producción** (Railway auto-deploya desde la rama `SOBRADO` al pushear).
+  Tras CUALQUIER cambio de esquema: correr `db_reconcile.py` (ya incluye `limite`,
+  `garantia_premium`, `premium`, `item_remate`, `ubicaciones_bien`, `subasta_venta_modo` y el
+  ensanche de montos a `numeric(18,2)`) y esperar el redeploy. Los fixes de backend (precio
+  público, hora AR, gates) necesitan el redeploy para verse; el front toma los cambios al recargar.
 - Features de la consigna NO modeladas (fuera de alcance pedido): detalle de obra de arte
   (`producto_detalle`), póliza combinada, streaming (la consigna dice que no es parte),
   DNI frente/dorso (la pantalla existe pero no sube la foto).
