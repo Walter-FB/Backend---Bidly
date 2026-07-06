@@ -93,11 +93,9 @@ def validar_inscripcion(cliente_id: int, subasta_id: int, db: Session) -> None:
             "code": "CATEGORIA_INSUFICIENTE",
         })
 
-    if conectado_en_otra_viva(cliente_id, subasta_id, db):
-        raise HTTPException(409, detail={
-            "message": "Ya estás participando en otra subasta en vivo. Terminá ahí antes de pujar en otra (podés ver todas, pero pujar en una a la vez).",
-            "code": "YA_CONECTADO",
-        })
+    # "Una subasta a la vez" es una regla de PUJAR, no de MIRAR: el enunciado permite
+    # ver todas las subastas libremente. Por eso NO bloqueamos YA_CONECTADO al entrar
+    # (inscribirse = mirar); ese gate se aplica al pujar (routers/pujas.py).
 
 
 def validar_puede_pujar(cliente_id: int, db: Session) -> None:
