@@ -619,7 +619,7 @@ const REEMBOLSO_LABEL = {
   rechazado:  { label: 'REEMBOLSO RECHAZADO', color: colors.red },
 };
 
-export function CompraDetalleScreen({ route }) {
+export function CompraDetalleScreen({ navigation, route }) {
   const { registroId } = route.params || {};
   const [reg, setReg] = useState(route.params || {});
   const [loading, setLoading] = useState(!!registroId);
@@ -682,6 +682,24 @@ export function CompraDetalleScreen({ route }) {
             </View>
           )}
         </Card>
+
+        {/* Pagar la compra: entra al flujo de pago (medio → seguro → confirmar). Visible
+            solo si está pendiente (sin pagar y sin reembolso en curso). */}
+        {!pagada && rEstado === 'ninguno' && (
+          <Btn
+            title={`Pagar${total != null ? ` · $ ${total.toLocaleString('es-AR')}` : ''}`}
+            onPress={() => navigation.navigate('MedioPago', {
+              registroId: registroId || reg.identificador,
+              subastaId: reg.subasta?.identificador ?? reg.subastaId,
+              itemId: reg.itemId,
+              importe: reg.importe,
+              comision: reg.comision,
+              moneda: reg.subasta?.moneda || 'pesos',
+              titulo: title,
+            })}
+            style={{ marginTop: 14 }}
+          />
+        )}
 
         <SectionLabel>Reembolso</SectionLabel>
         {rEstado === 'solicitado' && (
