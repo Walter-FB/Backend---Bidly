@@ -198,21 +198,24 @@ function admCard(a,disp){
        +'<button class="act b-blue" onclick="insp('+a.identificador+')">Pedir inspección</button>'
        +rechazoBox(a);
   } else if(a.estado==='en_inspeccion'){
-    const id=a.identificador, sinSubs=disp.length===0;
+    const id=a.identificador;
     acc='<div class="grid2"><input id="vb'+id+'" placeholder="Valor base $" type="number">'
        +'<input id="co'+id+'" placeholder="Comisión $ (opc.)" type="number"></div>'
-       +'<select id="su'+id+'" onchange="propSubChange('+id+')">'+opts
-       +'<option value="nueva">➕ Crear una subasta nueva para este producto…</option>'
-       +'<option value="sin">⏸ Sin asignar (tasar y dejar el producto esperando)</option></select>'
-       // Subasta NUEVA (visible al elegir "nueva", o si no hay ninguna existente).
-       +'<div id="pn'+id+'" style="display:'+(sinSubs?'':'none')+';border:1px dashed var(--blueDark);border-radius:9px;padding:10px;margin-top:4px">'
+       // Default seguro = "Sin asignar" (tasar sin crear nada). El subastador elige a
+       // propósito crear nueva o asignar a una existente; así no se crean subastas de más.
+       +'<select id="su'+id+'" onchange="propSubChange('+id+')">'
+       +'<option value="sin" selected>⏸ Sin asignar (tasar y dejar el producto esperando)</option>'
+       +opts
+       +'<option value="nueva">➕ Crear una subasta nueva para este producto…</option></select>'
+       // Subasta NUEVA (oculta por defecto; se muestra solo al elegir "nueva").
+       +'<div id="pn'+id+'" style="display:none;border:1px dashed var(--blueDark);border-radius:9px;padding:10px;margin-top:4px">'
        +'<div class="muted" style="margin-bottom:4px"><b>Nueva subasta para este producto</b> — fecha opcional:</div>'
        +'<div class="grid2"><input id="pnf'+id+'" type="date"><input id="pnh'+id+'" type="time" value="15:00"></div>'
        +'<div class="grid2"><select id="pncat'+id+'"><option>comun</option><option>especial</option><option>plata</option><option>oro</option><option>platino</option></select>'
        +'<select id="pnmon'+id+'"><option value="pesos">Pesos</option><option value="dolares">Dólares</option></select></div>'
        +'<input id="pnubi'+id+'" placeholder="Ubicación"></div>'
-       // Fecha para una subasta EXISTENTE (oculta si no hay existentes o se eligió nueva/sin).
-       +'<div id="pe'+id+'" style="display:'+(sinSubs?'none':'')+'"><div class="muted" style="margin:2px 0">Fijar/actualizar la fecha de la subasta elegida (opcional):</div>'
+       // Fecha para una subasta EXISTENTE (oculta por defecto; se muestra al elegir una existente).
+       +'<div id="pe'+id+'" style="display:none"><div class="muted" style="margin:2px 0">Fijar/actualizar la fecha de la subasta elegida (opcional):</div>'
        +'<div class="grid2"><input id="pf'+id+'" type="date"><input id="ph'+id+'" type="time" value="15:00"></div></div>'
        +'<button class="act b-green" onclick="proponer('+id+')">Aceptar y proponer</button>'
        +rechazoBox(a);
