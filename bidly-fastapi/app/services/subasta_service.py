@@ -299,8 +299,7 @@ def adjudicar_item(item_id: int, db: Session) -> ItemCatalogo:
         notificacion_service.crear(
             asistente.cliente, "ganaste",
             f"¡Ganaste el ítem! Pujado ${puja_ganadora.importe} + comisión ${item.comision} = "
-            f"${importe_total}. El costo de envío a tu dirección declarada se suma al pagar "
-            "(o retirás en persona y perdés el seguro).",
+            f"${importe_total}. Se intenta cobrar automáticamente de tu tarjeta.",
             db,
         )
         # La actividad (ganar) puede mejorar la categoría del comprador. Cada 2
@@ -319,6 +318,11 @@ def adjudicar_item(item_id: int, db: Session) -> ItemCatalogo:
         _ensure_duenio(asistente.cliente, db)
         prod.duenio = asistente.cliente
         prod.disponible = "no"  # vendido: ya no está disponible para otro catálogo
+
+    # Cobro automático de la compra (patrón lazy): se cobra la tarjeta del ganador
+    # o, si no le alcanza, se genera la multa del 10%. Nunca rompe la adjudicación.
+    from app.services import cobro_service
+    cobro_service.cobrar_automatico([registro], db)
 
     # Si con este ítem se agotó el catálogo, la subasta se cierra sola.
     _cerrar_si_completa(subasta_id, db)
@@ -367,6 +371,7 @@ def adjudicar_bloque(subasta_id: int, db: Session) -> None:
     total_base = sum(Decimal(str(it.preciobase or 0)) for it in pendientes) or Decimal("1")
     total_comision = Decimal("0")
     restante = ganado
+    registros_bloque = []   # para cobrar todo el catálogo como una sola operación
 
     for i, it in enumerate(pendientes):
         base_i = Decimal(str(it.preciobase or 0))
@@ -388,6 +393,7 @@ def adjudicar_bloque(subasta_id: int, db: Session) -> None:
         )
         db.add(registro)
         db.flush()
+        registros_bloque.append(registro)
         db.add(RegistroPago(registro=registro.identificador, estado="pendiente", importe_total=parte + comision_i))
         db.add(Reembolso(registro=registro.identificador, reembolsada="no"))
 
@@ -413,8 +419,7 @@ def adjudicar_bloque(subasta_id: int, db: Session) -> None:
             comprador, "ganaste",
             f"¡Ganaste el catálogo completo ({len(pendientes)} piezas) en única venta! "
             f"Pujado ${ganado} + comisiones ${total_comision} = ${ganado + total_comision}. "
-            "El costo de envío a tu dirección declarada se suma al pagar "
-            "(o retirás en persona y perdés el seguro).",
+            "Se intenta cobrar automáticamente de tu tarjeta.",
             db,
         )
         nueva_cat = categoria_service.recalcular(comprador, db)
@@ -422,6 +427,12 @@ def adjudicar_bloque(subasta_id: int, db: Session) -> None:
             notificacion_service.crear(
                 comprador, "categoria",
                 f"¡Subiste de categoría por tu actividad! Ahora sos {nueva_cat.upper()}.", db)
+
+    # Cobro automático de TODO el catálogo como una sola operación (un cobro / una
+    # multa por el bloque completo).
+    if registros_bloque:
+        from app.services import cobro_service
+        cobro_service.cobrar_automatico(registros_bloque, db)
 
     _cerrar_si_completa(subasta_id, db)
     db.flush()
