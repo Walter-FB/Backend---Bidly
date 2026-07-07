@@ -113,9 +113,11 @@ def borrar_productos_vendidos(cur) -> dict:
     d("registro_pago", f"DELETE FROM registro_pago WHERE registro IN ({regs})")
     d("reembolsos", f"DELETE FROM reembolsos WHERE registro IN ({regs})")
     d("registrodesubasta", f"DELETE FROM registrodesubasta WHERE producto IN ({P})")
-    # Otros que cuelgan del producto
+    # Otros que cuelgan del producto (FKs reales a productos: admisiones, fotos,
+    # itemscatalogo, payouts, producto_estado, ubicaciones_bien). La póliza `seguros`
+    # NO referencia al producto (es productos.seguro → seguros); queda huérfana e
+    # inofensiva, no se toca.
     d("payouts", f"DELETE FROM payouts WHERE producto IN ({P})")
-    d("seguros", f"DELETE FROM seguros WHERE producto IN ({P})")
     d("admisiones", f"DELETE FROM admisiones WHERE producto IN ({P})")
     d("ubicaciones_bien", f"DELETE FROM ubicaciones_bien WHERE producto IN ({P})")
     d("producto_estado", f"DELETE FROM producto_estado WHERE producto IN ({P})")
